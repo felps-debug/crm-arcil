@@ -186,7 +186,7 @@ export default function AdminPage() {
     <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
       <Header title="Admin" subtitle="Gestão de usuários e permissões" />
 
-      <main className="flex-1 overflow-y-auto px-6 py-6 max-w-[1000px] mx-auto w-full space-y-6">
+      <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 sm:py-6 max-w-[1000px] mx-auto w-full space-y-6">
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">

@@ -199,7 +199,7 @@ export default function LeadsPage() {
 
       {/* ── Segment tabs ──────────────────────────────────────────── */}
       <div
-        className="shrink-0 px-6 pt-4 max-w-[1440px] mx-auto w-full"
+        className="shrink-0 px-4 sm:px-6 pt-4 max-w-[1440px] mx-auto w-full"
         style={{ borderBottom: "1px solid var(--border)" }}
       >
         <div className="flex items-center gap-1 overflow-x-auto pb-0 no-scrollbar">
@@ -239,7 +239,7 @@ export default function LeadsPage() {
       </div>
 
       {/* ── Search + controls ─────────────────────────────────────── */}
-      <div className="shrink-0 px-6 pt-3 pb-0 max-w-[1440px] mx-auto w-full">
+      <div className="shrink-0 px-4 sm:px-6 pt-3 pb-0 max-w-[1440px] mx-auto w-full">
         <div className="flex items-center gap-3">
           <div className="relative flex-1 max-w-md">
             <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
@@ -290,7 +290,7 @@ export default function LeadsPage() {
       </div>
 
       {/* ── Lead grid ─────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4 max-w-[1440px] mx-auto w-full">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6 pt-4 max-w-[1440px] mx-auto w-full">
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}

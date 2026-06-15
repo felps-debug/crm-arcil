@@ -57,7 +57,7 @@ export function Header({ title, subtitle, action }: HeaderProps) {
   return (
     <>
       <header
-        className="sticky top-0 z-30 h-14 flex items-center px-6 gap-4 header-glass"
+        className="sticky top-0 z-30 h-14 flex items-center px-4 sm:px-6 gap-3 sm:gap-4 header-glass"
         style={{ borderBottom: "1px solid var(--border-strong)" }}
       >
         {/* Title */}
@@ -79,7 +79,7 @@ export function Header({ title, subtitle, action }: HeaderProps) {
 
         {action}
 
-        <PeriodSelector />
+        <div className="hidden sm:block"><PeriodSelector /></div>
 
         <div className="flex items-center gap-2">
           {/* Search */}

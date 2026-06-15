@@ -31,7 +31,7 @@ export default function DashboardPage() {
     <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
       <Header title="Dashboard" subtitle="Visão geral ARCIL CRM" />
 
-      <main className="flex-1 overflow-y-auto px-6 py-6 space-y-6 max-w-[1440px] mx-auto w-full">
+      <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 sm:py-6 space-y-6 max-w-[1440px] mx-auto w-full">
         {/* Metric cards */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {loadingStats ? (

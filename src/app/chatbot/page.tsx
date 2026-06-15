@@ -289,7 +289,7 @@ export default function ChatbotPage() {
     <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--bg-base)" }}>
       <Header title="Gerador de Imagem" subtitle="Visualização de instalação de AC com IA" />
 
-      <main className="flex-1 flex min-h-0 px-4 py-4 gap-4 max-w-[1280px] mx-auto w-full">
+      <main className="flex-1 flex min-h-0 px-3 sm:px-4 py-3 sm:py-4 gap-4 max-w-[1280px] mx-auto w-full">
 
         {/* ── Chat panel ─────────────────────────────── */}
         <div
@@ -464,7 +464,7 @@ export default function ChatbotPage() {
 
         {/* ── History panel ───────────────────────────── */}
         <div
-          className="w-64 shrink-0 flex flex-col min-h-0 rounded-2xl border border-[var(--border)] overflow-hidden"
+          className="hidden lg:flex w-64 shrink-0 flex-col min-h-0 rounded-2xl border border-[var(--border)] overflow-hidden"
           style={{ background: "var(--bg-surface)", boxShadow: "var(--shadow-sm)" }}
         >
           {/* Panel header */}
