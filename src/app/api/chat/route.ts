@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { OPENAI_API_KEY } from "@/lib/env";
 
 const SYSTEM_PROMPT = `Você é um consultor técnico da ARCIL Ar-Condicionado, especializado em instalações de ar-condicionado. Sua missão é ajudar o cliente a gerar uma visualização realista de como o equipamento ficará instalado no ambiente.
 
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
       model: "gpt-4o",

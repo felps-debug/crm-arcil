@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK } from "@/lib/env";
 
 interface ApiMessage {
   role: "user" | "assistant";
@@ -12,7 +13,7 @@ async function openAI(body: object) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify(body),
   });
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
     await request.json();
 
   if (imageUrl) {
-    const allowedHost = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).hostname;
+    const allowedHost = new URL(SUPABASE_URL).hostname;
     try {
       const parsed = new URL(imageUrl);
       if (parsed.hostname !== allowedHost) {
@@ -109,7 +110,7 @@ export async function POST(request: NextRequest) {
   }
 
   // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node
-  const n8nRes = await fetch(process.env.N8N_CHATBOT_WEBHOOK!, {
+  const n8nRes = await fetch(N8N_CHATBOT_WEBHOOK, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
