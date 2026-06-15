@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, IBM_Plex_Mono } from "next/font/google";
+import { Suspense } from "react";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Providers } from "@/components/layout/providers";
@@ -30,8 +31,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="pt-BR" className={`h-full ${plusJakarta.variable} ${ibmPlexMono.variable}`}>
       <body className="h-full flex overflow-hidden" style={{ background: "var(--bg-base)" }}>
         <Providers>
-          <Sidebar />
-          <MainWrapper>{children}</MainWrapper>
+          <Suspense>
+            <Sidebar />
+            <MainWrapper>{children}</MainWrapper>
+          </Suspense>
         </Providers>
       </body>
     </html>
