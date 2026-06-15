@@ -81,7 +81,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true); setError("");
     const { error: err } = await createClient().auth.signInWithPassword({ email, password: pw });
-    if (err) { setError("Credenciais inválidas."); setLoading(false); }
+    if (err) { setError(err.message); setLoading(false); }
     else window.location.href = "/";
   }
 
