@@ -7,10 +7,14 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants = {
-  primary: "bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-600/25 active:shadow-sm active:scale-[0.98]",
-  secondary: "bg-white hover:bg-slate-50 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:shadow-md active:bg-slate-100 active:scale-[0.98]",
-  ghost: "hover:bg-slate-100 text-slate-600 active:bg-slate-200 active:scale-[0.98]",
-  danger: "bg-gradient-to-b from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-md shadow-red-500/20 hover:shadow-lg hover:shadow-red-600/25 active:shadow-sm active:scale-[0.98]",
+  primary:
+    "bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-600/25 active:shadow-sm active:scale-[0.98]",
+  secondary:
+    "bg-[var(--bg-surface)] hover:bg-[var(--bg-subtle)] text-[var(--text-primary)] ring-1 ring-[var(--border-strong)] shadow-sm hover:shadow-md active:scale-[0.98]",
+  ghost:
+    "hover:bg-[var(--bg-subtle)] text-[var(--text-secondary)] active:bg-[var(--bg-subtle)] active:scale-[0.98]",
+  danger:
+    "bg-gradient-to-b from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-md shadow-red-500/20 hover:shadow-lg hover:shadow-red-600/25 active:shadow-sm active:scale-[0.98]",
 };
 
 const sizes = {

@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export default async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -25,6 +25,8 @@ export default async function middleware(request: NextRequest) {
     }
   );
 
+  // Optimistic session check from cookie — no network call to Supabase auth server.
+  // Full JWT verification happens in API routes and server actions as needed.
   const {
     data: { session },
   } = await supabase.auth.getSession();

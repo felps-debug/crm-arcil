@@ -12,15 +12,15 @@ export function Card({ children, className, onClick, hover = false, accent = fal
   return (
     <div
       className={cn(
-        "bg-white rounded-2xl border border-[var(--border)] shadow-[var(--shadow-md)] overflow-hidden",
-        hover && "hover:shadow-[var(--shadow-lg)] hover:-translate-y-px transition-all duration-200 cursor-pointer",
+        "bg-[var(--bg-surface)] rounded-xl border border-[var(--border)] overflow-hidden",
+        hover && "hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)] transition-all duration-200 cursor-pointer",
         onClick && "cursor-pointer",
         className
       )}
       onClick={onClick}
     >
       {accent && (
-        <div className="h-1 bg-gradient-to-r from-[#2563eb] via-[#7c3aed] to-[#06b6d4]" />
+        <div className="h-px bg-gradient-to-r from-blue-500/70 via-violet-500/50 to-transparent" />
       )}
       {children}
     </div>
@@ -29,10 +29,7 @@ export function Card({ children, className, onClick, hover = false, accent = fal
 
 export function CardHeader({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn(
-      "px-6 py-4 border-b border-[var(--border)]",
-      className
-    )}>
+    <div className={cn("px-5 py-4 border-b border-[var(--border)]", className)}>
       {children}
     </div>
   );
@@ -40,7 +37,7 @@ export function CardHeader({ children, className }: { children: React.ReactNode;
 
 export function CardContent({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("px-6 py-5", className)}>
+    <div className={cn("px-5 py-4", className)}>
       {children}
     </div>
   );

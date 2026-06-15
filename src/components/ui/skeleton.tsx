@@ -12,7 +12,7 @@ export function Skeleton({ className }: SkeletonProps) {
 
 export function MetricCardSkeleton() {
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-white shadow-[var(--shadow-md)] overflow-hidden">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-[var(--shadow-md)] overflow-hidden">
       <Skeleton className="h-1.5 w-full rounded-none" />
       <div className="px-6 py-5">
         <div className="flex items-start justify-between mb-4">
@@ -28,7 +28,7 @@ export function MetricCardSkeleton() {
 
 export function CardSkeleton() {
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-white shadow-[var(--shadow-card)] overflow-hidden">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-[var(--shadow-card)] overflow-hidden">
       <div className="px-6 py-4 border-b border-[var(--border)] flex items-center gap-3">
         <Skeleton className="w-28 h-4" />
       </div>

@@ -1,214 +1,347 @@
 "use client";
 
+import { useEffect, useState, useRef, useCallback } from "react";
+import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
+import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/layout/header";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SectionTitle } from "@/components/ui/section-title";
 import { MetricCardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { useSupabase } from "@/hooks/use-supabase";
+import { createClient } from "@/lib/supabase/client";
 import { getCobrancaLog, getCobrancaStats, getFollowupsByType } from "@/lib/supabase/queries";
+import type { CobrancaLog } from "@/types";
 import {
-  Receipt,
-  Clock,
-  MessageCircleReply,
-  CheckCircle2,
-  XCircle,
-  Send,
+  Receipt, Clock, MessageCircleReply, CheckCircle2, XCircle,
+  Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw,
 } from "lucide-react";
 
+type DisparoLead = Record<string, string>;
+
+function normalizeKey(k: string) { return k.toLowerCase().replace(/[^a-z]/g, ""); }
+
+function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
+  return rows.map((row) => {
+    // Preserve every original ERP column
+    const original: Record<string, string> = {};
+    for (const [k, v] of Object.entries(row)) original[k] = String(v ?? "").trim();
+
+    // Normalized map for lookup
+    const n: Record<string, string> = {};
+    for (const [k, v] of Object.entries(original)) n[normalizeKey(k)] = v;
+
+    // Build numero = "55" + digits from phone column
+    const rawPhone = n["telefone"] ?? n["celular"] ?? n["fone"] ?? n["whatsapp"] ?? n["numero"] ?? "";
+    const digits = rawPhone.replace(/\D/g, "");
+    const numero = digits ? `55${digits}` : "";
+
+    return {
+      ...original,
+      numero,
+      nome:       n["nome"]       ?? n["cliente"]    ?? "",
+      valor:      n["valor"]      ?? "",
+      vencimento: n["vencimento"] ?? n["prorrog"]    ?? n["datavcto"] ?? n["vcto"] ?? "",
+      documento:  n["serdocpar"]  ?? n["documento"]  ?? n["doc"]     ?? n["cpf"]  ?? n["cnpj"] ?? "",
+      tag:        "COBRANCA",
+    };
+  }).filter((l) => l.numero.length >= 12);
+}
+
+type Tab = "disparar" | "logs" | "followups";
+
 export default function CobrancaPage() {
+  const [tab, setTab] = useState<Tab>("disparar");
+
   const { data: stats, loading: loadingStats, error: errorStats, refetch: refetchStats } =
     useSupabase(() => getCobrancaStats(), []);
 
-  const { data: logs, loading: loadingLogs, error: errorLogs, refetch: refetchLogs } =
-    useSupabase(() => getCobrancaLog(), []);
-
-  const { data: followups, loading: loadingFollowups, error: errorFollowups, refetch: refetchFollowups } =
+  const { data: followups, loading: loadingFu, error: errorFu, refetch: refetchFu } =
     useSupabase(() => getFollowupsByType("cobranca"), []);
 
-  return (
-    <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
-      <Header title="Cobrança" subtitle="Gestão de cobranças e disparos" />
+  const [logs, setLogs] = useState<CobrancaLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(true);
+  const [errorLogs, setErrorLogs] = useState<string | null>(null);
 
-      <main className="px-6 py-8 space-y-8 max-w-[1440px] mx-auto">
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+  const fetchLogs = useCallback(async () => {
+    setLoadingLogs(true); setErrorLogs(null);
+    try { setLogs(await getCobrancaLog()); }
+    catch (e) { setErrorLogs(e instanceof Error ? e.message : "Erro"); }
+    finally { setLoadingLogs(false); }
+  }, []);
+
+  useEffect(() => {
+    fetchLogs();
+    const supabase = createClient();
+    const ch = supabase
+      .channel("cobranca-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, fetchLogs)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [fetchLogs]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<DisparoLead[]>([]);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [dispatching, setDispatching] = useState(false);
+  const [dispatchResult, setDispatchResult] = useState<{ ok: boolean; inserted?: number; error?: string } | null>(null);
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; e.target.value = "";
+    if (!file) return;
+    setParseError(null); setPreview([]); setDispatchResult(null); setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = xlsxRead(new Uint8Array(ev.target!.result as ArrayBuffer), { type: "array" });
+        const rows = xlsxUtils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+        const leads = parseSheetLeads(rows);
+        if (!leads.length) throw new Error("Nenhum lead válido. Verifique se há coluna de telefone.");
+        setPreview(leads);
+      } catch (err) { setParseError(err instanceof Error ? err.message : "Erro ao processar arquivo."); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function handleDispatch() {
+    if (!preview.length) return;
+    setDispatching(true); setDispatchResult(null);
+    try {
+      const res = await fetch("/api/cobranca/disparo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leads: preview }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Erro ao disparar");
+      setDispatchResult({ ok: true, inserted: data.inserted });
+      setPreview([]); setFileName(null);
+      setTab("logs");
+    } catch (err) {
+      setDispatchResult({ ok: false, error: err instanceof Error ? err.message : "Erro" });
+    } finally { setDispatching(false); }
+  }
+
+  const TABS: { id: Tab; label: string; count?: number }[] = [
+    { id: "disparar",  label: "Disparar" },
+    { id: "logs",      label: "Monitoramento", count: logs.length },
+    { id: "followups", label: "Follow-ups",    count: followups?.length },
+  ];
+
+  return (
+    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
+      <Header title="Cobrança" subtitle="Disparos e acompanhamento em tempo real" />
+
+      <main className="flex-1 overflow-y-auto px-6 py-6 max-w-[1440px] mx-auto w-full space-y-6">
+
+        {/* Metrics row — always visible */}
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {loadingStats ? (
             Array.from({ length: 4 }).map((_, i) => <MetricCardSkeleton key={i} />)
           ) : errorStats ? (
-            <div className="col-span-full">
-              <ErrorState message={errorStats} onRetry={refetchStats} />
-            </div>
+            <div className="col-span-4"><ErrorState message={errorStats} onRetry={refetchStats} /></div>
           ) : (
             <>
-              <MetricCard label="Total Disparados" value={String(stats?.total ?? 0)} icon={Send} accent="blue" change={`${stats?.disparados ?? 0} enviados`} trend="up" />
-              <MetricCard label="Pendentes" value={String(stats?.pendentes ?? 0)} icon={Clock} accent="amber" change="aguardando horário" trend={stats?.pendentes ? "down" : "up"} />
-              <MetricCard label="Responderam" value={String(stats?.responderam ?? 0)} icon={MessageCircleReply} accent="emerald" change={`${stats?.total ? ((stats.responderam / stats.total) * 100).toFixed(0) : 0}% taxa`} trend="up" />
-              <MetricCard label="Pagamento Confirmado" value={String(stats?.pagos ?? 0)} icon={Receipt} accent="violet" change="confirmados" trend="up" />
+              <MetricCard label="Total Disparados"    value={String(stats?.total ?? 0)}        icon={Send}               accent="blue"    change={`${stats?.disparados ?? 0} enviados`} trend="up" />
+              <MetricCard label="Pendentes"           value={String(stats?.pendentes ?? 0)}    icon={Clock}              accent="amber"   change="aguardando" trend={stats?.pendentes ? "down" : "up"} />
+              <MetricCard label="Responderam"         value={String(stats?.responderam ?? 0)}  icon={MessageCircleReply} accent="emerald" change={`${stats?.total ? ((stats.responderam / stats.total) * 100).toFixed(0) : 0}% taxa`} trend="up" />
+              <MetricCard label="Pag. Confirmado"     value={String(stats?.pagos ?? 0)}        icon={Receipt}            accent="violet"  change="confirmados" trend="up" />
             </>
           )}
         </section>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                  <Send size={16} className="text-blue-600" />
-                </div>
-                <div>
-                  <h2 className="text-[15px] font-bold text-[var(--text-primary)]">Disparos de Cobrança</h2>
-                  <p className="text-[12px] mt-0.5" style={{ color: "var(--text-muted)" }}>Registro de cobranças enviadas</p>
-                </div>
-              </div>
-              {logs && logs.length > 0 && (
-                <Badge variant="default">{logs.length} registros</Badge>
+        {/* Tabs */}
+        <div className="flex items-center gap-1 p-1 rounded-xl bg-[var(--bg-surface)] border border-[var(--border)] w-fit shadow-[var(--shadow-xs)]">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition-all ${
+                tab === t.id ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              }`}
+            >
+              {tab === t.id && (
+                <motion.div
+                  layoutId="cobranca-tab"
+                  className="absolute inset-0 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)]"
+                  transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                />
               )}
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loadingLogs ? (
-              <div className="p-5 space-y-0">
-                {Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} />)}
-              </div>
-            ) : errorLogs ? (
-              <div className="p-5">
-                <ErrorState message={errorLogs} onRetry={refetchLogs} />
-              </div>
-            ) : !logs?.length ? (
-              <p className="text-[14px] text-center py-12" style={{ color: "var(--text-muted)" }}>
-                Nenhum disparo de cobrança registrado
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm table-enterprise">
-                  <thead>
-                    <tr>
-                      {["Nome", "Telefone", "Documento", "Status", "Respondeu", "Pagamento", "Data Disparo"].map((h) => (
-                        <th key={h}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {logs.map((log) => (
-                      <tr key={log.id}>
-                        <td className="font-medium text-[var(--text-primary)]">
-                          {log.nome ?? "—"}
-                        </td>
-                        <td className="text-[var(--text-secondary)] tabular-nums">
-                          {log.telefone}
-                        </td>
-                        <td className="text-[var(--text-secondary)]">
-                          {log.documento ?? "—"}
-                        </td>
-                        <td>
-                          <Badge variant={log.status_disparo === "DISPARADO" ? "success" : "warning"}>
-                            {log.status_disparo}
-                          </Badge>
-                        </td>
-                        <td>
-                          {log.respondeu ? (
-                            <CheckCircle2 size={18} className="text-emerald-500" />
-                          ) : (
-                            <XCircle size={18} className="text-slate-300" />
-                          )}
-                        </td>
-                        <td>
-                          {log.pagamento_confirmado ? (
-                            <CheckCircle2 size={18} className="text-emerald-500" />
-                          ) : (
-                            <XCircle size={18} className="text-slate-300" />
-                          )}
-                        </td>
-                        <td className="text-[13px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-                          {log.data_disparo ? new Date(log.data_disparo).toLocaleString("pt-BR") : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              <span className="relative z-10">{t.label}</span>
+              {t.count !== undefined && t.count > 0 && (
+                <span className="relative z-10 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[var(--bg-subtle)] text-[var(--text-muted)]">
+                  {t.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
-                  <MessageCircleReply size={16} className="text-violet-600" />
-                </div>
-                <div>
-                  <h2 className="text-[15px] font-bold text-[var(--text-primary)]">Follow-ups de Cobrança</h2>
-                  <p className="text-[12px] mt-0.5" style={{ color: "var(--text-muted)" }}>Acompanhamento de respostas</p>
-                </div>
-              </div>
-              {followups && followups.length > 0 && (
-                <Badge variant="info">{followups.length} follow-ups</Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loadingFollowups ? (
-              <div className="p-5 space-y-0">
-                {Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} />)}
-              </div>
-            ) : errorFollowups ? (
-              <div className="p-5">
-                <ErrorState message={errorFollowups} onRetry={refetchFollowups} />
-              </div>
-            ) : !followups?.length ? (
-              <p className="text-[14px] text-center py-12" style={{ color: "var(--text-muted)" }}>
-                Nenhum follow-up de cobrança
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm table-enterprise">
-                  <thead>
-                    <tr>
-                      {["Cliente", "Telefone", "Step", "Respondeu", "Última Msg IA", "Status"].map((h) => (
-                        <th key={h}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {followups.map((f) => (
-                      <tr key={f.id}>
-                        <td className="font-medium text-[var(--text-primary)]">
-                          {f.nome_cliente ?? "—"}
-                        </td>
-                        <td className="text-[var(--text-secondary)] tabular-nums">
-                          {f.numero_cliente ?? "—"}
-                        </td>
-                        <td>
-                          <Badge variant={f.followup_step && f.followup_step >= 3 ? "danger" : "info"}>
-                            Step {f.followup_step ?? 0}
-                          </Badge>
-                        </td>
-                        <td>
-                          {f.respondeu ? (
-                            <CheckCircle2 size={18} className="text-emerald-500" />
-                          ) : (
-                            <XCircle size={18} className="text-slate-300" />
-                          )}
-                        </td>
-                        <td className="text-[13px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-                          {f.ultima_msg_ia ? new Date(f.ultima_msg_ia).toLocaleString("pt-BR") : "—"}
-                        </td>
-                        <td>
-                          <Badge variant={f.status === "PENDING" ? "warning" : "default"}>
-                            {f.status ?? "—"}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Tab content */}
+        <AnimatePresence mode="wait">
+          {tab === "disparar" && (
+            <motion.div key="disparar" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+              <Card>
+                <CardHeader>
+                  <SectionTitle icon={Zap} title="Disparar Cobrança" subtitle="Importe uma planilha e dispare mensagens de cobrança" iconBg="bg-amber-500/10" iconColor="text-amber-600" />
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  {/* Upload zone */}
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all hover:border-[var(--blue)] hover:bg-blue-500/3 group"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFile} />
+                    <FileSpreadsheet size={28} className="mx-auto mb-3 text-[var(--text-muted)] group-hover:text-[var(--blue)] transition-colors" />
+                    <p className="text-[14px] font-medium text-[var(--text-primary)]">
+                      {fileName ?? "Clique para importar planilha"}
+                    </p>
+                    <p className="text-[12px] text-[var(--text-muted)] mt-1">CSV, XLSX, XLS · Colunas: telefone, nome, valor, vencimento, documento</p>
+                  </div>
+
+                  {parseError && (
+                    <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/8 border border-red-500/15 text-[13px] text-red-500">
+                      <X size={14} /> {parseError}
+                    </div>
+                  )}
+
+                  {dispatchResult && (
+                    <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-[13px] border ${dispatchResult.ok ? "bg-emerald-500/8 border-emerald-500/15 text-emerald-600" : "bg-red-500/8 border-red-500/15 text-red-500"}`}>
+                      {dispatchResult.ok ? <CheckCircle2 size={14} /> : <X size={14} />}
+                      {dispatchResult.ok ? `${dispatchResult.inserted} leads inseridos — acompanhe no Monitoramento` : dispatchResult.error}
+                    </div>
+                  )}
+
+                  {preview.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[13px] font-semibold text-[var(--text-primary)]">{preview.length} leads encontrados</p>
+                        <button onClick={() => { setPreview([]); setFileName(null); }} className="text-[12px] text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1 transition-colors">
+                          <X size={12} /> Limpar
+                        </button>
+                      </div>
+                      <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+                        <div className="overflow-x-auto max-h-56 overflow-y-auto">
+                          <table className="w-full text-sm table-enterprise">
+                            <thead className="sticky top-0" style={{ background: "var(--bg-subtle)" }}>
+                              <tr>{["Número","Nome","Valor","Vencimento","Documento"].map((h) => <th key={h}>{h}</th>)}</tr>
+                            </thead>
+                            <tbody>
+                              {preview.map((l, i) => (
+                                <tr key={i}>
+                                  <td className="tabular-nums font-medium text-[var(--text-primary)]">{l.numero}</td>
+                                  <td>{l.nome || "—"}</td>
+                                  <td>{l.valor || "—"}</td>
+                                  <td>{l.vencimento || "—"}</td>
+                                  <td>{l.documento || "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleDispatch}
+                        disabled={dispatching}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white shadow-sm transition-all disabled:opacity-60 bg-[var(--blue)] hover:opacity-90"
+                      >
+                        {dispatching ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                        {dispatching ? "Disparando..." : `Disparar ${preview.length} cobranças`}
+                      </button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {tab === "logs" && (
+            <motion.div key="logs" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <SectionTitle icon={Send} title="Monitoramento ao Vivo" subtitle="Atualização automática em tempo real" />
+                    <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-500">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Ao vivo
+                      </span>
+                      <button onClick={fetchLogs} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors" title="Atualizar">
+                        <RefreshCw size={13} className={loadingLogs ? "animate-spin" : ""} />
+                      </button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingLogs ? (
+                    <div className="p-5">{Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
+                  ) : errorLogs ? (
+                    <div className="p-5"><ErrorState message={errorLogs} onRetry={fetchLogs} /></div>
+                  ) : !logs.length ? (
+                    <p className="text-sm text-center py-12 text-[var(--text-muted)]">Nenhum disparo registrado</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm table-enterprise">
+                        <thead><tr>{["Nome","Telefone","Valor","Vencimento","Status","Respondeu","Pagamento","Disparo"].map((h) => <th key={h}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {logs.map((log) => (
+                            <tr key={log.id}>
+                              <td className="font-medium text-[var(--text-primary)]">{log.nome ?? "—"}</td>
+                              <td className="tabular-nums">{log.telefone}</td>
+                              <td>{log.valor ?? "—"}</td>
+                              <td>{log.vencimento ?? "—"}</td>
+                              <td><Badge variant={log.status_disparo === "DISPARADO" ? "success" : "warning"}>{log.status_disparo}</Badge></td>
+                              <td>{log.respondeu ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
+                              <td>{log.pagamento_confirmado ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
+                              <td className="text-xs tabular-nums text-[var(--text-muted)]">{log.data_disparo ? new Date(log.data_disparo).toLocaleString("pt-BR") : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {tab === "followups" && (
+            <motion.div key="followups" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+              <Card>
+                <CardHeader>
+                  <SectionTitle icon={MessageCircleReply} title="Follow-ups de Cobrança" subtitle="Acompanhamento de respostas" iconBg="bg-violet-500/10" iconColor="text-violet-600" />
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingFu ? (
+                    <div className="p-5">{Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
+                  ) : errorFu ? (
+                    <div className="p-5"><ErrorState message={errorFu} onRetry={refetchFu} /></div>
+                  ) : !followups?.length ? (
+                    <p className="text-sm text-center py-12 text-[var(--text-muted)]">Nenhum follow-up</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm table-enterprise">
+                        <thead><tr>{["Cliente","Telefone","Step","Respondeu","Última Msg","Status"].map((h) => <th key={h}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {followups.map((f) => (
+                            <tr key={f.id}>
+                              <td className="font-medium text-[var(--text-primary)]">{f.nome_cliente ?? "—"}</td>
+                              <td className="tabular-nums">{f.numero_cliente ?? "—"}</td>
+                              <td><Badge variant={f.followup_step && f.followup_step >= 3 ? "danger" : "info"}>Step {f.followup_step ?? 0}</Badge></td>
+                              <td>{f.respondeu ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
+                              <td className="text-xs tabular-nums text-[var(--text-muted)]">{f.ultima_msg_ia ? new Date(f.ultima_msg_ia).toLocaleString("pt-BR") : "—"}</td>
+                              <td><Badge variant={f.status === "PENDING" ? "warning" : "default"}>{f.status ?? "—"}</Badge></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

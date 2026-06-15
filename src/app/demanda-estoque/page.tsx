@@ -2,16 +2,17 @@
 
 import { useState } from "react";
 import { Header } from "@/components/layout/header";
+import { MetricCard } from "@/components/ui/metric-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SectionTitle } from "@/components/ui/section-title";
 import { MetricCardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { useSupabase } from "@/hooks/use-supabase";
 import { getProducts, getProductStats } from "@/lib/supabase/queries";
 import type { Product } from "@/types";
 import {
-  Package, PackageX, AlertTriangle, BarChart3,
-  Search, ArrowUpDown,
+  Package, PackageX, AlertTriangle, BarChart3, Search,
 } from "lucide-react";
 
 function formatCurrency(value: number | null): string {
@@ -20,8 +21,8 @@ function formatCurrency(value: number | null): string {
 }
 
 export default function DemandaEstoquePage() {
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"name" | "stock" | "price">("name");
+  const [search,  setSearch]  = useState("");
+  const [sortBy,  setSortBy]  = useState<"name" | "stock" | "price">("name");
 
   const { data: products, loading: loadingProducts, error: errorProducts, refetch: refetchProducts } =
     useSupabase(() => getProducts(), []);
@@ -48,12 +49,12 @@ export default function DemandaEstoquePage() {
   const hasData = (products?.length ?? 0) > 0;
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
+    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
       <Header title="Demanda & Estoque" subtitle="Produtos, estoque e demanda dos clientes" />
 
-      <main className="px-6 py-8 space-y-8 max-w-[1440px] mx-auto">
+      <main className="flex-1 overflow-y-auto px-6 py-6 space-y-6 max-w-[1440px] mx-auto w-full">
         {/* Metrics */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {loadingStats ? (
             Array.from({ length: 4 }).map((_, i) => <MetricCardSkeleton key={i} />)
           ) : errorStats ? (
@@ -62,73 +63,30 @@ export default function DemandaEstoquePage() {
             </div>
           ) : (
             <>
-              <Card>
-                <div className="h-1.5 bg-gradient-to-r from-blue-500 to-indigo-500" />
-                <CardContent>
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center ring-2 ring-blue-500/20">
-                      <Package size={22} className="text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Total Produtos</p>
-                      <p className="font-data text-[32px] font-extrabold text-[var(--text-primary)] leading-none mt-1">
-                        {stats?.totalProducts ?? 0}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <div className="h-1.5 bg-gradient-to-r from-red-500 to-rose-500" />
-                <CardContent>
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-red-500/10 flex items-center justify-center ring-2 ring-red-500/20">
-                      <PackageX size={22} className="text-red-600" />
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Sem Estoque</p>
-                      <p className="font-data text-[32px] font-extrabold text-[var(--text-primary)] leading-none mt-1">
-                        {stats?.outOfStock ?? 0}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <div className="h-1.5 bg-gradient-to-r from-amber-400 to-orange-500" />
-                <CardContent>
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center ring-2 ring-amber-500/20">
-                      <AlertTriangle size={22} className="text-amber-600" />
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Estoque Baixo</p>
-                      <p className="font-data text-[32px] font-extrabold text-[var(--text-primary)] leading-none mt-1">
-                        {stats?.lowStock ?? 0}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <div className="h-1.5 bg-gradient-to-r from-emerald-500 to-teal-500" />
-                <CardContent>
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center ring-2 ring-emerald-500/20">
-                      <BarChart3 size={22} className="text-emerald-600" />
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Categorias</p>
-                      <p className="font-data text-[32px] font-extrabold text-[var(--text-primary)] leading-none mt-1">
-                        {Object.keys(stats?.categories ?? {}).length}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <MetricCard
+                label="Total Produtos"
+                value={String(stats?.totalProducts ?? 0)}
+                icon={Package}
+                accent="blue"
+              />
+              <MetricCard
+                label="Sem Estoque"
+                value={String(stats?.outOfStock ?? 0)}
+                icon={PackageX}
+                accent="red"
+              />
+              <MetricCard
+                label="Estoque Baixo"
+                value={String(stats?.lowStock ?? 0)}
+                icon={AlertTriangle}
+                accent="amber"
+              />
+              <MetricCard
+                label="Categorias"
+                value={String(Object.keys(stats?.categories ?? {}).length)}
+                icon={BarChart3}
+                accent="emerald"
+              />
             </>
           )}
         </section>
@@ -137,20 +95,16 @@ export default function DemandaEstoquePage() {
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                  <Package size={16} className="text-blue-600" />
-                </div>
-                <div>
-                  <h2 className="text-[15px] font-bold text-[var(--text-primary)]">Catálogo de Produtos</h2>
-                  <p className="text-[12px] mt-0.5" style={{ color: "var(--text-muted)" }}>Sincronizado do ERP Net1</p>
-                </div>
-              </div>
+              <SectionTitle
+                icon={Package}
+                title="Catálogo de Produtos"
+                subtitle="Sincronizado do ERP Net1"
+              />
 
               {hasData && (
                 <div className="flex items-center gap-3">
                   <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                     <input
                       type="text"
                       value={search}
@@ -162,7 +116,7 @@ export default function DemandaEstoquePage() {
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as "name" | "stock" | "price")}
-                    className="px-3 py-2 rounded-xl border text-[13px] bg-[var(--bg-subtle)] border-[var(--border)] text-[var(--text-secondary)] focus:outline-none focus:border-blue-400"
+                    className="px-3 py-2 rounded-xl border text-[13px] bg-[var(--bg-subtle)] border-[var(--border)] text-[var(--text-secondary)] focus:outline-none focus:border-blue-400 transition-all"
                   >
                     <option value="name">Nome A-Z</option>
                     <option value="stock">Menor estoque</option>
@@ -183,14 +137,15 @@ export default function DemandaEstoquePage() {
               </div>
             ) : !hasData ? (
               <div className="text-center py-20">
-                <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-5"
-                     style={{ background: "var(--bg-subtle)" }}>
-                  <Package size={36} className="text-slate-300" />
+                <div
+                  className="w-20 h-20 rounded-2xl bg-[var(--bg-subtle)] flex items-center justify-center mx-auto mb-5"
+                >
+                  <Package size={36} className="text-[var(--text-muted)]" />
                 </div>
-                <h3 className="text-[16px] font-bold text-[var(--text-primary)] mb-2">
+                <h3 className="text-base font-bold text-[var(--text-primary)] mb-2">
                   Aguardando sincronização do ERP
                 </h3>
-                <p className="text-[14px] max-w-md mx-auto" style={{ color: "var(--text-muted)" }}>
+                <p className="text-sm max-w-md mx-auto text-[var(--text-muted)]">
                   Os produtos serão importados automaticamente do ERP Net1.
                   Quando sincronizado, você verá o catálogo completo com estoque, preços e demanda.
                 </p>
@@ -198,7 +153,7 @@ export default function DemandaEstoquePage() {
                   {["Estoque em tempo real", "Produtos mais solicitados", "Alertas de estoque baixo"].map((feat) => (
                     <span
                       key={feat}
-                      className="px-3 py-1.5 rounded-full text-[12px] font-medium"
+                      className="px-3 py-1.5 rounded-full text-xs font-medium"
                       style={{
                         background: "var(--bg-subtle)",
                         color: "var(--text-secondary)",
@@ -222,7 +177,7 @@ export default function DemandaEstoquePage() {
                   </thead>
                   <tbody>
                     {filtered.map((p) => {
-                      const stockLevel = p.stock_qty ?? 0;
+                      const stockLevel   = p.stock_qty ?? 0;
                       const stockVariant = stockLevel === 0 ? "danger" : stockLevel <= 10 ? "warning" : "success";
 
                       return (
@@ -242,12 +197,12 @@ export default function DemandaEstoquePage() {
                             {formatCurrency(p.preco_revenda)}
                           </td>
                           <td>
-                            <Badge variant={stockVariant}>
-                              {stockLevel} un.
-                            </Badge>
+                            <Badge variant={stockVariant}>{stockLevel} un.</Badge>
                           </td>
-                          <td className="text-[13px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-                            {p.synced_at ? new Date(p.synced_at).toLocaleString("pt-BR") : "—"}
+                          <td className="text-xs tabular-nums text-[var(--text-muted)]">
+                            {p.synced_at
+                              ? new Date(p.synced_at).toLocaleString("pt-BR")
+                              : "—"}
                           </td>
                         </tr>
                       );

@@ -4,6 +4,7 @@ import { Header } from "@/components/layout/header";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SectionTitle } from "@/components/ui/section-title";
 import { MetricCardSkeleton, CardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { LeadsAreaChart } from "@/components/charts/leads-chart";
@@ -27,11 +28,12 @@ export default function DashboardPage() {
   const last10 = recentLeads?.slice(0, 10) ?? [];
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
+    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
       <Header title="Dashboard" subtitle="Visão geral ARCIL CRM" />
 
-      <main className="px-6 py-8 space-y-8 max-w-[1440px] mx-auto">
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+      <main className="flex-1 overflow-y-auto px-6 py-6 space-y-6 max-w-[1440px] mx-auto w-full">
+        {/* Metric cards */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {loadingStats ? (
             Array.from({ length: 5 }).map((_, i) => <MetricCardSkeleton key={i} />)
           ) : errorStats ? (
@@ -40,15 +42,51 @@ export default function DashboardPage() {
             </div>
           ) : (
             <>
-              <MetricCard label="Total Leads" value={String(stats?.totalLeads ?? 0)} icon={Users} accent="blue" change="excl. legado" trend="up" />
-              <MetricCard label="Leads Ativos" value={String(stats?.leadsAtivos ?? 0)} icon={UserCheck} accent="emerald" change="status ACTIVE" trend="up" />
-              <MetricCard label="Cobranças Pendentes" value={String(stats?.cobrancasPendentes ?? 0)} icon={Clock} accent="amber" change="aguardando" trend={stats?.cobrancasPendentes ? "down" : "up"} />
-              <MetricCard label="Follow-ups Respondidos" value={String(stats?.followupsRespondidos ?? 0)} icon={MessageCircleReply} accent="violet" change={`de ${(stats?.followupsRespondidos ?? 0) + 30} total`} trend="up" />
-              <MetricCard label="Taxa Resposta" value={`${stats?.taxaResposta ?? "0"}%`} icon={TrendingUp} accent="sky" change="follow-ups" trend={parseFloat(stats?.taxaResposta ?? "0") > 20 ? "up" : "down"} />
+              <MetricCard
+                label="Total Leads"
+                value={String(stats?.totalLeads ?? 0)}
+                icon={Users}
+                accent="blue"
+                change="excl. legado"
+                trend="up"
+              />
+              <MetricCard
+                label="Leads Ativos"
+                value={String(stats?.leadsAtivos ?? 0)}
+                icon={UserCheck}
+                accent="emerald"
+                change="status ACTIVE"
+                trend="up"
+              />
+              <MetricCard
+                label="Cobranças Pendentes"
+                value={String(stats?.cobrancasPendentes ?? 0)}
+                icon={Clock}
+                accent="amber"
+                change="aguardando"
+                trend={stats?.cobrancasPendentes ? "down" : "up"}
+              />
+              <MetricCard
+                label="Follow-ups Respondidos"
+                value={String(stats?.followupsRespondidos ?? 0)}
+                icon={MessageCircleReply}
+                accent="violet"
+                change={`de ${(stats?.followupsRespondidos ?? 0) + 30} total`}
+                trend="up"
+              />
+              <MetricCard
+                label="Taxa Resposta"
+                value={`${stats?.taxaResposta ?? "0"}%`}
+                icon={TrendingUp}
+                accent="sky"
+                change="follow-ups"
+                trend={parseFloat(stats?.taxaResposta ?? "0") > 20 ? "up" : "down"}
+              />
             </>
           )}
         </section>
 
+        {/* Charts + Recent leads */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {loadingTrend ? (
             <CardSkeleton />
@@ -61,8 +99,8 @@ export default function DashboardPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-[15px] font-bold text-[var(--text-primary)]">Evolução de Leads</h2>
-                    <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>Últimos 6 meses (excl. legado)</p>
+                    <h2 className="text-sm font-bold text-[var(--text-primary)]">Evolução de Leads</h2>
+                    <p className="text-xs mt-1 text-[var(--text-muted)]">Últimos 6 meses (excl. legado)</p>
                   </div>
                   <Badge variant="info" dot>Atualizado</Badge>
                 </div>
@@ -76,12 +114,7 @@ export default function DashboardPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                    <Users size={16} className="text-blue-600" />
-                  </div>
-                  <h2 className="text-[15px] font-bold text-[var(--text-primary)]">Leads Recentes</h2>
-                </div>
+                <SectionTitle icon={Users} title="Leads Recentes" />
                 {last10.length > 0 && (
                   <Badge variant="default">{last10.length}</Badge>
                 )}
@@ -102,9 +135,7 @@ export default function DashboardPage() {
                     <thead>
                       <tr>
                         {["Nome", "Segmento", "Status", "Data"].map((h) => (
-                          <th key={h}>
-                            {h}
-                          </th>
+                          <th key={h}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -113,8 +144,10 @@ export default function DashboardPage() {
                         <tr key={lead.id}>
                           <td>
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                                   style={{ background: "linear-gradient(135deg, #2563eb, #1d4ed8)" }}>
+                              <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                                style={{ background: "linear-gradient(135deg, #2563eb, #1d4ed8)" }}
+                              >
                                 <span className="text-white text-[10px] font-bold">
                                   {getInitials(lead.name ?? "?")}
                                 </span>
@@ -130,12 +163,22 @@ export default function DashboardPage() {
                             </Badge>
                           </td>
                           <td>
-                            <Badge variant={lead.status === "ACTIVE" ? "success" : lead.status === "LOST" ? "danger" : "warning"}>
+                            <Badge
+                              variant={
+                                lead.status === "ACTIVE"
+                                  ? "success"
+                                  : lead.status === "LOST"
+                                  ? "danger"
+                                  : "warning"
+                              }
+                            >
                               {STATUS_LABELS[lead.status as LeadStatus] ?? lead.status ?? "—"}
                             </Badge>
                           </td>
-                          <td className="text-[13px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-                            {lead.created_at ? new Date(lead.created_at).toLocaleDateString("pt-BR") : "—"}
+                          <td className="text-xs tabular-nums text-[var(--text-muted)]">
+                            {lead.created_at
+                              ? new Date(lead.created_at).toLocaleDateString("pt-BR")
+                              : "—"}
                           </td>
                         </tr>
                       ))}

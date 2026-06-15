@@ -21,8 +21,7 @@ export function PeriodSelector() {
   }, []);
 
   const handleSelect = (key: string) => {
-    const range = getPresetRange(key);
-    setDateRange(range);
+    setDateRange(getPresetRange(key));
     setOpen(false);
   };
 
@@ -40,20 +39,22 @@ export function PeriodSelector() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         className={cn(
-          "flex items-center gap-2 px-3 py-2 text-sm rounded-xl border transition-all",
+          "flex items-center gap-2 px-3 py-2 text-sm rounded-xl border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
           dateRange
             ? "bg-blue-50 border-blue-200 text-blue-700 shadow-sm shadow-blue-100/50"
-            : "bg-white/60 backdrop-blur-sm border-slate-200/60 text-slate-600 hover:bg-white hover:shadow-sm"
+            : "bg-[var(--bg-subtle)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-surface)]"
         )}
       >
         <CalendarDays size={14} />
-        <span className="font-medium text-[13px]">
-          {activeLabel ?? "Todo período"}
-        </span>
+        <span className="font-medium text-[13px]">{activeLabel ?? "Todo período"}</span>
         {dateRange && (
           <span
             onClick={handleClear}
+            role="button"
+            aria-label="Limpar período"
             className="p-0.5 rounded-md hover:bg-blue-200/50 transition-colors"
           >
             <X size={12} />
@@ -62,12 +63,19 @@ export function PeriodSelector() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 bg-white/95 backdrop-blur-xl rounded-xl shadow-[var(--shadow-xl)] border border-slate-200/60 py-1.5 min-w-[160px] z-50 animate-fade-in">
+        <div
+          role="listbox"
+          className="absolute right-0 top-full mt-2 bg-[var(--bg-surface)] backdrop-blur-xl rounded-xl shadow-[var(--shadow-xl)] border border-[var(--border)] py-1.5 min-w-[160px] z-50 animate-fade-in"
+        >
           <button
+            role="option"
+            aria-selected={!dateRange}
             onClick={() => { setDateRange(null); setOpen(false); }}
             className={cn(
               "w-full text-left px-4 py-2 text-[13px] font-medium transition-colors",
-              !dateRange ? "text-blue-700 bg-blue-50" : "text-slate-600 hover:bg-slate-50"
+              !dateRange
+                ? "text-blue-700 bg-blue-50"
+                : "text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
             )}
           >
             Todo período
@@ -75,12 +83,14 @@ export function PeriodSelector() {
           {PRESET_OPTIONS.map((opt) => (
             <button
               key={opt.key}
+              role="option"
+              aria-selected={dateRange?.label === opt.key}
               onClick={() => handleSelect(opt.key)}
               className={cn(
                 "w-full text-left px-4 py-2 text-[13px] font-medium transition-colors",
                 dateRange?.label === opt.key
                   ? "text-blue-700 bg-blue-50"
-                  : "text-slate-600 hover:bg-slate-50"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
               )}
             >
               {opt.label}

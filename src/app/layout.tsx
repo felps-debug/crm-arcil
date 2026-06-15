@@ -1,8 +1,23 @@
 import type { Metadata } from "next";
+import { Plus_Jakarta_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Providers } from "@/components/layout/providers";
 import { MainWrapper } from "@/components/layout/main-wrapper";
+
+const plusJakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-outfit",
+  display: "swap",
+});
+
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["500", "700"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "ARCIL CRM",
@@ -12,13 +27,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR" className="h-full">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet" />
-      </head>
-      <body className="h-full flex" style={{ background: "var(--bg-base)" }}>
+    <html lang="pt-BR" className={`h-full ${plusJakarta.variable} ${ibmPlexMono.variable}`}>
+      <body className="h-full flex overflow-hidden" style={{ background: "var(--bg-base)" }}>
         <Providers>
           <Sidebar />
           <MainWrapper>{children}</MainWrapper>

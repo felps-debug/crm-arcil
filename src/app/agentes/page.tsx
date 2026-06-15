@@ -1,282 +1,182 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import { Header } from "@/components/layout/header";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { MetricCardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
+import { MetricCard } from "@/components/ui/metric-card";
+import { MetricCardSkeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { useSupabase } from "@/hooks/use-supabase";
-import { getAgentStats, getRecentConversations } from "@/lib/supabase/queries";
-import { SEGMENT_LABELS } from "@/types";
-import type { LeadSegment, Conversation } from "@/types";
+import { getAgentStats } from "@/lib/supabase/queries";
 import {
-  Bot, Users, UserCheck, ArrowRightLeft,
-  Wrench, Building2, Store, ShoppingBag, UserPlus, RotateCcw,
+  Bot, Users, UserCheck, Wrench, Building2, Store,
+  ShoppingBag, RotateCcw, ChevronRight, TrendingUp,
 } from "lucide-react";
 
 const AGENT_CONFIG: Record<string, {
   label: string;
   description: string;
   icon: typeof Bot;
-  gradient: string;
-  iconBg: string;
-  iconColor: string;
+  color: string;
+  bg: string;
+  accent: string;
 }> = {
   INSTALLER: {
     label: "Instalador",
-    description: "Agente especializado em instaladores e técnicos",
+    description: "Técnicos e instaladores de AC",
     icon: Wrench,
-    gradient: "from-blue-500 via-blue-600 to-indigo-600",
-    iconBg: "bg-blue-500/10",
-    iconColor: "text-blue-600",
+    color: "text-blue-600",
+    bg: "bg-blue-500/8",
+    accent: "#2563eb",
   },
   BUILDER: {
     label: "Construtor",
-    description: "Agente para construtoras e empreiteiras",
+    description: "Construtoras e empreiteiras",
     icon: Building2,
-    gradient: "from-emerald-500 via-emerald-600 to-teal-600",
-    iconBg: "bg-emerald-500/10",
-    iconColor: "text-emerald-600",
+    color: "text-emerald-600",
+    bg: "bg-emerald-500/8",
+    accent: "#059669",
   },
   RESELLER: {
     label: "Revenda",
-    description: "Agente para revendas e distribuidores",
+    description: "Revendas e distribuidores",
     icon: Store,
-    gradient: "from-violet-500 via-violet-600 to-purple-600",
-    iconBg: "bg-violet-500/10",
-    iconColor: "text-violet-600",
+    color: "text-violet-600",
+    bg: "bg-violet-500/8",
+    accent: "#7c3aed",
   },
   CONSUMER: {
-    label: "Consumidor Final",
-    description: "Agente para consumidores pessoa física",
+    label: "Consumidor",
+    description: "Pessoa física — consumidor final",
     icon: ShoppingBag,
-    gradient: "from-amber-400 via-amber-500 to-orange-500",
-    iconBg: "bg-amber-500/10",
-    iconColor: "text-amber-600",
+    color: "text-amber-600",
+    bg: "bg-amber-500/8",
+    accent: "#d97706",
   },
   NEW: {
     label: "Roteadora",
-    description: "Agente que classifica e roteia novos leads",
+    description: "Classifica e roteia novos leads",
     icon: RotateCcw,
-    gradient: "from-sky-400 via-sky-500 to-cyan-500",
-    iconBg: "bg-sky-500/10",
-    iconColor: "text-sky-600",
+    color: "text-sky-600",
+    bg: "bg-sky-500/8",
+    accent: "#0284c7",
   },
 };
 
-function AgentCard({ segment, total, active, converted }: {
-  segment: string;
-  total: number;
-  active: number;
-  converted: number;
-}) {
+function AgentCard({
+  segment, total, active, converted, index,
+}: { segment: string; total: number; active: number; converted: number; index: number }) {
+  const router = useRouter();
   const cfg = AGENT_CONFIG[segment] ?? AGENT_CONFIG.NEW;
   const Icon = cfg.icon;
   const rate = total > 0 ? ((converted / total) * 100).toFixed(0) : "0";
+  const activeRate = total > 0 ? ((active / total) * 100).toFixed(0) : "0";
 
   return (
-    <Card hover>
-      <div className={`h-1.5 bg-gradient-to-r ${cfg.gradient}`} />
-      <CardContent>
-        <div className="flex items-start justify-between mb-5">
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ring-2 ring-opacity-20 ${cfg.iconBg}`}
-               style={{ ["--tw-ring-color" as string]: "currentColor" }}>
-            <Icon size={22} className={cfg.iconColor} strokeWidth={1.8} />
-          </div>
-          <Badge variant="info" dot>Ativo</Badge>
-        </div>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, delay: index * 0.06 }}
+      onClick={() => router.push(`/agentes/${segment.toLowerCase()}`)}
+      className="group relative cursor-pointer rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] p-5 hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-lg)] transition-all duration-250"
+    >
+      {/* Accent bar */}
+      <div
+        className="absolute top-0 left-5 right-5 h-px rounded-full opacity-60"
+        style={{ background: cfg.accent }}
+      />
 
-        <h3 className="text-[16px] font-bold text-[var(--text-primary)]">{cfg.label}</h3>
-        <p className="text-[12px] text-[var(--text-muted)] mt-1">{cfg.description}</p>
-
-        <div className="grid grid-cols-3 gap-3 mt-5 pt-4 border-t border-[var(--border)]">
-          <div className="text-center">
-            <p className="font-data text-[20px] font-bold text-[var(--text-primary)]">{total}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mt-0.5">Total</p>
-          </div>
-          <div className="text-center">
-            <p className="font-data text-[20px] font-bold text-emerald-600">{active}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mt-0.5">Ativos</p>
-          </div>
-          <div className="text-center">
-            <p className="font-data text-[20px] font-bold text-violet-600">{rate}%</p>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mt-0.5">Conversão</p>
-          </div>
+      <div className="flex items-start justify-between mb-4">
+        <div className={`w-11 h-11 rounded-xl ${cfg.bg} flex items-center justify-center`}>
+          <Icon size={20} className={cfg.color} strokeWidth={1.8} />
         </div>
-      </CardContent>
-    </Card>
+        <ChevronRight
+          size={16}
+          className="text-[var(--text-muted)] group-hover:text-[var(--text-secondary)] group-hover:translate-x-0.5 transition-all"
+        />
+      </div>
+
+      <h3 className="text-[15px] font-semibold text-[var(--text-primary)] leading-tight">{cfg.label}</h3>
+      <p className="text-[12px] text-[var(--text-muted)] mt-0.5 leading-relaxed">{cfg.description}</p>
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t border-[var(--border)]">
+        <div>
+          <p className="font-data text-[20px] font-bold text-[var(--text-primary)] leading-none">{total}</p>
+          <p className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1">Total</p>
+        </div>
+        <div>
+          <p className="font-data text-[20px] font-bold leading-none" style={{ color: cfg.accent }}>{active}</p>
+          <p className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1">Ativos</p>
+        </div>
+        <div>
+          <div className="flex items-baseline gap-0.5">
+            <p className="font-data text-[20px] font-bold text-[var(--text-primary)] leading-none">{rate}</p>
+            <span className="text-[11px] text-[var(--text-muted)]">%</span>
+          </div>
+          <p className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1">Conv.</p>
+        </div>
+      </div>
+
+      {/* Active progress bar */}
+      <div className="mt-4">
+        <div className="h-1 rounded-full bg-[var(--bg-subtle)] overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{ width: `${activeRate}%`, background: cfg.accent, opacity: 0.6 }}
+          />
+        </div>
+        <p className="text-[10px] text-[var(--text-muted)] mt-1">{activeRate}% do total ativos</p>
+      </div>
+    </motion.div>
   );
 }
 
 export default function AgentesPage() {
-  const { data: stats, loading: loadingStats, error: errorStats, refetch: refetchStats } =
-    useSupabase(() => getAgentStats(), []);
+  const { data: stats, loading, error, refetch } = useSupabase(() => getAgentStats(), []);
 
-  const { data: conversations, loading: loadingConv, error: errorConv, refetch: refetchConv } =
-    useSupabase(() => getRecentConversations(), []);
-
-  const totalLeads = stats?.reduce((sum, s) => sum + s.total, 0) ?? 0;
-  const totalActive = stats?.reduce((sum, s) => sum + s.active, 0) ?? 0;
+  const totalLeads  = stats?.reduce((s, r) => s + r.total,  0) ?? 0;
+  const totalActive = stats?.reduce((s, r) => s + r.active, 0) ?? 0;
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
-      <Header title="Agentes IA" subtitle="Monitoramento dos agentes de atendimento" />
+    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
+      <Header title="Agentes IA" subtitle="Clique em um agente para ver os detalhes" />
 
-      <main className="px-6 py-8 space-y-8 max-w-[1440px] mx-auto">
-        {/* Summary metrics */}
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          {loadingStats ? (
+      <main className="flex-1 overflow-y-auto px-6 py-6 max-w-[1440px] mx-auto w-full space-y-8">
+        {/* Summary */}
+        <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {loading ? (
             Array.from({ length: 3 }).map((_, i) => <MetricCardSkeleton key={i} />)
-          ) : errorStats ? (
-            <div className="col-span-full">
-              <ErrorState message={errorStats} onRetry={refetchStats} />
-            </div>
+          ) : error ? (
+            <div className="col-span-3"><ErrorState message={error} onRetry={refetch} /></div>
           ) : (
             <>
-              <Card>
-                <div className="h-1.5 bg-gradient-to-r from-blue-500 to-indigo-500" />
-                <CardContent>
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                      <Bot size={22} className="text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Agentes Ativos</p>
-                      <p className="font-data text-[32px] font-extrabold text-[var(--text-primary)] leading-none mt-1">5</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <div className="h-1.5 bg-gradient-to-r from-emerald-500 to-teal-500" />
-                <CardContent>
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                      <Users size={22} className="text-emerald-600" />
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Leads Atendidos</p>
-                      <p className="font-data text-[32px] font-extrabold text-[var(--text-primary)] leading-none mt-1">{totalLeads}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <div className="h-1.5 bg-gradient-to-r from-violet-500 to-purple-500" />
-                <CardContent>
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                      <UserCheck size={22} className="text-violet-600" />
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Leads Ativos</p>
-                      <p className="font-data text-[32px] font-extrabold text-[var(--text-primary)] leading-none mt-1">{totalActive}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <MetricCard label="Agentes Ativos"  value="5"              icon={Bot}       accent="blue"    />
+              <MetricCard label="Leads Totais"    value={String(totalLeads)}  icon={Users}     accent="emerald" />
+              <MetricCard label="Leads Ativos"    value={String(totalActive)} icon={UserCheck} accent="violet"  />
             </>
           )}
         </section>
 
         {/* Agent cards */}
         <section>
-          <h2 className="text-[15px] font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-            <Bot size={18} className="text-blue-500" />
-            Agentes por Segmento
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-            {loadingStats ? (
-              Array.from({ length: 5 }).map((_, i) => <MetricCardSkeleton key={i} />)
-            ) : errorStats ? (
-              <div className="col-span-full">
-                <ErrorState message={errorStats} onRetry={refetchStats} />
-              </div>
-            ) : (
-              stats?.map((s) => (
-                <AgentCard key={s.segment} {...s} />
-              ))
-            )}
+          <div className="flex items-center gap-3 mb-5">
+            <TrendingUp size={14} className="text-[var(--text-muted)]" />
+            <h2 className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Agentes por segmento</h2>
           </div>
-        </section>
 
-        {/* Recent conversations */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                  <ArrowRightLeft size={16} className="text-blue-600" />
-                </div>
-                <div>
-                  <h2 className="text-[15px] font-bold text-[var(--text-primary)]">Conversas Recentes</h2>
-                  <p className="text-[12px] mt-0.5" style={{ color: "var(--text-muted)" }}>Últimas interações dos agentes</p>
-                </div>
-              </div>
-              {conversations && conversations.length > 0 && (
-                <Badge variant="default">{conversations.length}</Badge>
-              )}
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+              {Array.from({ length: 5 }).map((_, i) => <MetricCardSkeleton key={i} />)}
             </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loadingConv ? (
-              <div className="p-5 space-y-0">
-                {Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)}
-              </div>
-            ) : errorConv ? (
-              <div className="p-5">
-                <ErrorState message={errorConv} onRetry={refetchConv} />
-              </div>
-            ) : !conversations?.length ? (
-              <div className="text-center py-16">
-                <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-                  <Bot size={28} className="text-slate-400" />
-                </div>
-                <p className="text-[14px] font-medium" style={{ color: "var(--text-muted)" }}>
-                  Nenhuma conversa registrada ainda
-                </p>
-                <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
-                  As conversas dos agentes aparecerão aqui
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm table-enterprise">
-                  <thead>
-                    <tr>
-                      {["Canal", "Intenção", "Resumo", "Status", "Início"].map((h) => (
-                        <th key={h}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(conversations as Conversation[]).map((conv) => (
-                      <tr key={conv.id}>
-                        <td>
-                          <Badge variant="info">{conv.channel ?? "—"}</Badge>
-                        </td>
-                        <td className="font-medium text-[var(--text-primary)]">
-                          {conv.intent ?? "—"}
-                        </td>
-                        <td className="text-[var(--text-secondary)] max-w-[300px] truncate">
-                          {conv.summary ?? "—"}
-                        </td>
-                        <td>
-                          <Badge variant={conv.status === "completed" ? "success" : conv.status === "active" ? "info" : "warning"}>
-                            {conv.status ?? "—"}
-                          </Badge>
-                        </td>
-                        <td className="text-[13px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-                          {conv.started_at ? new Date(conv.started_at).toLocaleString("pt-BR") : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          ) : error ? (
+            <ErrorState message={error} onRetry={refetch} />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+              {stats?.map((s, i) => <AgentCard key={s.segment} {...s} index={i} />)}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );
