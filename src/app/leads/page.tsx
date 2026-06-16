@@ -138,8 +138,10 @@ export default function LeadsPage() {
   /* ── Supabase Realtime auto-refresh ────────────────────────────── */
   const refetchActiveRef = useRef(refetchActive);
   const refetchAllRef    = useRef(refetchAll);
-  refetchActiveRef.current = refetchActive;
-  refetchAllRef.current    = refetchAll;
+  useEffect(() => {
+    refetchActiveRef.current = refetchActive;
+    refetchAllRef.current    = refetchAll;
+  });
 
   useEffect(() => {
     const channel = subscribeToLeads(() => {

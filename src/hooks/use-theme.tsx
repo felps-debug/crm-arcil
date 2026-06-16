@@ -15,6 +15,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem("arcil-theme") as Theme | null;
     if (stored === "dark") {
+      // Intencional: localStorage só existe no client. Mantemos o estado inicial
+      // em "light" (igual ao SSR) e só ajustamos aqui, depois de montar, pra não
+      // gerar mismatch de hidratação entre servidor e cliente.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTheme("dark");
       document.documentElement.classList.add("dark");
     }
