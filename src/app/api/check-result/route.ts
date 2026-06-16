@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get("sessionId");
@@ -7,7 +7,9 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "sessionId obrigatório" }, { status: 400 });
   }
 
-  const supabase = await createClient();
+  // Usa o client admin (service role) — a tabela generated_images não tem mais
+  // policy pública de SELECT (fechamos esse acesso direto via API key anônima).
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("generated_images")
     .select("url_imagem_final")
