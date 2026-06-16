@@ -2,7 +2,7 @@
 
 /* ══════════════════════════════════════════════════════════════════
    ARCIL CRM — Design System (Apple-inspired)
-   Typography: Outfit (UI) + IBM Plex Mono (data)
+   Typography: Montserrat (UI — mesma fonte do site arcil.com.br) + IBM Plex Mono (dados)
    ══════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -73,7 +73,7 @@
 body {
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: var(--font-outfit, "Outfit"), -apple-system, BlinkMacSystemFont, "San Francisco", "Helvetica Neue", sans-serif;
+  font-family: var(--font-sans, "Montserrat"), -apple-system, BlinkMacSystemFont, "San Francisco", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "cv11", "ss01";

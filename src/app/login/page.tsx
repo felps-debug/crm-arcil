@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff, Loader2, Wind, ArrowRight, CheckCircle2 } from "lucide-react";
+import Image from "next/image";
+import { Eye, EyeOff, Loader2, ArrowRight, CheckCircle2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -58,6 +59,19 @@ function Field({ label, type, value, onChange, autoComplete, required, right }: 
   );
 }
 
+function EyeBtn({ show, toggle }: { show: boolean; toggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={show ? "Ocultar senha" : "Mostrar senha"}
+      className="text-white/25 hover:text-white/60 transition-colors duration-150 p-1"
+    >
+      {show ? <EyeOff size={14} strokeWidth={2} /> : <Eye size={14} strokeWidth={2} />}
+    </button>
+  );
+}
+
 /* ─── Page ────────────────────────────────────────────────────────── */
 export default function LoginPage() {
   const [tab, setTab] = useState<Tab>("login");
@@ -94,17 +108,6 @@ export default function LoginPage() {
     if (err) { setError(err.message); setLoading(false); }
     else { setDone(true); setLoading(false); }
   }
-
-  const EyeBtn = ({ show, toggle }: { show: boolean; toggle: () => void }) => (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-label={show ? "Ocultar senha" : "Mostrar senha"}
-      className="text-white/25 hover:text-white/60 transition-colors duration-150 p-1"
-    >
-      {show ? <EyeOff size={14} strokeWidth={2} /> : <Eye size={14} strokeWidth={2} />}
-    </button>
-  );
 
   return (
     <div
@@ -162,23 +165,18 @@ export default function LoginPage() {
             {/* ── Logo ── */}
             <div className="flex flex-col items-center gap-3.5">
               <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center"
+                className="w-14 h-14 rounded-xl flex items-center justify-center"
                 style={{
                   background: "linear-gradient(145deg, #1d4ed8, #1e40af)",
                   boxShadow: "0 8px 24px rgba(29,78,216,0.4), inset 0 1px 0 rgba(255,255,255,0.12)",
                 }}
               >
-                <Wind size={22} className="text-white" strokeWidth={2.2} />
+                <Image src="/logo.png" alt="Grupo Arcil" width={32} height={32} className="w-8 h-8 object-contain" />
               </div>
               <div className="text-center">
+                <Image src="/logo-arcil-full.png" alt="Grupo Arcil" width={162} height={54} className="h-6 w-auto object-contain mx-auto" />
                 <p
-                  className="text-white font-black text-xl leading-none"
-                  style={{ letterSpacing: "0.12em" }}
-                >
-                  ARCIL
-                </p>
-                <p
-                  className="text-[9px] font-bold mt-1.5"
+                  className="text-[9px] font-bold mt-2"
                   style={{ color: "rgba(96,165,250,0.4)", letterSpacing: "0.3em" }}
                 >
                   CRM

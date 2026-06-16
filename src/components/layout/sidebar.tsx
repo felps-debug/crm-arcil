@@ -75,10 +75,10 @@ export function Sidebar() {
           initial={false}
           animate={sidebarOpen ? "show" : "hide"}
           variants={labelAnim}
-          className="ml-3 overflow-hidden whitespace-nowrap"
+          className="ml-3 overflow-hidden whitespace-nowrap flex items-center gap-2"
         >
-          <p className="text-white font-bold text-[14px] leading-none tracking-widest">ARCIL</p>
-          <p className="text-[9px] font-semibold mt-0.5 tracking-[0.2em]" style={{ color: "rgba(255,255,255,0.3)" }}>CRM</p>
+          <Image src="/logo-arcil-full.png" alt="Grupo Arcil" width={108} height={36} className="h-[15px] w-auto object-contain" />
+          <span className="text-[9px] font-semibold tracking-[0.2em]" style={{ color: "rgba(255,255,255,0.3)" }}>CRM</span>
         </motion.div>
       </div>
 
@@ -186,7 +186,7 @@ export function Sidebar() {
           <div className="w-6 h-6 rounded-md overflow-hidden bg-white/10">
             <Image src="/logo.png" alt="ARCIL" width={24} height={24} className="w-full h-full object-contain" />
           </div>
-          <p className="text-white font-bold text-[13px] tracking-widest">ARCIL</p>
+          <Image src="/logo-arcil-full.png" alt="Grupo Arcil" width={108} height={36} className="h-[14px] w-auto object-contain" />
         </div>
       </div>
 
@@ -214,7 +214,7 @@ export function Sidebar() {
                   <div className="w-7 h-7 rounded-md overflow-hidden bg-white/10">
                     <Image src="/logo.png" alt="ARCIL" width={28} height={28} className="w-full h-full object-contain" />
                   </div>
-                  <p className="text-white font-bold text-[14px] tracking-widest">ARCIL</p>
+                  <Image src="/logo-arcil-full.png" alt="Grupo Arcil" width={108} height={36} className="h-[15px] w-auto object-contain" />
                 </div>
                 <button onClick={() => setMobileOpen(false)} className="p-1.5 text-white/40 hover:text-white rounded-lg transition-colors">
                   <X size={16} />

@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { SectionTitle } from "@/components/ui/section-title";
 import { MetricCardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
+import { CobrancaLogDrawer } from "@/components/ui/cobranca-log-drawer";
 import { useSupabase } from "@/hooks/use-supabase";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
@@ -116,6 +117,10 @@ export default function CobrancaPage() {
   const [logs, setLogs] = useState<CobrancaLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [errorLogs, setErrorLogs] = useState<string | null>(null);
+  const [selectedLog, setSelectedLog] = useState<CobrancaLog | null>(null);
+  const selectedFollowup = selectedLog
+    ? followups?.find((f) => f.numero_cliente === selectedLog.telefone) ?? null
+    : null;
 
   const fetchLogs = useCallback(async () => {
     setLoadingLogs(true); setErrorLogs(null);
@@ -339,7 +344,12 @@ export default function CobrancaPage() {
                         <thead><tr>{["Nome","Telefone","Valor","Vencimento","Status","Respondeu","Pagamento","Disparo"].map((h) => <th key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {logs.map((log) => (
-                            <tr key={log.id}>
+                            <tr
+                              key={log.id}
+                              onClick={() => setSelectedLog(log)}
+                              className="cursor-pointer hover:bg-[var(--bg-subtle)] transition-colors"
+                              title="Ver todos os detalhes deste disparo"
+                            >
                               <td className="font-medium text-[var(--text-primary)]">{log.nome ?? "—"}</td>
                               <td className="tabular-nums">{log.telefone}</td>
                               <td>{log.valor ?? "—"}</td>
@@ -397,6 +407,8 @@ export default function CobrancaPage() {
           )}
         </AnimatePresence>
       </main>
+
+      <CobrancaLogDrawer log={selectedLog} followup={selectedFollowup} onClose={() => setSelectedLog(null)} />
     </div>
   );
 }

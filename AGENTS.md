@@ -111,7 +111,7 @@ N8N_COBRANCA_WEBHOOK=...        ← opcional: notifica n8n após disparar cobran
 
 ## Design System
 
-- Tipografia: **Outfit** (UI) + **IBM Plex Mono** (dados numéricos)
+- Tipografia: **Montserrat** (UI — mesma fonte do site institucional arcil.com.br) + **IBM Plex Mono** (dados numéricos)
 - Tema: variáveis CSS em `globals.css` — sempre `var(--bg-surface)`, `var(--text-primary)`, etc.
 - Dark/light via classe `.dark` — NÃO usar `bg-white` hardcoded
 - Componentes base: `Card`, `Badge`, `MetricCard`, `SectionTitle`, `SectionTitle`, `ErrorState`, skeletons
