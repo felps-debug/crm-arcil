@@ -12,6 +12,7 @@ import { MetricCardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { useSupabase } from "@/hooks/use-supabase";
 import { createClient } from "@/lib/supabase/client";
+import { formatCurrency } from "@/lib/utils";
 import { getCobrancaLog, getCobrancaStats, getFollowupsByType } from "@/lib/supabase/queries";
 import type { CobrancaLog } from "@/types";
 import {
@@ -22,6 +23,35 @@ import {
 type DisparoLead = Record<string, string>;
 
 function normalizeKey(k: string) { return k.toLowerCase().replace(/[^a-z]/g, ""); }
+
+// ERP exporta o cliente como "535 - 16.711.842 ADILSON ROBERTO SOARES" (código - doc nome)
+// ou "1282 - CLEBER LEONARDO DOS SANTOS 05141624900" (doc colado no final do nome).
+// Extrai só o nome, descartando código e CPF/CNPJ.
+function parseClienteField(raw: string): { codigo: string; nome: string } {
+  const trimmed = raw.trim();
+  const m = trimmed.match(/^(\d+)\s*-\s*(.+)$/);
+  const codigo = m ? m[1] : "";
+  let nome = (m ? m[2] : trimmed).trim();
+  nome = nome.replace(/^[\d./-]+\s+/, "");  // remove CPF/CNPJ com pontos antes do nome
+  nome = nome.replace(/\s+\d{6,}$/, "");     // remove CPF/CNPJ colado no final do nome
+  return { codigo, nome: nome.trim() };
+}
+
+// Converte texto monetário ("530,00" pt-BR, "1.234,56" pt-BR ou "17.16" en-US) para número.
+function parseMoneyToNumber(raw: string): number | null {
+  if (!raw) return null;
+  let s = raw.replace(/[^\d.,-]/g, "").trim();
+  if (!s) return null;
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  if (lastComma > -1 && lastDot > -1) {
+    s = lastComma > lastDot ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+  } else if (lastComma > -1) {
+    s = s.replace(",", ".");
+  }
+  const num = parseFloat(s);
+  return Number.isFinite(num) ? num : null;
+}
 
 function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
   return rows.map((row) => {
@@ -38,11 +68,33 @@ function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
     const digits = rawPhone.replace(/\D/g, "");
     const numero = digits ? `55${digits}` : "";
 
+    // Nome: coluna direta (nome/cliente) ou combinada do ERP "Cód / Cliente" (ex: "535 - 16.711.842 FULANO")
+    let nome = n["nome"] ?? "";
+    let codigoCliente = "";
+    if (!nome) {
+      const clienteKey = Object.keys(n).find((k) => k.includes("cliente"));
+      if (clienteKey) {
+        const parsed = parseClienteField(n[clienteKey]);
+        nome = parsed.nome;
+        codigoCliente = parsed.codigo;
+      }
+    }
+
+    // Valor: coluna direta "valor" ou "R$ Princ" do relatório ERP
+    let valorRaw = n["valor"] ?? "";
+    if (!valorRaw) {
+      const princKey = Object.keys(n).find((k) => k.includes("princ"));
+      if (princKey) valorRaw = n[princKey];
+    }
+    const valorNum = parseMoneyToNumber(valorRaw);
+    const valor = valorNum !== null ? formatCurrency(valorNum) : valorRaw;
+
     return {
       ...original,
       numero,
-      nome:       n["nome"]       ?? n["cliente"]    ?? "",
-      valor:      n["valor"]      ?? "",
+      nome,
+      valor,
+      codigo_cliente: codigoCliente,
       vencimento: n["vencimento"] ?? n["prorrog"]    ?? n["datavcto"] ?? n["vcto"] ?? "",
       documento:  n["serdocpar"]  ?? n["documento"]  ?? n["doc"]     ?? n["cpf"]  ?? n["cnpj"] ?? "",
       tag:        "COBRANCA",
@@ -97,7 +149,9 @@ export default function CobrancaPage() {
     reader.onload = (ev) => {
       try {
         const wb = xlsxRead(new Uint8Array(ev.target!.result as ArrayBuffer), { type: "array" });
-        const rows = xlsxUtils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+        // raw: false → usa o texto formatado da célula (evita corromper "530,00" em 53000
+        // e datas em números de série ao ler CSV/XLSX do relatório do ERP)
+        const rows = xlsxUtils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: false });
         const leads = parseSheetLeads(rows);
         if (!leads.length) throw new Error("Nenhum lead válido. Verifique se há coluna de telefone.");
         setPreview(leads);
