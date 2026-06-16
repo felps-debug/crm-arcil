@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 
 type DisparoLead = Record<string, string>;
 
+const N8N_COBRANCA_WEBHOOK = process.env.N8N_COBRANCA_WEBHOOK || "https://arcil-n8n.47nukb.easypanel.host/webhook/cobranca";
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -27,15 +29,13 @@ export async function POST(req: NextRequest) {
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
   // Envia para o n8n o array completo com todos os campos do ERP + numero + tag
-  if (process.env.N8N_COBRANCA_WEBHOOK) {
-    try {
-      await fetch(process.env.N8N_COBRANCA_WEBHOOK, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(leads),
-      });
-    } catch {}
-  }
+  try {
+    await fetch(N8N_COBRANCA_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(leads),
+    });
+  } catch {}
 
   return Response.json({ ok: true, inserted: records.length });
 }
