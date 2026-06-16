@@ -186,7 +186,7 @@ export default function AdminPage() {
     <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
       <Header title="Admin" subtitle="Gestão de usuários e permissões" />
 
-      <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 sm:py-6 max-w-[1000px] mx-auto w-full space-y-6">
+      <main className="flex-1 overflow-y-auto px-6 py-6 max-w-[1440px] mx-auto w-full space-y-6">
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -194,7 +194,7 @@ export default function AdminPage() {
               <button
                 onClick={() => { setForm({ email: "", password: "", full_name: "", role: "employee" }); setShowCreate(true); }}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white transition-all shadow-md"
-                style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}
+                style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)" }}
               >
                 <UserPlus size={14} />
                 Criar usuário
@@ -323,7 +323,7 @@ export default function AdminPage() {
               <button type="button" onClick={() => setShowCreate(false)} className="flex-1 py-2.5 rounded-xl border border-[var(--border)] text-[13px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] transition-colors">
                 Cancelar
               </button>
-              <button type="submit" disabled={submitting} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all disabled:opacity-60 flex items-center justify-center gap-2" style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}>
+              <button type="submit" disabled={submitting} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all disabled:opacity-60 flex items-center justify-center gap-2" style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)" }}>
                 {submitting && <Loader2 size={14} className="animate-spin" />}
                 Criar usuário
               </button>
@@ -348,7 +348,7 @@ export default function AdminPage() {
               <button type="button" onClick={() => setEditUser(null)} className="flex-1 py-2.5 rounded-xl border border-[var(--border)] text-[13px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] transition-colors">
                 Cancelar
               </button>
-              <button type="submit" disabled={submitting} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all disabled:opacity-60 flex items-center justify-center gap-2" style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)" }}>
+              <button type="submit" disabled={submitting} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all disabled:opacity-60 flex items-center justify-center gap-2" style={{ background: "linear-gradient(135deg,#2563eb,#1d4ed8)" }}>
                 {submitting && <Loader2 size={14} className="animate-spin" />}
                 Salvar
               </button>

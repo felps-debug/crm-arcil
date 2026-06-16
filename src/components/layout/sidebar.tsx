@@ -13,6 +13,7 @@ import Image from "next/image";
 import { useTheme } from "@/hooks/use-theme";
 import { createClient } from "@/lib/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useSidebar } from "@/contexts/sidebar-context";
 
 const NAV_BASE = [
   { href: "/",                label: "Dashboard",         icon: LayoutDashboard },
@@ -34,7 +35,7 @@ export function Sidebar() {
   const pathname    = usePathname();
   const router      = useRouter();
   const [mobileOpen,    setMobileOpen]    = useState(false);
-  const [sidebarOpen,   setSidebarOpen]   = useState(false);
+  const { sidebarOpen, setSidebarOpen }   = useSidebar();
   const { theme, toggle: toggleTheme } = useTheme();
   const { profile, isSuperAdmin } = useCurrentUser();
 

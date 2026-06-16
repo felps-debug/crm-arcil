@@ -29,9 +29,9 @@
   --violet:  #bf5af2;
   --sky:     #32ade6;
 
-  /* ── Sidebar ──────────────────────────────────────────────────── */
-  --sidebar-bg:       #1c1c1e;
-  --sidebar-border:   rgba(255,255,255,0.06);
+  /* ── Sidebar (azul-marinho) ──────────────────────────────────────── */
+  --sidebar-bg:       #0d1b34;
+  --sidebar-border:   rgba(255,255,255,0.08);
   --sidebar-w-closed: 64px;
   --sidebar-w-open:   220px;
 
@@ -57,8 +57,8 @@
   --border:        rgba(255,255,255,0.08);
   --border-strong: rgba(255,255,255,0.14);
 
-  --sidebar-bg:     #111113;
-  --sidebar-border: rgba(255,255,255,0.05);
+  --sidebar-bg:     #081226;
+  --sidebar-border: rgba(255,255,255,0.06);
 
   --shadow-xs:   0 1px 2px rgba(0,0,0,0.5);
   --shadow-sm:   0 1px 3px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4);

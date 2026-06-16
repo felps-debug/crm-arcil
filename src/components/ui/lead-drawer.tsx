@@ -57,7 +57,7 @@ export function LeadDrawer({ lead, onClose }: { lead: Lead | null; onClose: () =
             aria-label={`Detalhes de ${lead.name ?? "lead"}`}
           >
             {/* Gradient top bar */}
-            <div className="h-1.5 bg-gradient-to-r from-blue-500 via-violet-500 to-cyan-500" />
+            <div className="h-1.5 bg-gradient-to-r from-blue-700 via-blue-500 to-sky-400" />
 
             {/* Header */}
             <div className="px-7 py-6 border-b border-[var(--border)]">
@@ -66,7 +66,7 @@ export function LeadDrawer({ lead, onClose }: { lead: Lead | null; onClose: () =
                   <div
                     className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
                     style={{
-                      background: "linear-gradient(135deg, #2563eb, #7c3aed)",
+                      background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
                       boxShadow: "0 4px 12px rgba(37,99,235,0.3)",
                     }}
                   >
@@ -174,7 +174,7 @@ export function LeadDrawer({ lead, onClose }: { lead: Lead | null; onClose: () =
                         animate={{ width: `${Math.min(lead.lead_score ?? 0, 100)}%` }}
                         transition={{ duration: 0.8, delay: 0.3 }}
                         className="h-full rounded-full"
-                        style={{ background: "linear-gradient(90deg, #2563eb, #7c3aed)" }}
+                        style={{ background: "linear-gradient(90deg, #2563eb, #1d4ed8)" }}
                       />
                     </div>
                   </div>
