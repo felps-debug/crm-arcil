@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 type DisparoLead = Record<string, string>;
 
-const PYTHON_COBRANCA_URL = process.env.PYTHON_COBRANCA_URL || "https://arcil-cobranca-py.47nukb.easypanel.host/cobranca";
+const PYTHON_COBRANCA_URL = process.env.PYTHON_COBRANCA_URL || "https://arcil-arcil-cobranca-py.47nukb.easypanel.host/cobranca";
 
 // Só quem tem permissão de gerenciar cobrança (ver ROLE_PERMISSIONS em /api/admin/users)
 // pode disparar mensagens reais de cobrança para números de telefone.
