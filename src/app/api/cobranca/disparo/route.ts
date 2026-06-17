@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 type DisparoLead = Record<string, string>;
 
-const N8N_COBRANCA_WEBHOOK = process.env.N8N_COBRANCA_WEBHOOK || "https://arcil-n8n.47nukb.easypanel.host/webhook/cobranca";
+const PYTHON_COBRANCA_URL = process.env.PYTHON_COBRANCA_URL || "https://arcil-cobranca-py.47nukb.easypanel.host/cobranca";
 
 // Só quem tem permissão de gerenciar cobrança (ver ROLE_PERMISSIONS em /api/admin/users)
 // pode disparar mensagens reais de cobrança para números de telefone.
@@ -41,9 +41,9 @@ export async function POST(req: NextRequest) {
   const { error } = await supabase.from("cobranca_log").insert(records);
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  // Envia para o n8n o array completo com todos os campos do ERP + numero + tag
+  // Envia para a automação Python o array completo com todos os campos do ERP + numero + tag
   try {
-    await fetch(N8N_COBRANCA_WEBHOOK, {
+    await fetch(PYTHON_COBRANCA_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(leads),

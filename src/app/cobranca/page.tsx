@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, Fragment } from "react";
 import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/layout/header";
@@ -12,13 +12,14 @@ import { MetricCardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { CobrancaLogDrawer } from "@/components/ui/cobranca-log-drawer";
 import { useSupabase } from "@/hooks/use-supabase";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { getCobrancaLog, getCobrancaStats, getFollowupsByType } from "@/lib/supabase/queries";
 import type { CobrancaLog } from "@/types";
 import {
   Receipt, Clock, MessageCircleReply, CheckCircle2, XCircle,
-  Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw,
+  Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw, ShieldAlert, ChevronDown, ChevronRight,
 } from "lucide-react";
 
 type DisparoLead = Record<string, string>;
@@ -103,10 +104,11 @@ function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
   }).filter((l) => l.numero.length >= 12);
 }
 
-type Tab = "disparar" | "logs" | "followups";
+type Tab = "disparar" | "logs" | "followups" | "tecnico";
 
 export default function CobrancaPage() {
   const [tab, setTab] = useState<Tab>("disparar");
+  const { isSuperAdmin } = useCurrentUser();
 
   const { data: stats, loading: loadingStats, error: errorStats, refetch: refetchStats } =
     useSupabase(() => getCobrancaStats(), []);
@@ -180,10 +182,13 @@ export default function CobrancaPage() {
     } finally { setDispatching(false); }
   }
 
-  const TABS: { id: Tab; label: string; count?: number }[] = [
+  const [expandedMeta, setExpandedMeta] = useState<string | null>(null);
+
+  const TABS: { id: Tab; label: string; count?: number; adminOnly?: boolean }[] = [
     { id: "disparar",  label: "Disparar" },
     { id: "logs",      label: "Monitoramento", count: logs.length },
     { id: "followups", label: "Follow-ups",    count: followups?.length },
+    { id: "tecnico",   label: "Logs Técnicos", count: logs.length, adminOnly: true },
   ];
 
   return (
@@ -210,7 +215,7 @@ export default function CobrancaPage() {
 
         {/* Tabs */}
         <div className="flex items-center gap-1 p-1 rounded-xl bg-[var(--bg-surface)] border border-[var(--border)] w-fit shadow-[var(--shadow-xs)]">
-          {TABS.map((t) => (
+          {TABS.filter((t) => !t.adminOnly || isSuperAdmin).map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
@@ -225,6 +230,7 @@ export default function CobrancaPage() {
                   transition={{ type: "spring", stiffness: 500, damping: 40 }}
                 />
               )}
+              {t.adminOnly && <ShieldAlert size={11} className="relative z-10 text-amber-500" />}
               <span className="relative z-10">{t.label}</span>
               {t.count !== undefined && t.count > 0 && (
                 <span className="relative z-10 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[var(--bg-subtle)] text-[var(--text-muted)]">
@@ -405,6 +411,85 @@ export default function CobrancaPage() {
               </Card>
             </motion.div>
           )}
+          {tab === "tecnico" && isSuperAdmin && (
+            <motion.div key="tecnico" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <SectionTitle icon={ShieldAlert} title="Logs Técnicos da Automação" subtitle="Dados brutos do sistema Python — visível apenas para superadmin" iconBg="bg-amber-500/10" iconColor="text-amber-600" />
+                    <button onClick={fetchLogs} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors" title="Atualizar">
+                      <RefreshCw size={13} className={loadingLogs ? "animate-spin" : ""} />
+                    </button>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingLogs ? (
+                    <div className="p-5">{Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
+                  ) : errorLogs ? (
+                    <div className="p-5"><ErrorState message={errorLogs} onRetry={fetchLogs} /></div>
+                  ) : !logs.length ? (
+                    <p className="text-sm text-center py-12 text-[var(--text-muted)]">Nenhum registro encontrado</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm table-enterprise">
+                        <thead>
+                          <tr>{["","Nome","Telefone","Documento","Valor","Vencimento","Status Automação","Data Disparo","Metadata ERP"].map((h) => <th key={h}>{h}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                          {logs.map((log) => {
+                            const isExpanded = expandedMeta === log.id;
+                            const statusColor = log.status_disparo === "DISPARADO"
+                              ? "success"
+                              : log.status_disparo === "NAO_DISPARADO"
+                              ? "danger"
+                              : "warning";
+                            return (
+                              <Fragment key={log.id}>
+                                <tr className="hover:bg-[var(--bg-subtle)] transition-colors">
+                                  <td>
+                                    <button
+                                      onClick={() => setExpandedMeta(isExpanded ? null : log.id)}
+                                      className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                                    >
+                                      {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                    </button>
+                                  </td>
+                                  <td className="font-medium text-[var(--text-primary)]">{log.nome ?? "—"}</td>
+                                  <td className="tabular-nums text-xs">{log.telefone}</td>
+                                  <td className="text-xs text-[var(--text-muted)]">{log.documento ?? "—"}</td>
+                                  <td>{log.valor ?? "—"}</td>
+                                  <td>{log.vencimento ?? "—"}</td>
+                                  <td><Badge variant={statusColor}>{log.status_disparo ?? "—"}</Badge></td>
+                                  <td className="text-xs tabular-nums text-[var(--text-muted)]">{log.data_disparo ? new Date(log.data_disparo).toLocaleString("pt-BR") : "—"}</td>
+                                  <td>
+                                    {log.metadata ? (
+                                      <span className="text-xs text-[var(--blue)] cursor-pointer" onClick={() => setExpandedMeta(isExpanded ? null : log.id)}>
+                                        {isExpanded ? "ocultar" : "ver dados ERP"}
+                                      </span>
+                                    ) : <span className="text-xs text-[var(--text-muted)]">—</span>}
+                                  </td>
+                                </tr>
+                                {isExpanded && log.metadata && (
+                                  <tr>
+                                    <td colSpan={9} className="bg-[var(--bg-subtle)] px-4 py-3">
+                                      <pre className="text-[11px] text-[var(--text-secondary)] whitespace-pre-wrap break-all font-mono max-h-48 overflow-y-auto">
+                                        {JSON.stringify(log.metadata, null, 2)}
+                                      </pre>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
         </AnimatePresence>
       </main>
 
