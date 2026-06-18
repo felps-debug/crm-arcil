@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 type DisparoLead = Record<string, string>;
 
-const PYTHON_COBRANCA_URL = process.env.PYTHON_COBRANCA_URL || "https://arcil-arcil-cobranca-py.47nukb.easypanel.host/cobranca";
+const N8N_COBRANCA_URL = process.env.N8N_COBRANCA_URL || "https://arcil-n8n.47nukb.easypanel.host/webhook/cobranca";
 
 // Só quem tem permissão de gerenciar cobrança (ver ROLE_PERMISSIONS em /api/admin/users)
 // pode disparar mensagens reais de cobrança para números de telefone.
@@ -24,26 +24,9 @@ export async function POST(req: NextRequest) {
   const { leads }: { leads: DisparoLead[] } = await req.json();
   if (!leads?.length) return Response.json({ error: "Nenhum lead fornecido" }, { status: 400 });
 
-  const records = leads.map((l) => ({
-    telefone: (l.numero ?? "").replace(/\D/g, ""),
-    nome: l.nome || null,
-    valor: l.valor || null,
-    vencimento: l.vencimento || null,
-    documento: l.documento || null,
-    status_disparo: "PENDENTE",
-    respondeu: false,
-    pagamento_confirmado: false,
-    data_disparo: new Date().toISOString(),
-    // Guarda a linha completa da planilha (todas as colunas originais do ERP) para consulta futura
-    metadata: l,
-  }));
-
-  const { error } = await supabase.from("cobranca_log").insert(records);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-
-  // Envia para a automação Python o array completo com todos os campos do ERP + numero + tag
+  // Envia para o n8n o array completo com todos os campos do ERP
   try {
-    await fetch(PYTHON_COBRANCA_URL, {
+    await fetch(N8N_COBRANCA_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(leads),
