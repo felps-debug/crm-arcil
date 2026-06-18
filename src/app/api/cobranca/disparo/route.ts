@@ -24,13 +24,18 @@ export async function POST(req: NextRequest) {
   const { leads }: { leads: DisparoLead[] } = await req.json();
   if (!leads?.length) return Response.json({ error: "Nenhum lead fornecido" }, { status: 400 });
 
+  let pythonStatus: string | null = null;
   try {
-    await fetch(PYTHON_COBRANCA_URL, {
+    const r = await fetch(PYTHON_COBRANCA_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(leads),
     });
-  } catch {}
+    pythonStatus = `ok:${r.status}`;
+  } catch (err) {
+    pythonStatus = `erro:${String(err)}`;
+    console.error("[DISPARO] Falha ao chamar Python:", err);
+  }
 
-  return Response.json({ ok: true, disparados: leads.length });
+  return Response.json({ ok: true, disparados: leads.length, pythonStatus });
 }
