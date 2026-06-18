@@ -3,7 +3,7 @@
    ================================================================ */
 
 import { createClient } from "./client";
-import type { Lead, Followup, CobrancaLog, Product, Vendor } from "@/types";
+import type { Lead, Followup, CobrancaLog, Product, Vendor, Cidade } from "@/types";
 
 const supabase = createClient();
 
@@ -326,4 +326,16 @@ export function subscribeToFollowups(callback: (payload: unknown) => void) {
     .channel("followups-changes")
     .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, callback)
     .subscribe();
+}
+
+/* ── CIDADES ────────────────────────────────────────────────────── */
+
+export async function getCidades(): Promise<Cidade[]> {
+  const { data, error } = await supabase
+    .from("cidades")
+    .select("id, nome, codigo, ativa")
+    .eq("ativa", true)
+    .order("nome");
+  if (error) throw error;
+  return data ?? [];
 }
