@@ -15,11 +15,11 @@ import { useSupabase } from "@/hooks/use-supabase";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { getCobrancaLog, getCobrancaStats, getFollowupsByType, getCidades } from "@/lib/supabase/queries";
-import type { CobrancaLog, Cidade } from "@/types";
+import { getCobrancaLog, getCobrancaStats, getFollowupsByType } from "@/lib/supabase/queries";
+import type { CobrancaLog } from "@/types";
 import {
   Receipt, Clock, MessageCircleReply, CheckCircle2, XCircle,
-  Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw, ShieldAlert, ChevronDown, ChevronRight, MapPin,
+  Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw, ShieldAlert, ChevronDown, ChevronRight,
 } from "lucide-react";
 
 type DisparoLead = Record<string, string>;
@@ -148,13 +148,6 @@ export default function CobrancaPage() {
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<{ ok: boolean; inserted?: number; error?: string } | null>(null);
 
-  const [cidades, setCidades] = useState<Cidade[]>([]);
-  const [origemSelecionada, setOrigemSelecionada] = useState<string | null>(null);
-
-  useEffect(() => {
-    getCidades().then(setCidades).catch(() => {});
-  }, []);
-
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; e.target.value = "";
     if (!file) return;
@@ -178,7 +171,7 @@ export default function CobrancaPage() {
     if (!preview.length) return;
     setDispatching(true); setDispatchResult(null);
     try {
-      const res = await fetch("/api/cobranca/disparo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leads: preview, origem: origemSelecionada }) });
+      const res = await fetch("/api/cobranca/disparo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leads: preview }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Erro ao disparar");
       setDispatchResult({ ok: true, inserted: data.inserted });
@@ -286,32 +279,11 @@ export default function CobrancaPage() {
 
                   {preview.length > 0 && (
                     <div className="space-y-3">
-                      {/* Seletor de cidade */}
-                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)]">
-                        <MapPin size={14} className="text-[var(--text-muted)] shrink-0" />
-                        <span className="text-[13px] font-medium text-[var(--text-secondary)] shrink-0">Cidade dos leads:</span>
-                        <select
-                          value={origemSelecionada ?? ""}
-                          onChange={(e) => setOrigemSelecionada(e.target.value || null)}
-                          className="flex-1 bg-transparent text-[13px] text-[var(--text-primary)] border-none outline-none cursor-pointer"
-                        >
-                          <option value="">Sem cidade / não identificado</option>
-                          {cidades.map((c) => (
-                            <option key={c.id} value={c.codigo}>{c.nome}</option>
-                          ))}
-                        </select>
-                      </div>
-
                       <div className="flex items-center justify-between">
                         <p className="text-[13px] font-semibold text-[var(--text-primary)]">
                           {preview.length} leads encontrados
-                          {origemSelecionada && (
-                            <span className="ml-2 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-600">
-                              {cidades.find((c) => c.codigo === origemSelecionada)?.nome ?? origemSelecionada}
-                            </span>
-                          )}
                         </p>
-                        <button onClick={() => { setPreview([]); setFileName(null); setOrigemSelecionada(null); }} className="text-[12px] text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1 transition-colors">
+                        <button onClick={() => { setPreview([]); setFileName(null); }} className="text-[12px] text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1 transition-colors">
                           <X size={12} /> Limpar
                         </button>
                       </div>

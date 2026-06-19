@@ -16,15 +16,6 @@ export type LeadSegment =
 
 export type ChannelOrigin = "OUTBOUND" | "WHATSAPP";
 
-/* ── Cidades ────────────────────────────────────────────────────── */
-
-export interface Cidade {
-  id: string;
-  nome: string;
-  codigo: string;
-  ativa: boolean;
-}
-
 /* ── Leads ──────────────────────────────────────────────────────── */
 
 export interface Lead {

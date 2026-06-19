@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Sem permissão para disparar cobrança" }, { status: 403 });
   }
 
-  const { leads, origem }: { leads: DisparoLead[]; origem: string | null } = await req.json();
+  const { leads }: { leads: DisparoLead[] } = await req.json();
   if (!leads?.length) return Response.json({ error: "Nenhum lead fornecido" }, { status: 400 });
 
   let pythonStatus: string | null = null;
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     const r = await fetch(PYTHON_COBRANCA_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leads, origem: origem ?? null }),
+      body: JSON.stringify({ leads }),
     });
     pythonStatus = `ok:${r.status}`;
   } catch (err) {
