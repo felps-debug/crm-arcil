@@ -98,6 +98,7 @@ export interface CobrancaLog {
   pagamento_confirmado: boolean;
   data_disparo: string | null;
   created_at: string | null;
+  boleto_count: number | null;
   /** Linha completa da planilha do ERP usada no disparo (todas as colunas originais). */
   metadata: Record<string, string> | null;
 }
