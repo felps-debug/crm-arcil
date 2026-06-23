@@ -19,7 +19,7 @@ import { getCobrancaLog, getCobrancaStats, getFollowupsByType } from "@/lib/supa
 import type { CobrancaLog } from "@/types";
 import {
   Receipt, Clock, MessageCircleReply, CheckCircle2, XCircle,
-  Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw, ShieldAlert, ChevronDown, ChevronRight,
+  Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw, ShieldAlert, ChevronDown, ChevronRight, RotateCcw,
 } from "lucide-react";
 
 type DisparoLead = Record<string, string>;
@@ -82,8 +82,8 @@ function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
       }
     }
 
-    // Valor: coluna direta "valor" ou "R$ Princ" do relatório ERP
-    let valorRaw = n["valor"] ?? "";
+    // Valor: tenta "valor" → "Receber" (total ERP) → "R$ Receb" → "R$ Princ" como último recurso
+    let valorRaw = n["valor"] ?? n["receber"] ?? n["rreceb"] ?? "";
     if (!valorRaw) {
       const princKey = Object.keys(n).find((k) => k.includes("princ"));
       if (princKey) valorRaw = n[princKey];
@@ -183,6 +183,22 @@ export default function CobrancaPage() {
   }
 
   const [expandedMeta, setExpandedMeta] = useState<string | null>(null);
+  const [reenvioFalhos, setReenvioFalhos] = useState(false);
+  const [reenvioFalhosMsg, setReenvioFalhosMsg] = useState<string | null>(null);
+
+  async function handleReenviarFalhos() {
+    setReenvioFalhos(true); setReenvioFalhosMsg(null);
+    try {
+      const res = await fetch("/api/cobranca/reenviar-nao-disparados", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Erro ao reenviar");
+      setReenvioFalhosMsg("Re-disparo iniciado — acompanhe o Monitoramento");
+    } catch (err) {
+      setReenvioFalhosMsg(err instanceof Error ? err.message : "Erro");
+    } finally { setReenvioFalhos(false); }
+  }
+
+  const naoDisparadosCount = logs.filter((l) => l.status_disparo === "NAO DISPARADO").length;
 
   const TABS: { id: Tab; label: string; count?: number; adminOnly?: boolean }[] = [
     { id: "disparar",  label: "Disparar" },
@@ -329,6 +345,17 @@ export default function CobrancaPage() {
                   <div className="flex items-center justify-between">
                     <SectionTitle icon={Send} title="Monitoramento ao Vivo" subtitle="Atualização automática em tempo real" />
                     <div className="flex items-center gap-3">
+                      {naoDisparadosCount > 0 && (
+                        <button
+                          onClick={handleReenviarFalhos}
+                          disabled={reenvioFalhos}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 transition-colors disabled:opacity-60"
+                          title={`Re-disparar ${naoDisparadosCount} lead(s) com falha`}
+                        >
+                          {reenvioFalhos ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                          Re-disparar falhos ({naoDisparadosCount})
+                        </button>
+                      )}
                       <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-500">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         Ao vivo
@@ -340,6 +367,11 @@ export default function CobrancaPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
+                  {reenvioFalhosMsg && (
+                    <div className="mx-5 mt-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/15 text-[13px] text-amber-600">
+                      <RotateCcw size={14} /> {reenvioFalhosMsg}
+                    </div>
+                  )}
                   {loadingLogs ? (
                     <div className="p-5">{Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
                   ) : errorLogs ? (

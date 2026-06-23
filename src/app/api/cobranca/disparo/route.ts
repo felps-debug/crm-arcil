@@ -37,5 +37,5 @@ export async function POST(req: NextRequest) {
     console.error("[DISPARO] Falha ao chamar Python:", err);
   }
 
-  return Response.json({ ok: true, disparados: leads.length, pythonStatus });
+  return Response.json({ ok: true, inserted: leads.length, pythonStatus });
 }
