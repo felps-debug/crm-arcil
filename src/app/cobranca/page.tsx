@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, Fragment } from "react";
-import { read as xlsxRead, utils as xlsxUtils, write as xlsxWrite } from "xlsx";
+import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { motion, AnimatePresence } from "framer-motion";
@@ -21,7 +21,7 @@ import { getCobrancaLog, getCobrancaStats, getFollowupsByType } from "@/lib/supa
 import type { CobrancaLog } from "@/types";
 import {
   Receipt, Clock, MessageCircleReply, CheckCircle2, XCircle,
-  Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw, ShieldAlert, ChevronDown, ChevronRight, Download, FileText,
+  Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw, ShieldAlert, ChevronDown, ChevronRight, FileText,
 } from "lucide-react";
 
 type DisparoLead = Record<string, string>;
@@ -187,20 +187,6 @@ export default function CobrancaPage() {
   const [expandedMeta, setExpandedMeta] = useState<string | null>(null);
   const [relatorioModal, setRelatorioModal] = useState(false);
   const [relFiltros, setRelFiltros] = useState({ de: "", ate: "", tipo: "Todos", status: "Todos" });
-
-  function handleBaixarNaoDisparados() {
-    const dados = logs.filter((l) => l.status_disparo === "NAO DISPARADO").map((l) => ({
-      Nome: l.nome ?? "", Telefone: l.telefone, Valor: l.valor ?? "",
-      Vencimento: l.vencimento ?? "", Tipo: l.documento ?? "",
-      "Data Disparo": l.data_disparo ? new Date(l.data_disparo).toLocaleString("pt-BR") : "",
-    }));
-    const ws = xlsxUtils.json_to_sheet(dados);
-    const wb = xlsxUtils.book_new();
-    xlsxUtils.book_append_sheet(wb, ws, "Não Disparados");
-    const buf = xlsxWrite(wb, { bookType: "xlsx", type: "array" });
-    const url = URL.createObjectURL(new Blob([buf]));
-    Object.assign(document.createElement("a"), { href: url, download: "nao-disparados.xlsx" }).click();
-  }
 
   function handleGerarPDF() {
     const tipoOpts = ["PHB Maringá", "PHB Londrina", "HLB Maringá", "HLB Londrina", "ARCIL (PIX)", "Todos"];
@@ -383,12 +369,6 @@ export default function CobrancaPage() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[var(--text-secondary)] bg-[var(--bg-subtle)] hover:bg-[var(--bg-muted)] transition-colors border border-[var(--border)]"
                       >
                         <FileText size={12} /> Exportar Relatório
-                      </button>
-                      <button
-                        onClick={handleBaixarNaoDisparados}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
-                      >
-                        <Download size={12} /> Baixar não disparados
                       </button>
                       <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-500">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
