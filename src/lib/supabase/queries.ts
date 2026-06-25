@@ -7,6 +7,9 @@ import type { Lead, Followup, CobrancaLog, Product, Vendor } from "@/types";
 
 const supabase = createClient();
 
+// Projection — excludes heavy metadata/JSON blobs not needed in list views
+const LEAD_FIELDS = "id,name,wa_phone,company,city,region,segment,status,lead_score,channel_origin,created_at,updated_at";
+
 /* ── Date Range helper ──────────────────────────────────────────── */
 
 export interface QueryDateRange {
@@ -30,21 +33,22 @@ function applyDateFilter<T extends { gte: (col: string, val: string) => T; lte: 
 export async function getLeads() {
   const { data, error } = await supabase
     .from("leads")
-    .select("*")
+    .select(LEAD_FIELDS)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data as Lead[];
 }
 
-export async function getActiveLeads(filters?: { segment?: string; status?: string }) {
+export async function getActiveLeads(filters?: { segment?: string; status?: string; limit?: number }) {
   let q = supabase
     .from("leads")
-    .select("*")
+    .select(LEAD_FIELDS)
     .or("channel_origin.neq.OUTBOUND,segment.eq.COBRANCA")
     .order("created_at", { ascending: false });
 
   if (filters?.segment) q = q.eq("segment", filters.segment);
   if (filters?.status) q = q.eq("status", filters.status);
+  if (filters?.limit) q = q.limit(filters.limit);
 
   const { data, error } = await q;
   if (error) throw error;
@@ -55,7 +59,7 @@ export async function getLeadsBySearch(query: string): Promise<Lead[]> {
   if (!query.trim()) return [];
   const { data, error } = await supabase
     .from("leads")
-    .select("*")
+    .select(LEAD_FIELDS)
     .or(`name.ilike.%${query}%,wa_phone.ilike.%${query}%,company.ilike.%${query}%`)
     .order("created_at", { ascending: false })
     .limit(10);
@@ -191,10 +195,13 @@ export async function getDashboardStats() {
 /* ── LEADS TREND (monthly, exclui legado) ──────────────────────── */
 
 export async function getLeadsTrend() {
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const { data, error } = await supabase
     .from("leads")
     .select("created_at")
     .or("channel_origin.neq.OUTBOUND,segment.eq.COBRANCA")
+    .gte("created_at", sixMonthsAgo.toISOString())
     .order("created_at", { ascending: true });
   if (error) throw error;
 
@@ -269,27 +276,24 @@ export async function getVendors() {
 export async function getAgentStats() {
   const segments = ["INSTALLER", "BUILDER", "RESELLER", "CONSUMER", "NEW"] as const;
 
-  const results = await Promise.all(
-    segments.map(async (seg) => {
-      const [
-        { count: total },
-        { count: active },
-        { count: converted },
-      ] = await Promise.all([
-        supabase.from("leads").select("*", { count: "exact", head: true }).eq("segment", seg),
-        supabase.from("leads").select("*", { count: "exact", head: true }).eq("segment", seg).eq("status", "ACTIVE"),
-        supabase.from("leads").select("*", { count: "exact", head: true }).eq("segment", seg).eq("status", "IN_PROGRESS"),
-      ]);
-      return {
-        segment: seg,
-        total: total ?? 0,
-        active: active ?? 0,
-        converted: converted ?? 0,
-      };
-    })
-  );
+  // 1 query instead of 15 — fetch segment+status only, aggregate client-side
+  const { data, error } = await supabase
+    .from("leads")
+    .select("segment,status")
+    .in("segment", [...segments]);
 
-  return results;
+  if (error) throw error;
+  const rows = data ?? [];
+
+  return segments.map((seg) => {
+    const segRows = rows.filter((r) => r.segment === seg);
+    return {
+      segment: seg,
+      total: segRows.length,
+      active: segRows.filter((r) => r.status === "ACTIVE").length,
+      converted: segRows.filter((r) => r.status === "IN_PROGRESS").length,
+    };
+  });
 }
 
 export async function getRecentConversations(limit = 20) {

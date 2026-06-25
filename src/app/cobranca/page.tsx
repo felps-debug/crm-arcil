@@ -1,9 +1,6 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, Fragment, useMemo } from "react";
-import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/layout/header";
 import { MetricCard } from "@/components/ui/metric-card";
@@ -277,10 +274,11 @@ export default function CobrancaPage() {
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<{ ok: boolean; inserted?: number; error?: string } | null>(null);
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; e.target.value = "";
     if (!file) return;
     setParseError(null); setPreview([]); setDispatchResult(null); setFileName(file.name);
+    const { read: xlsxRead, utils: xlsxUtils } = await import("xlsx");
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -334,7 +332,7 @@ export default function CobrancaPage() {
   const [relatorioModal, setRelatorioModal] = useState(false);
   const [relFiltros, setRelFiltros] = useState({ de: "", ate: "", tipo: "Todos", status: "Todos" });
 
-  function handleGerarPDF() {
+  async function handleGerarPDF() {
     const tipoOpts = ["PHB Maringá", "PHB Londrina", "HLB Maringá", "HLB Londrina", "ARCIL (PIX)", "Todos"];
     const statusOpts = ["Todos", "DISPARADO", "NAO DISPARADO", "PENDENTE"];
     const filtrados = logs.filter((l) => {
@@ -344,6 +342,10 @@ export default function CobrancaPage() {
       if (relFiltros.ate && l.data_disparo && new Date(l.data_disparo) > new Date(relFiltros.ate + "T23:59:59")) return false;
       return true;
     });
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
     const doc = new jsPDF();
     doc.setFontSize(14);
     doc.text("Relatório de Cobranças", 14, 16);

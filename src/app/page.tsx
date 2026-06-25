@@ -23,9 +23,9 @@ export default function DashboardPage() {
     useSupabase(() => getLeadsTrend(), []);
 
   const { data: recentLeads, loading: loadingRecent, error: errorRecent, refetch: refetchRecent } =
-    useSupabase(() => getActiveLeads(), []);
+    useSupabase(() => getActiveLeads({ limit: 10 }), []);
 
-  const last10 = recentLeads?.slice(0, 10) ?? [];
+  const last10 = recentLeads ?? [];
 
   return (
     <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
