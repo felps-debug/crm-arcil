@@ -9,11 +9,12 @@ import { MetricCardSkeleton, CardSkeleton, TableRowSkeleton } from "@/components
 import { ErrorState } from "@/components/ui/error-state";
 import { LeadsAreaChart } from "@/components/charts/leads-chart";
 import { useSupabase } from "@/hooks/use-supabase";
-import { getDashboardStats, getLeadsTrend, getActiveLeads } from "@/lib/supabase/queries";
+import { getDashboardStats, getLeadsTrend, getActiveLeads, getRecentActivity } from "@/lib/supabase/queries";
 import { SEGMENT_LABELS, STATUS_LABELS } from "@/types";
 import type { LeadSegment, LeadStatus } from "@/types";
-import { Users, UserCheck, Clock, MessageCircleReply, TrendingUp } from "lucide-react";
-import { getInitials } from "@/lib/utils";
+import { Users, UserCheck, Clock, MessageCircleReply, TrendingUp, UserPlus, Receipt, MessageCircle } from "lucide-react";
+import { getInitials, formatRelativeTime } from "@/lib/utils";
+import type { ActivityItem } from "@/lib/supabase/queries";
 
 export default function DashboardPage() {
   const { data: stats, loading: loadingStats, error: errorStats, refetch: refetchStats } =
@@ -24,6 +25,9 @@ export default function DashboardPage() {
 
   const { data: recentLeads, loading: loadingRecent, error: errorRecent, refetch: refetchRecent } =
     useSupabase(() => getActiveLeads({ limit: 10 }), []);
+
+  const { data: activity, loading: loadingActivity } =
+    useSupabase(() => getRecentActivity(), []);
 
   const last10 = recentLeads ?? [];
 
@@ -184,6 +188,42 @@ export default function DashboardPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+        {/* Activity feed */}
+        <section>
+          <Card>
+            <CardHeader>
+              <SectionTitle icon={TrendingUp} title="Atividade Recente" />
+            </CardHeader>
+            <CardContent className="p-0">
+              {loadingActivity ? (
+                <div className="p-5 space-y-0">
+                  {Array.from({ length: 6 }).map((_, i) => <TableRowSkeleton key={i} />)}
+                </div>
+              ) : !activity?.length ? (
+                <p className="px-6 py-8 text-center text-sm text-[var(--text-muted)]">Nenhuma atividade recente.</p>
+              ) : (
+                <div className="divide-y divide-[var(--border)]">
+                  {(activity as ActivityItem[]).map((item, i) => {
+                    const Icon = item.type === "lead" ? UserPlus : item.type === "cobranca" ? Receipt : MessageCircle;
+                    const color = item.type === "lead" ? "text-blue-500 bg-blue-500/10" : item.type === "cobranca" ? "text-amber-500 bg-amber-500/10" : "text-emerald-500 bg-emerald-500/10";
+                    return (
+                      <div key={`${item.id}-${i}`} className="flex items-center gap-4 px-5 py-3 hover:bg-[var(--bg-subtle)] transition-colors">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
+                          <Icon size={14} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-semibold text-[var(--text-primary)] truncate">{item.label}</p>
+                          {item.sub && <p className="text-[11px] text-[var(--text-muted)] truncate">{item.sub}</p>}
+                        </div>
+                        <span className="text-[11px] text-[var(--text-muted)] tabular-nums shrink-0">{formatRelativeTime(item.date)}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

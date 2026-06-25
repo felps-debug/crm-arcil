@@ -36,6 +36,16 @@ const SEGMENT_TABS: { key: string; label: string }[] = [
 
 function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
   const name = lead.name ?? "Sem nome";
+  const daysSince = lead.updated_at
+    ? Math.floor((Date.now() - new Date(lead.updated_at).getTime()) / 86_400_000)
+    : null;
+  const inactiveLabel = daysSince !== null && daysSince >= 7
+    ? daysSince >= 30 ? `${Math.floor(daysSince / 30)}m` : `${daysSince}d`
+    : null;
+  const inactiveColor = daysSince !== null && daysSince >= 30
+    ? "text-red-500 border-red-500/20 bg-red-500/8"
+    : "text-amber-500 border-amber-500/20 bg-amber-500/8";
+
   return (
     <motion.div
       layout
@@ -78,11 +88,18 @@ function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
             <MapPin size={10} />{lead.city ?? lead.region}
           </span>
         )}
-        {lead.segment && (
-          <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border)]">
-            {SEGMENT_LABELS[lead.segment as LeadSegment] ?? lead.segment}
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {inactiveLabel && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${inactiveColor}`} title={`Sem atividade há ${daysSince} dias`}>
+              {inactiveLabel}
+            </span>
+          )}
+          {lead.segment && (
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border)]">
+              {SEGMENT_LABELS[lead.segment as LeadSegment] ?? lead.segment}
+            </span>
+          )}
+        </div>
       </div>
     </motion.div>
   );

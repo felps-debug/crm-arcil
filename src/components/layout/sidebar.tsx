@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getUrgentFollowupsCount } from "@/lib/supabase/queries";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -17,14 +18,14 @@ import { useSidebar } from "@/contexts/sidebar-context";
 
 const NAV_BASE = [
   { href: "/",                label: "Dashboard",         icon: LayoutDashboard },
-  { href: "/leads",           label: "Leads",             icon: Users           },
+  { href: "/leads",           label: "Leads",             icon: Users,  badge: true },
   { href: "/agentes",         label: "Agentes IA",        icon: Bot             },
   { href: "/demanda-estoque", label: "Demanda & Estoque", icon: Package         },
   { href: "/cobranca",        label: "Cobrança",          icon: Receipt         },
   { href: "/chatbot",         label: "Gerador de Imagem", icon: ImageIcon       },
 ];
 
-const NAV_ADMIN = { href: "/admin", label: "Admin", icon: ShieldCheck };
+const NAV_ADMIN = { href: "/admin", label: "Admin", icon: ShieldCheck, badge: false };
 
 const labelAnim = {
   show: { opacity: 1, x: 0,  transition: { duration: 0.16, delay: 0.07 } },
@@ -35,9 +36,16 @@ export function Sidebar() {
   const pathname    = usePathname();
   const router      = useRouter();
   const [mobileOpen,    setMobileOpen]    = useState(false);
+  const [urgentCount,   setUrgentCount]   = useState(0);
   const { sidebarOpen, setSidebarOpen }   = useSidebar();
   const { theme, toggle: toggleTheme } = useTheme();
   const { profile, isSuperAdmin } = useCurrentUser();
+
+  useEffect(() => {
+    getUrgentFollowupsCount().then(setUrgentCount);
+    const id = setInterval(() => getUrgentFollowupsCount().then(setUrgentCount), 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   if (pathname === "/login") return null;
 
@@ -85,8 +93,9 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2">
         <div className="space-y-0.5 px-2">
-          {nav.map(({ href, label, icon: Icon }) => {
+          {nav.map(({ href, label, icon: Icon, badge }) => {
             const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+            const showBadge = badge && urgentCount > 0;
             return (
               <Link
                 key={href}
@@ -107,14 +116,22 @@ export function Sidebar() {
                 )}
                 <span className="relative z-10 w-10 h-10 flex items-center justify-center shrink-0">
                   <Icon size={16} strokeWidth={active ? 2 : 1.6} className={active ? "text-white" : "text-white/40 group-hover:text-white/70"} />
+                  {showBadge && !sidebarOpen && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-1 ring-[var(--sidebar-bg)]" />
+                  )}
                 </span>
                 <motion.span
                   initial={false}
                   animate={sidebarOpen ? "show" : "hide"}
                   variants={labelAnim}
-                  className="relative z-10 text-[13px] font-medium whitespace-nowrap overflow-hidden"
+                  className="relative z-10 text-[13px] font-medium whitespace-nowrap overflow-hidden flex items-center gap-2"
                 >
                   {label}
+                  {showBadge && (
+                    <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+                      {urgentCount > 99 ? "99+" : urgentCount}
+                    </span>
+                  )}
                 </motion.span>
               </Link>
             );
@@ -222,8 +239,9 @@ export function Sidebar() {
               </div>
 
               <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
-                {nav.map(({ href, label, icon: Icon }) => {
+                {nav.map(({ href, label, icon: Icon, badge }) => {
                   const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+                  const showBadge = badge && urgentCount > 0;
                   return (
                     <Link
                       key={href}
@@ -236,6 +254,11 @@ export function Sidebar() {
                     >
                       <Icon size={15} strokeWidth={active ? 2 : 1.6} />
                       {label}
+                      {showBadge && (
+                        <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold">
+                          {urgentCount > 99 ? "99+" : urgentCount}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}

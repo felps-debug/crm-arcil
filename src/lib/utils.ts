@@ -30,6 +30,19 @@ export function formatDateTime(date: string | Date): string {
   }).format(new Date(date));
 }
 
+export function formatRelativeTime(dateStr: string | null): string {
+  if (!dateStr) return "—";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "agora";
+  if (mins < 60) return `${mins}min atrás`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h atrás`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d atrás`;
+  return new Date(dateStr).toLocaleDateString("pt-BR");
+}
+
 export function getInitials(name: string): string {
   return name
     .split(" ")

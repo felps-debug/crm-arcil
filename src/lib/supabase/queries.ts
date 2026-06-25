@@ -296,6 +296,46 @@ export async function getAgentStats() {
   });
 }
 
+export async function getUrgentFollowupsCount(): Promise<number> {
+  const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+  const { count, error } = await supabase
+    .from("followups")
+    .select("*", { count: "exact", head: true })
+    .eq("respondeu", false)
+    .lt("updated_at", cutoff);
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export type ActivityItem = {
+  id: string;
+  type: "lead" | "cobranca" | "followup";
+  label: string;
+  sub: string;
+  date: string | null;
+};
+
+export async function getRecentActivity(): Promise<ActivityItem[]> {
+  const [leadsRes, cobrancaRes, followupsRes] = await Promise.all([
+    supabase.from("leads").select("id,name,segment,created_at").order("created_at", { ascending: false }).limit(6),
+    supabase.from("cobranca_log").select("id,nome,valor,data_disparo").order("data_disparo", { ascending: false }).limit(6),
+    supabase.from("followups").select("id,tipo,updated_at").eq("respondeu", true).order("updated_at", { ascending: false }).limit(6),
+  ]);
+
+  const items: ActivityItem[] = [];
+  for (const l of leadsRes.data ?? [])
+    items.push({ id: l.id, type: "lead", label: l.name ?? "Novo lead", sub: l.segment ?? "", date: l.created_at });
+  for (const c of cobrancaRes.data ?? [])
+    items.push({ id: c.id, type: "cobranca", label: c.nome ?? "Cobrança", sub: c.valor ?? "", date: c.data_disparo });
+  for (const f of followupsRes.data ?? [])
+    items.push({ id: f.id, type: "followup", label: "Follow-up respondido", sub: f.tipo ?? "", date: f.updated_at });
+
+  return items
+    .filter((i) => i.date)
+    .sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime())
+    .slice(0, 15);
+}
+
 export async function getRecentConversations(limit = 20) {
   const { data, error } = await supabase
     .from("conversations")
