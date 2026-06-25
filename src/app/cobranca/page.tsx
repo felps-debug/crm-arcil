@@ -602,6 +602,7 @@ export default function CobrancaPage() {
                             <SortTh col="nome"           label="Nome"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                             <SortTh col="telefone"       label="Telefone"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                             <SortTh col="valor"          label="Valor"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                            <th>Bol.</th>
                             <SortTh col="vencimento"     label="Vencimento" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                             <SortTh col="status_disparo" label="Status"    sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                             <th>Respondeu</th><th>Pagamento</th>
@@ -618,7 +619,14 @@ export default function CobrancaPage() {
                             >
                               <td className="font-medium text-[var(--text-primary)]">{log.nome ?? "—"}</td>
                               <td className="tabular-nums">{log.telefone}</td>
-                              <td>{log.valor ?? "—"}{log.boleto_count != null && log.boleto_count > 1 ? ` (${log.boleto_count} bol.)` : ""}</td>
+                              <td className="font-semibold tabular-nums">{log.valor ?? "—"}</td>
+                              <td>
+                                {log.boleto_count != null ? (
+                                  <span className={`inline-flex items-center justify-center min-w-[22px] h-[18px] px-1.5 rounded-full text-[10px] font-bold ${log.boleto_count > 1 ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" : "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border)]"}`}>
+                                    {log.boleto_count}
+                                  </span>
+                                ) : "—"}
+                              </td>
                               <td>{log.vencimento ?? "—"}</td>
                               <td><Badge variant={log.status_disparo === "DISPARADO" ? "success" : "warning"}>{log.status_disparo}</Badge></td>
                               <td>{log.respondeu ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
