@@ -58,15 +58,19 @@ export async function POST(req: NextRequest) {
         .order("created_at", { ascending: false });
 
       if (recentRows) {
-        const seen = new Set<string>();
+        // Pick the most-recent row per phone (recentRows already ordered desc)
+        const byPhone = new Map<string, string>();
+        for (const row of recentRows) {
+          if (row.telefone && !byPhone.has(row.telefone) && boletosByPhone[row.telefone]) {
+            byPhone.set(row.telefone, row.id);
+          }
+        }
         await Promise.all(
-          recentRows
-            .filter(row => row.telefone && !seen.has(row.telefone) && boletosByPhone[row.telefone] && !seen.add(row.telefone))
-            .map(row =>
-              admin.from("cobranca_log").update({
-                metadata: { boletos_json: boletosByPhone[row.telefone!] },
-              }).eq("id", row.id)
-            )
+          [...byPhone.entries()].map(([phone, id]) =>
+            admin.from("cobranca_log").update({
+              metadata: { boletos_json: boletosByPhone[phone] },
+            }).eq("id", id)
+          )
         );
       }
     } catch (err) {
