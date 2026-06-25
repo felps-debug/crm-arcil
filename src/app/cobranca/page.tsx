@@ -178,7 +178,9 @@ function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
       ...first.original,
       numero:          first.numero,
       nome:            first.nome,
-      valor:           totalReceber > 0 ? formatCurrency(totalReceber) : first.valorDisplay,
+      valor:           totalReceber > 0
+        ? totalReceber.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : first.valorDisplay,
       codigo_cliente:  first.codigoCliente,
       vencimento:      boletoCount === 1 ? first.vencimento : vencimentos,
       documento:       first.documento,
