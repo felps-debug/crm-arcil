@@ -7,11 +7,16 @@ import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "@/components/ui/error-state";
 import { LeadDrawer } from "@/components/ui/lead-drawer";
 import { useSupabase } from "@/hooks/use-supabase";
-import { getActiveLeads, getLeads, subscribeToLeads } from "@/lib/supabase/queries";
+import { getActiveLeads, getLeads, getFollowupsByType, subscribeToLeads } from "@/lib/supabase/queries";
 import { SEGMENT_LABELS, STATUS_LABELS } from "@/types";
-import type { Lead, LeadSegment, LeadStatus } from "@/types";
-import { Users, Search, Eye, EyeOff, Phone, Building2, MapPin, RefreshCw } from "lucide-react";
+import type { Lead, LeadSegment, LeadStatus, Followup } from "@/types";
+import {
+  Users, Search, Eye, EyeOff, Phone, Building2, MapPin, RefreshCw,
+  MessageCircleReply, CheckCircle2, XCircle, ChevronDown, ChevronUp,
+} from "lucide-react";
 import { getInitials } from "@/lib/utils";
+
+const PAGE_SIZE = 30;
 
 const STATUS_BADGE: Record<LeadStatus, "success" | "danger" | "warning"> = {
   ACTIVE:      "success",
@@ -31,7 +36,6 @@ const SEGMENT_TABS: { key: string; label: string }[] = [
 
 function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
   const name = lead.name ?? "Sem nome";
-
   return (
     <motion.div
       layout
@@ -43,12 +47,9 @@ function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
       className="group cursor-pointer rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] p-4 hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)] transition-all duration-200"
     >
       <div className="flex items-start gap-3">
-        {/* Monochrome avatar */}
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[var(--text-muted)] text-[11px] font-semibold bg-[var(--bg-subtle)] border border-[var(--border)]">
           {getInitials(name)}
         </div>
-
-        {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <p className="text-[13.5px] font-semibold text-[var(--text-primary)] truncate leading-tight">{name}</p>
@@ -58,7 +59,6 @@ function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
               </Badge>
             )}
           </div>
-
           {lead.company && (
             <div className="flex items-center gap-1 mt-0.5">
               <Building2 size={10} className="text-[var(--text-muted)] shrink-0" />
@@ -67,19 +67,15 @@ function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
           )}
         </div>
       </div>
-
-      {/* Meta row */}
       <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center gap-3 flex-wrap">
         {lead.wa_phone && (
           <span className="flex items-center gap-1 text-[11px] text-[var(--text-muted)]">
-            <Phone size={10} />
-            {lead.wa_phone}
+            <Phone size={10} />{lead.wa_phone}
           </span>
         )}
         {(lead.city ?? lead.region) && (
           <span className="flex items-center gap-1 text-[11px] text-[var(--text-muted)]">
-            <MapPin size={10} />
-            {lead.city ?? lead.region}
+            <MapPin size={10} />{lead.city ?? lead.region}
           </span>
         )}
         {lead.segment && (
@@ -111,19 +107,26 @@ function SkeletonCard() {
   );
 }
 
+type View = "leads" | "followups";
+
 export default function LeadsPage() {
+  const [view,          setView]          = useState<View>("leads");
   const [showLegacy,    setShowLegacy]    = useState(false);
   const [segmentFilter, setSegmentFilter] = useState("");
   const [statusFilter,  setStatusFilter]  = useState("");
   const [search,        setSearch]        = useState("");
   const [selectedLead,  setSelectedLead]  = useState<Lead | null>(null);
   const [lastUpdated,   setLastUpdated]   = useState<Date>(new Date());
+  const [visibleCount,  setVisibleCount]  = useState(PAGE_SIZE);
 
   const { data: activeLeads, loading: loadingActive, error: errorActive, refetch: refetchActive } =
     useSupabase(() => getActiveLeads(), []);
 
   const { data: allLeads, loading: loadingAll, error: errorAll, refetch: refetchAll } =
     useSupabase(() => getLeads(), []);
+
+  const { data: followups, loading: loadingFu, error: errorFu, refetch: refetchFu } =
+    useSupabase(() => getFollowupsByType("lead"), []);
 
   const baseLeads = showLegacy ? allLeads : activeLeads;
   const loading   = showLegacy ? loadingAll  : loadingActive;
@@ -135,7 +138,6 @@ export default function LeadsPage() {
     setLastUpdated(new Date());
   }
 
-  /* ── Supabase Realtime auto-refresh ────────────────────────────── */
   const refetchActiveRef = useRef(refetchActive);
   const refetchAllRef    = useRef(refetchAll);
   useEffect(() => {
@@ -149,17 +151,12 @@ export default function LeadsPage() {
       refetchAllRef.current();
       setLastUpdated(new Date());
     });
-
     const fallback = setInterval(() => {
       refetchActiveRef.current();
       if (showLegacy) refetchAllRef.current();
       setLastUpdated(new Date());
     }, 60_000);
-
-    return () => {
-      channel.unsubscribe();
-      clearInterval(fallback);
-    };
+    return () => { channel.unsubscribe(); clearInterval(fallback); };
   }, [showLegacy]);
 
   const filteredLeads = useMemo(() => {
@@ -177,167 +174,305 @@ export default function LeadsPage() {
     });
   }, [baseLeads, segmentFilter, statusFilter, search]);
 
+  // Reset page when filters change
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [segmentFilter, statusFilter, search, showLegacy]);
+
+  const visibleLeads = filteredLeads.slice(0, visibleCount);
+  const hasMore = filteredLeads.length > visibleCount;
+
   const grouped = useMemo(() => {
-    if (segmentFilter) return { [segmentFilter]: filteredLeads };
+    if (segmentFilter) return { [segmentFilter]: visibleLeads };
     const map: Record<string, Lead[]> = {};
-    for (const l of filteredLeads) {
+    for (const l of visibleLeads) {
       const key = l.segment ?? "OTHER";
       if (!map[key]) map[key] = [];
       map[key].push(l);
     }
     return map;
-  }, [filteredLeads, segmentFilter]);
+  }, [visibleLeads, segmentFilter]);
 
   const totalCount = filteredLeads.length;
 
+  function handleLeadUpdate(updated: Lead) {
+    setSelectedLead(updated);
+    refetchAll_();
+  }
+
   return (
     <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
-      <LeadDrawer lead={selectedLead} onClose={() => setSelectedLead(null)} />
+      <LeadDrawer lead={selectedLead} onClose={() => setSelectedLead(null)} onUpdate={handleLeadUpdate} />
 
       <Header
         title="Leads"
-        subtitle={`${totalCount} lead${totalCount !== 1 ? "s" : ""}${showLegacy ? "" : " ativos"}`}
+        subtitle={view === "followups" ? `${followups?.length ?? 0} follow-up${(followups?.length ?? 0) !== 1 ? "s" : ""}` : `${totalCount} lead${totalCount !== 1 ? "s" : ""}${showLegacy ? "" : " ativos"}`}
       />
 
-      {/* ── Segment tabs ──────────────────────────────────────────── */}
-      <div
-        className="shrink-0 px-6 pt-4 max-w-[1440px] mx-auto w-full"
-        style={{ borderBottom: "1px solid var(--border)" }}
-      >
-        <div className="flex items-center gap-1 overflow-x-auto pb-0 no-scrollbar">
-          {SEGMENT_TABS.map(({ key, label }) => {
-            const active = segmentFilter === key;
-            const segLeads = !loading && baseLeads
-              ? baseLeads.filter((l) => key === "" || l.segment === key).length
-              : null;
-            return (
-              <button
-                key={key}
-                onClick={() => setSegmentFilter(key)}
-                className={`relative flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium whitespace-nowrap transition-colors focus-visible:outline-none ${
-                  active
-                    ? "text-[var(--text-primary)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                }`}
-              >
-                {label}
-                {segLeads !== null && (
-                  <span className={`text-[10px] font-semibold tabular-nums ${active ? "text-[var(--text-secondary)]" : "text-[var(--text-muted)]"}`}>
-                    {segLeads}
-                  </span>
-                )}
-                {active && (
-                  <motion.div
-                    layoutId="segment-tab-indicator"
-                    className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full"
-                    style={{ background: "var(--blue)" }}
-                    transition={{ type: "spring", stiffness: 500, damping: 40 }}
-                  />
-                )}
-              </button>
-            );
-          })}
+      {/* Segment tabs — only for leads view */}
+      {view === "leads" && (
+        <div className="shrink-0 px-6 pt-4 max-w-[1440px] mx-auto w-full" style={{ borderBottom: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-1 overflow-x-auto pb-0 no-scrollbar">
+            {SEGMENT_TABS.map(({ key, label }) => {
+              const active = segmentFilter === key;
+              const segLeads = !loading && baseLeads
+                ? baseLeads.filter((l) => key === "" || l.segment === key).length
+                : null;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setSegmentFilter(key)}
+                  className={`relative flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium whitespace-nowrap transition-colors focus-visible:outline-none ${
+                    active ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {label}
+                  {segLeads !== null && (
+                    <span className={`text-[10px] font-semibold tabular-nums ${active ? "text-[var(--text-secondary)]" : "text-[var(--text-muted)]"}`}>
+                      {segLeads}
+                    </span>
+                  )}
+                  {active && (
+                    <motion.div
+                      layoutId="segment-tab-indicator"
+                      className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full"
+                      style={{ background: "var(--blue)" }}
+                      transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* ── Search + controls ─────────────────────────────────────── */}
-      <div className="shrink-0 px-6 pt-3 pb-0 max-w-[1440px] mx-auto w-full">
+      {/* Controls */}
+      <div className="shrink-0 px-6 pt-3 pb-3 max-w-[1440px] mx-auto w-full" style={{ borderBottom: "1px solid var(--border)" }}>
         <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-md">
-            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-            <input
-              type="text"
-              placeholder="Nome, telefone ou empresa..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl border text-[13px] bg-[var(--bg-surface)] border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--blue)] focus:ring-2 focus:ring-blue-500/10 transition-all shadow-[var(--shadow-xs)]"
-            />
+          {/* View toggle */}
+          <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border)]">
+            <button
+              onClick={() => setView("leads")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all ${
+                view === "leads" ? "bg-[var(--blue)] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              }`}
+            >
+              <Users size={12} /> Leads
+            </button>
+            <button
+              onClick={() => setView("followups")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all ${
+                view === "followups" ? "bg-[var(--blue)] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              }`}
+            >
+              <MessageCircleReply size={12} /> Follow-ups
+              {(followups?.length ?? 0) > 0 && (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${view === "followups" ? "bg-white/20 text-white" : "bg-[var(--bg-subtle)] text-[var(--text-muted)]"}`}>
+                  {followups?.length}
+                </span>
+              )}
+            </button>
           </div>
 
-          {/* Status filter pills */}
-          <div className="hidden sm:flex items-center gap-1.5">
-            {(["", "ACTIVE", "IN_PROGRESS", "LOST"] as const).map((key) => (
+          {view === "leads" && (
+            <>
+              <div className="relative flex-1 max-w-md">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                <input
+                  type="text"
+                  placeholder="Nome, telefone ou empresa..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border text-[13px] bg-[var(--bg-surface)] border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--blue)] focus:ring-2 focus:ring-blue-500/10 transition-all shadow-[var(--shadow-xs)]"
+                />
+              </div>
+
+              <div className="hidden sm:flex items-center gap-1.5">
+                {(["", "ACTIVE", "IN_PROGRESS", "LOST"] as const).map((key) => (
+                  <button
+                    key={key}
+                    onClick={() => setStatusFilter(key)}
+                    className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
+                      statusFilter === key
+                        ? "bg-[var(--blue)] text-white"
+                        : "bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+                    }`}
+                  >
+                    {key ? STATUS_LABELS[key] : "Todos status"}
+                  </button>
+                ))}
+              </div>
+
               <button
-                key={key}
-                onClick={() => setStatusFilter(key)}
-                className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
-                  statusFilter === key
-                    ? "bg-[var(--blue)] text-white"
-                    : "bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                }`}
+                onClick={refetchAll_}
+                title={`Última atualização: ${lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-[13px] font-medium transition-all shadow-[var(--shadow-xs)] border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
               >
-                {key ? STATUS_LABELS[key] : "Todos status"}
+                <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
               </button>
-            ))}
-          </div>
 
-          {/* Auto-refresh indicator + manual refresh */}
-          <button
-            onClick={refetchAll_}
-            title={`Última atualização: ${lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`}
-            className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-[13px] font-medium transition-all shadow-[var(--shadow-xs)] border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-          >
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-          </button>
+              <button
+                onClick={() => setShowLegacy(!showLegacy)}
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border text-[13px] font-medium transition-all shadow-[var(--shadow-xs)] border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+                title={showLegacy ? "Mostrar apenas ativos" : "Mostrar todos incluindo legado"}
+              >
+                {showLegacy ? <Eye size={14} /> : <EyeOff size={14} />}
+                <span className="hidden sm:inline">{showLegacy ? "Com legado" : "Sem legado"}</span>
+              </button>
+            </>
+          )}
 
-          <button
-            onClick={() => setShowLegacy(!showLegacy)}
-            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border text-[13px] font-medium transition-all shadow-[var(--shadow-xs)] border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-            title={showLegacy ? "Mostrar apenas ativos" : "Mostrar todos incluindo legado"}
-          >
-            {showLegacy ? <Eye size={14} /> : <EyeOff size={14} />}
-            <span className="hidden sm:inline">{showLegacy ? "Com legado" : "Sem legado"}</span>
-          </button>
+          {view === "followups" && (
+            <button
+              onClick={() => { refetchFu(); setLastUpdated(new Date()); }}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-[13px] font-medium transition-all shadow-[var(--shadow-xs)] border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+            >
+              <RefreshCw size={13} className={loadingFu ? "animate-spin" : ""} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ── Lead grid ─────────────────────────────────────────────── */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4 max-w-[1440px] mx-auto w-full">
-        {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}
-          </div>
-        ) : error ? (
-          <ErrorState message={error} onRetry={refetchAll_} />
-        ) : filteredLeads.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 space-y-3">
-            <div className="w-16 h-16 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border)] flex items-center justify-center shadow-[var(--shadow-sm)]">
-              <Users size={24} className="text-[var(--text-muted)]" />
-            </div>
-            <p className="text-[14px] font-medium text-[var(--text-muted)]">Nenhum lead encontrado</p>
-            {(segmentFilter || statusFilter || search) && (
-              <button
-                onClick={() => { setSearch(""); setSegmentFilter(""); setStatusFilter(""); }}
-                className="text-[13px] text-[var(--blue)] hover:underline"
-              >
-                Limpar filtros
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {Object.entries(grouped).map(([segment, leads]) => (
-              <section key={segment}>
-                {!segmentFilter && (
-                  <div className="flex items-center gap-3 mb-4">
-                    <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                      {SEGMENT_LABELS[segment as LeadSegment] ?? segment}
-                    </h2>
-                    <div className="flex-1 h-px bg-[var(--border)]" />
-                    <span className="text-[11px] font-semibold text-[var(--text-muted)]">{leads.length}</span>
+        {view === "leads" ? (
+          <>
+            {loading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}
+              </div>
+            ) : error ? (
+              <ErrorState message={error} onRetry={refetchAll_} />
+            ) : filteredLeads.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 space-y-3">
+                <div className="w-16 h-16 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border)] flex items-center justify-center shadow-[var(--shadow-sm)]">
+                  <Users size={24} className="text-[var(--text-muted)]" />
+                </div>
+                <p className="text-[14px] font-medium text-[var(--text-muted)]">Nenhum lead encontrado</p>
+                {(segmentFilter || statusFilter || search) && (
+                  <button
+                    onClick={() => { setSearch(""); setSegmentFilter(""); setStatusFilter(""); }}
+                    className="text-[13px] text-[var(--blue)] hover:underline"
+                  >
+                    Limpar filtros
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {Object.entries(grouped).map(([segment, leads]) => (
+                  <section key={segment}>
+                    {!segmentFilter && (
+                      <div className="flex items-center gap-3 mb-4">
+                        <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-[var(--text-muted)]">
+                          {SEGMENT_LABELS[segment as LeadSegment] ?? segment}
+                        </h2>
+                        <div className="flex-1 h-px bg-[var(--border)]" />
+                        <span className="text-[11px] font-semibold text-[var(--text-muted)]">{leads.length}</span>
+                      </div>
+                    )}
+                    <AnimatePresence mode="popLayout">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                        {leads.map((lead) => (
+                          <LeadCard key={lead.id} lead={lead} onClick={() => setSelectedLead(lead)} />
+                        ))}
+                      </div>
+                    </AnimatePresence>
+                  </section>
+                ))}
+
+                {/* Load more */}
+                {hasMore && (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] text-[13px] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)] transition-all shadow-[var(--shadow-xs)]"
+                    >
+                      <ChevronDown size={14} />
+                      Ver mais ({filteredLeads.length - visibleCount} restantes)
+                    </button>
                   </div>
                 )}
 
-                <AnimatePresence mode="popLayout">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {leads.map((lead) => (
-                      <LeadCard key={lead.id} lead={lead} onClick={() => setSelectedLead(lead)} />
-                    ))}
+                {visibleCount > PAGE_SIZE && !hasMore && (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      onClick={() => setVisibleCount(PAGE_SIZE)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] text-[13px] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-all"
+                    >
+                      <ChevronUp size={14} />
+                      Recolher
+                    </button>
                   </div>
-                </AnimatePresence>
-              </section>
-            ))}
-          </div>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          /* Follow-ups view */
+          <>
+            {loadingFu ? (
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="h-12 rounded-xl animate-shimmer" />
+                ))}
+              </div>
+            ) : errorFu ? (
+              <ErrorState message={errorFu} onRetry={refetchFu} />
+            ) : !followups?.length ? (
+              <div className="flex flex-col items-center justify-center py-20 space-y-3">
+                <div className="w-16 h-16 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border)] flex items-center justify-center shadow-[var(--shadow-sm)]">
+                  <MessageCircleReply size={24} className="text-[var(--text-muted)]" />
+                </div>
+                <p className="text-[14px] font-medium text-[var(--text-muted)]">Nenhum follow-up de vendas</p>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden shadow-[var(--shadow-xs)]">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm table-enterprise">
+                    <thead>
+                      <tr>
+                        {["Cliente", "Telefone", "Produto", "Preço", "Step", "Respondeu", "Última Msg", "Status"].map((h) => (
+                          <th key={h}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(followups as Followup[]).map((f) => (
+                        <tr key={f.id}>
+                          <td className="font-medium text-[var(--text-primary)]">{f.nome_cliente ?? "—"}</td>
+                          <td className="tabular-nums text-xs">{f.numero_cliente ?? "—"}</td>
+                          <td className="max-w-[140px] truncate text-[var(--text-secondary)]">{f.produto_negociado ?? "—"}</td>
+                          <td className="tabular-nums">
+                            {f.preco_ofertado != null
+                              ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(f.preco_ofertado)
+                              : "—"}
+                          </td>
+                          <td>
+                            <Badge variant={f.followup_step != null && f.followup_step >= 3 ? "danger" : "info"}>
+                              Step {f.followup_step ?? 0}
+                            </Badge>
+                          </td>
+                          <td>
+                            {f.respondeu
+                              ? <CheckCircle2 size={16} className="text-emerald-500" />
+                              : <XCircle size={16} className="text-[var(--text-muted)]" />}
+                          </td>
+                          <td className="text-xs tabular-nums text-[var(--text-muted)]">
+                            {f.ultima_msg_ia ? new Date(f.ultima_msg_ia).toLocaleString("pt-BR") : "—"}
+                          </td>
+                          <td>
+                            <Badge variant={f.status === "PENDING" ? "warning" : f.status === "CONVERTED" ? "success" : "default"}>
+                              {f.status ?? "—"}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

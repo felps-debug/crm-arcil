@@ -110,7 +110,7 @@ type Tab = "disparar" | "logs" | "followups" | "tecnico";
 
 export default function CobrancaPage() {
   const [tab, setTab] = useState<Tab>("disparar");
-  const { isSuperAdmin } = useCurrentUser();
+  const { isSuperAdmin, isManagerOrAbove } = useCurrentUser();
 
   const { data: stats, loading: loadingStats, error: errorStats, refetch: refetchStats } =
     useSupabase(() => getCobrancaStats(), []);
@@ -182,6 +182,25 @@ export default function CobrancaPage() {
     } catch (err) {
       setDispatchResult({ ok: false, error: err instanceof Error ? err.message : "Erro" });
     } finally { setDispatching(false); }
+  }
+
+  const [reenvioLoading, setReenvioLoading] = useState(false);
+  const [reenvioResult, setReenvioResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  async function handleReenvio() {
+    setReenvioLoading(true);
+    setReenvioResult(null);
+    try {
+      const res = await fetch("/api/cobranca/reenviar-nao-disparados", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Erro");
+      setReenvioResult({ ok: true, msg: "Reenvio iniciado com sucesso" });
+      void fetchLogs();
+    } catch (err) {
+      setReenvioResult({ ok: false, msg: err instanceof Error ? err.message : "Erro" });
+    } finally {
+      setReenvioLoading(false);
+    }
   }
 
   const [expandedMeta, setExpandedMeta] = useState<string | null>(null);
@@ -364,6 +383,16 @@ export default function CobrancaPage() {
                   <div className="flex items-center justify-between">
                     <SectionTitle icon={Send} title="Monitoramento ao Vivo" subtitle="Atualização automática em tempo real" />
                     <div className="flex items-center gap-3">
+                      {isManagerOrAbove && (
+                        <button
+                          onClick={handleReenvio}
+                          disabled={reenvioLoading}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-amber-600 bg-amber-500/8 hover:bg-amber-500/15 transition-colors border border-amber-500/20 disabled:opacity-60"
+                        >
+                          {reenvioLoading ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                          Reenviar Não Disparados
+                        </button>
+                      )}
                       <button
                         onClick={() => setRelatorioModal(true)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[var(--text-secondary)] bg-[var(--bg-subtle)] hover:bg-[var(--bg-muted)] transition-colors border border-[var(--border)]"
@@ -381,6 +410,13 @@ export default function CobrancaPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
+                  {reenvioResult && (
+                    <div className={`mx-5 mt-4 flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] border ${reenvioResult.ok ? "bg-emerald-500/8 border-emerald-500/15 text-emerald-600" : "bg-red-500/8 border-red-500/15 text-red-500"}`}>
+                      {reenvioResult.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                      {reenvioResult.msg}
+                      <button onClick={() => setReenvioResult(null)} className="ml-auto opacity-60 hover:opacity-100"><X size={12} /></button>
+                    </div>
+                  )}
                   {loadingLogs ? (
                     <div className="p-5">{Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
                   ) : errorLogs ? (
