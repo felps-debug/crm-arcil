@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, Fragment } from "react";
+import { useEffect, useState, useRef, useCallback, Fragment, useMemo } from "react";
 import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -22,7 +22,27 @@ import type { CobrancaLog } from "@/types";
 import {
   Receipt, Clock, MessageCircleReply, CheckCircle2, XCircle,
   Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw, ShieldAlert, ChevronDown, ChevronRight, FileText,
+  Search, DollarSign, ChevronUp,
 } from "lucide-react";
+
+type SortKey = "nome" | "telefone" | "valor" | "vencimento" | "status_disparo" | "data_disparo";
+
+function SortTh({ col, label, sortCol, sortDir, onSort }: {
+  col: SortKey; label: string; sortCol: SortKey | null; sortDir: "asc" | "desc";
+  onSort: (col: SortKey) => void;
+}) {
+  const active = sortCol === col;
+  return (
+    <th onClick={() => onSort(col)} className="cursor-pointer select-none group">
+      <div className="flex items-center gap-1">
+        {label}
+        <span className={`transition-opacity ${active ? "opacity-100" : "opacity-20 group-hover:opacity-60"}`}>
+          {active && sortDir === "asc" ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+        </span>
+      </div>
+    </th>
+  );
+}
 
 type DisparoLead = Record<string, string>;
 
@@ -57,22 +77,44 @@ function parseMoneyToNumber(raw: string): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+type BoletoItem = {
+  doc: string;
+  vencimento: string;
+  valor: string;       // "Receber" formatado — valor real com juros
+  juros: string;
+  multa: string;
+  observacao: string;
+};
+
 function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
-  return rows.map((row) => {
-    // Preserve every original ERP column
+  // 1. Processar cada linha em um boleto normalizado
+  type RawBoleto = {
+    numero: string;
+    nome: string;
+    codigoCliente: string;
+    receberNum: number;   // "Receber" = principal + juros + multa - já recebido
+    valorDisplay: string;
+    vencimento: string;
+    documento: string;
+    original: Record<string, string>;
+    item: BoletoItem;
+  };
+
+  const rawBoletos: RawBoleto[] = [];
+
+  for (const row of rows) {
     const original: Record<string, string> = {};
     for (const [k, v] of Object.entries(row)) original[k] = String(v ?? "").trim();
 
-    // Normalized map for lookup
     const n: Record<string, string> = {};
     for (const [k, v] of Object.entries(original)) n[normalizeKey(k)] = v;
 
-    // Build numero = "55" + digits from phone column
-    const rawPhone = n["telefone"] ?? n["celular"] ?? n["fone"] ?? n["whatsapp"] ?? n["numero"] ?? "";
+    // Telefone: prioriza celular (mais provável de ser WhatsApp)
+    const rawPhone = n["celular"] || n["telefone"] || n["fone"] || n["whatsapp"] || n["numero"] || "";
     const digits = rawPhone.replace(/\D/g, "");
     const numero = digits ? `55${digits}` : "";
+    if (numero.length < 12) continue;
 
-    // Nome: coluna direta (nome/cliente) ou combinada do ERP "Cód / Cliente" (ex: "535 - 16.711.842 FULANO")
     let nome = n["nome"] ?? "";
     let codigoCliente = "";
     if (!nome) {
@@ -84,26 +126,70 @@ function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
       }
     }
 
-    // Valor: tenta "valor" → "Receber" (total ERP) → "R$ Receb" → "R$ Princ" como último recurso
-    let valorRaw = n["valor"] ?? n["receber"] ?? n["rreceb"] ?? "";
-    if (!valorRaw) {
+    // "Receber" = valor real a receber (principal + juros + multa - parcialmente pago)
+    // É o campo que deve ser cobrado. "R$ Receb" é o que já foi pago — ignorar.
+    const receberRaw = n["receber"] ?? "";
+    const receberNum = parseMoneyToNumber(receberRaw) ?? 0;
+
+    // Fallback: usar "R$ Princ" se Receber for zero
+    let valorRaw = receberRaw;
+    if (!valorRaw || receberNum === 0) {
       const princKey = Object.keys(n).find((k) => k.includes("princ"));
       if (princKey) valorRaw = n[princKey];
     }
     const valorNum = parseMoneyToNumber(valorRaw);
-    const valor = valorNum !== null ? formatCurrency(valorNum) : valorRaw;
+    const valorDisplay = valorNum !== null ? formatCurrency(valorNum) : valorRaw;
 
-    return {
-      ...original,
+    const jurosNum = parseMoneyToNumber(n["rjuros"] ?? n["juros"] ?? "");
+    const multaNum = parseMoneyToNumber(n["rmulta"] ?? n["multa"] ?? "");
+
+    rawBoletos.push({
       numero,
       nome,
-      valor,
-      codigo_cliente: codigoCliente,
-      vencimento: n["vencimento"] ?? n["prorrog"]    ?? n["datavcto"] ?? n["vcto"] ?? "",
-      documento:  n["serdocpar"]  ?? n["documento"]  ?? n["doc"]     ?? n["cpf"]  ?? n["cnpj"] ?? "",
-      tag:        "COBRANCA",
+      codigoCliente,
+      receberNum,
+      valorDisplay,
+      vencimento: n["vencimento"] ?? n["prorrog"] ?? n["datavcto"] ?? n["vcto"] ?? "",
+      documento: n["serdocpar"] ?? n["documento"] ?? n["doc"] ?? n["cpf"] ?? n["cnpj"] ?? "",
+      original,
+      item: {
+        doc:       n["serdocpar"]  ?? n["documento"] ?? "—",
+        vencimento: n["vencimento"] ?? n["prorrog"] ?? "—",
+        valor:     receberNum > 0 ? formatCurrency(receberNum) : valorDisplay,
+        juros:     jurosNum != null ? formatCurrency(jurosNum) : "—",
+        multa:     multaNum != null ? formatCurrency(multaNum) : "—",
+        observacao: original["Observação"] ?? original["observacao"] ?? "",
+      },
+    });
+  }
+
+  // 2. Agrupar por número de telefone
+  const byPhone: Record<string, RawBoleto[]> = {};
+  for (const b of rawBoletos) {
+    if (!byPhone[b.numero]) byPhone[b.numero] = [];
+    byPhone[b.numero].push(b);
+  }
+
+  // 3. Um DisparoLead por cliente com valor total e detalhes dos boletos
+  return Object.values(byPhone).map((group) => {
+    const first = group[0];
+    const totalReceber = group.reduce((s, b) => s + b.receberNum, 0);
+    const boletoCount = group.length;
+    const vencimentos = [...new Set(group.map(b => b.vencimento).filter(Boolean))].join(" | ");
+
+    return {
+      ...first.original,
+      numero:          first.numero,
+      nome:            first.nome,
+      valor:           totalReceber > 0 ? formatCurrency(totalReceber) : first.valorDisplay,
+      codigo_cliente:  first.codigoCliente,
+      vencimento:      boletoCount === 1 ? first.vencimento : vencimentos,
+      documento:       first.documento,
+      boleto_count:    String(boletoCount),
+      tag:             "COBRANCA",
+      boletos_json:    JSON.stringify(group.map(b => b.item)),
     };
-  }).filter((l) => l.numero.length >= 12);
+  });
 }
 
 type Tab = "disparar" | "logs" | "followups" | "tecnico";
@@ -122,6 +208,47 @@ export default function CobrancaPage() {
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [errorLogs, setErrorLogs] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<CobrancaLog | null>(null);
+
+  // Search / filter / sort no monitoramento
+  const [searchLogs,     setSearchLogs]     = useState("");
+  const [statusFilterLog, setStatusFilterLog] = useState("Todos");
+  const [sortCol,        setSortCol]        = useState<SortKey | null>("data_disparo");
+  const [sortDir,        setSortDir]        = useState<"asc" | "desc">("desc");
+
+  function handleSort(col: SortKey) {
+    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortCol(col); setSortDir("asc"); }
+  }
+
+  const filteredLogs = useMemo(() => {
+    let result = logs;
+    if (searchLogs.trim()) {
+      const q = searchLogs.toLowerCase();
+      result = result.filter(l =>
+        l.nome?.toLowerCase().includes(q) || l.telefone?.includes(q)
+      );
+    }
+    if (statusFilterLog !== "Todos") {
+      result = result.filter(l => l.status_disparo === statusFilterLog);
+    }
+    if (sortCol) {
+      result = [...result].sort((a, b) => {
+        let va = String(a[sortCol] ?? "");
+        let vb = String(b[sortCol] ?? "");
+        if (sortCol === "data_disparo") { va = a.data_disparo ?? ""; vb = b.data_disparo ?? ""; }
+        const cmp = va.localeCompare(vb, "pt-BR", { numeric: true });
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+    return result;
+  }, [logs, searchLogs, statusFilterLog, sortCol, sortDir]);
+
+  const totalEmAberto = useMemo(() => {
+    return logs.reduce((sum, l) => {
+      const n = parseMoneyToNumber(l.valor ?? "");
+      return sum + (n ?? 0);
+    }, 0);
+  }, [logs]);
   const selectedFollowup = selectedLog
     ? followups?.find((f) => f.numero_cliente === selectedLog.telefone) ?? null
     : null;
@@ -252,7 +379,7 @@ export default function CobrancaPage() {
       <main className="flex-1 overflow-y-auto px-6 py-6 max-w-[1440px] mx-auto w-full space-y-6">
 
         {/* Metrics row — always visible */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <section className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {loadingStats ? (
             Array.from({ length: 4 }).map((_, i) => <MetricCardSkeleton key={i} />)
           ) : errorStats ? (
@@ -263,6 +390,7 @@ export default function CobrancaPage() {
               <MetricCard label="Pendentes"           value={String(stats?.pendentes ?? 0)}    icon={Clock}              accent="amber"   change="aguardando" trend={stats?.pendentes ? "down" : "up"} />
               <MetricCard label="Responderam"         value={String(stats?.responderam ?? 0)}  icon={MessageCircleReply} accent="emerald" change={`${stats?.total ? ((stats.responderam / stats.total) * 100).toFixed(0) : 0}% taxa`} trend="up" />
               <MetricCard label="Pag. Confirmado"     value={String(stats?.pagos ?? 0)}        icon={Receipt}            accent="violet"  change="confirmados" trend="up" />
+              <MetricCard label="Total em Aberto"    value={!loadingLogs && totalEmAberto > 0 ? formatCurrency(totalEmAberto) : "—"} icon={DollarSign} accent="emerald" change="soma dos valores" trend="up" />
             </>
           )}
         </section>
@@ -335,7 +463,7 @@ export default function CobrancaPage() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <p className="text-[13px] font-semibold text-[var(--text-primary)]">
-                          {preview.length} leads encontrados
+                          {preview.length} cliente{preview.length !== 1 ? "s" : ""} · {preview.reduce((s, l) => s + parseInt(l.boleto_count || "1"), 0)} boletos
                         </p>
                         <button onClick={() => { setPreview([]); setFileName(null); }} className="text-[12px] text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1 transition-colors">
                           <X size={12} /> Limpar
@@ -345,18 +473,25 @@ export default function CobrancaPage() {
                         <div className="overflow-x-auto max-h-56 overflow-y-auto">
                           <table className="w-full text-sm table-enterprise">
                             <thead className="sticky top-0" style={{ background: "var(--bg-subtle)" }}>
-                              <tr>{["Número","Nome","Valor","Vencimento","Documento"].map((h) => <th key={h}>{h}</th>)}</tr>
+                              <tr>{["Número","Nome","Valor Total c/ Juros","Vencimento(s)","Boletos"].map((h) => <th key={h}>{h}</th>)}</tr>
                             </thead>
                             <tbody>
-                              {preview.map((l, i) => (
-                                <tr key={i}>
-                                  <td className="tabular-nums font-medium text-[var(--text-primary)]">{l.numero}</td>
-                                  <td>{l.nome || "—"}</td>
-                                  <td>{l.valor || "—"}</td>
-                                  <td>{l.vencimento || "—"}</td>
-                                  <td>{l.documento || "—"}</td>
-                                </tr>
-                              ))}
+                              {preview.map((l, i) => {
+                                const count = parseInt(l.boleto_count || "1");
+                                return (
+                                  <tr key={i}>
+                                    <td className="tabular-nums font-medium text-[var(--text-primary)]">{l.numero}</td>
+                                    <td>{l.nome || "—"}</td>
+                                    <td className="font-semibold text-emerald-600">{l.valor || "—"}</td>
+                                    <td className="text-xs text-[var(--text-muted)] max-w-[160px] truncate" title={l.vencimento}>{l.vencimento || "—"}</td>
+                                    <td>
+                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${count > 1 ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" : "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border)]"}`}>
+                                        {count} bol.
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -367,7 +502,7 @@ export default function CobrancaPage() {
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white shadow-sm transition-all disabled:opacity-60 bg-[var(--blue)] hover:opacity-90"
                       >
                         {dispatching ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                        {dispatching ? "Disparando..." : `Disparar ${preview.length} cobranças`}
+                        {dispatching ? "Disparando..." : `Disparar para ${preview.length} cliente${preview.length !== 1 ? "s" : ""}`}
                       </button>
                     </div>
                   )}
@@ -410,6 +545,38 @@ export default function CobrancaPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
+                  {/* Busca + filtro de status */}
+                  <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-3 flex-wrap">
+                    <div className="relative">
+                      <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <input
+                        type="text"
+                        placeholder="Nome ou telefone..."
+                        value={searchLogs}
+                        onChange={(e) => setSearchLogs(e.target.value)}
+                        className="pl-7 pr-3 py-1.5 rounded-lg border text-[12px] bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--blue)] w-52"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {(["Todos", "DISPARADO", "NAO_DISPARADO", "PENDENTE"] as const).map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => setStatusFilterLog(s)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+                            statusFilterLog === s
+                              ? "bg-[var(--blue)] text-white"
+                              : "bg-[var(--bg-subtle)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                          }`}
+                        >
+                          {s === "Todos" ? "Todos" : s.replace("_", " ")}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="ml-auto text-[11px] text-[var(--text-muted)] tabular-nums">
+                      {filteredLogs.length}/{logs.length}
+                    </span>
+                  </div>
+
                   {reenvioResult && (
                     <div className={`mx-5 mt-4 flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] border ${reenvioResult.ok ? "bg-emerald-500/8 border-emerald-500/15 text-emerald-600" : "bg-red-500/8 border-red-500/15 text-red-500"}`}>
                       {reenvioResult.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
@@ -426,9 +593,19 @@ export default function CobrancaPage() {
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm table-enterprise">
-                        <thead><tr>{["Nome","Telefone","Valor","Vencimento","Status","Respondeu","Pagamento","Disparo"].map((h) => <th key={h}>{h}</th>)}</tr></thead>
+                        <thead>
+                          <tr>
+                            <SortTh col="nome"           label="Nome"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                            <SortTh col="telefone"       label="Telefone"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                            <SortTh col="valor"          label="Valor"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                            <SortTh col="vencimento"     label="Vencimento" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                            <SortTh col="status_disparo" label="Status"    sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                            <th>Respondeu</th><th>Pagamento</th>
+                            <SortTh col="data_disparo"   label="Disparo"   sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                          </tr>
+                        </thead>
                         <tbody>
-                          {logs.map((log) => (
+                          {filteredLogs.map((log) => (
                             <tr
                               key={log.id}
                               onClick={() => setSelectedLog(log)}

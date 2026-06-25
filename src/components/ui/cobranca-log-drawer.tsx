@@ -1,23 +1,22 @@
 "use client";
 
-import { X, MessageCircle, Phone, Receipt, FileSpreadsheet, CheckCircle2, XCircle, Clock, MessageCircleReply } from "lucide-react";
+import { X, MessageCircle, Phone, Receipt, FileText, CheckCircle2, XCircle, Clock, MessageCircleReply, TrendingUp } from "lucide-react";
 import { Badge } from "./badge";
 import { Button } from "./button";
 import { motion, AnimatePresence } from "framer-motion";
 import type { CobrancaLog, Followup } from "@/types";
 
-// Rótulos amigáveis para os campos derivados que o CRM calcula (chaves em minúsculo).
-// Colunas originais da planilha do ERP (ex: "Cód / Cliente", "R$ Princ") já vêm com
-// o nome humano de fábrica e são exibidas como estão.
-const FIELD_LABELS: Record<string, string> = {
-  numero: "Número (WhatsApp)",
-  nome: "Nome (extraído)",
-  valor: "Valor (extraído)",
-  vencimento: "Vencimento (extraído)",
-  documento: "Documento (extraído)",
-  codigo_cliente: "Código do Cliente",
-  tag: "Tag",
+type BoletoItem = {
+  doc: string;
+  vencimento: string;
+  valor: string;
+  juros: string;
+  multa: string;
+  observacao: string;
 };
+
+// Campos internos do CRM que não devem aparecer no dump raw de metadata
+const INTERNAL_FIELDS = new Set(["numero", "nome", "valor", "vencimento", "documento", "codigo_cliente", "tag", "boleto_count", "boletos_json"]);
 
 function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return "—";
@@ -25,8 +24,15 @@ function formatDateTime(dateStr: string | null): string {
 }
 
 export function CobrancaLogDrawer({ log, followup, onClose }: { log: CobrancaLog | null; followup?: Followup | null; onClose: () => void }) {
+  // Parse boletos individuais do metadata (gerado pelo parseSheetLeads agrupado)
+  let boletos: BoletoItem[] = [];
+  try {
+    const raw = log?.metadata?.["boletos_json"];
+    if (raw) boletos = JSON.parse(raw) as BoletoItem[];
+  } catch { /* ignora parse error */ }
+
   const metadataEntries = log?.metadata
-    ? Object.entries(log.metadata).filter(([, v]) => String(v ?? "").trim() !== "")
+    ? Object.entries(log.metadata).filter(([k, v]) => !INTERNAL_FIELDS.has(k) && String(v ?? "").trim() !== "")
     : [];
 
   return (
@@ -163,28 +169,58 @@ export function CobrancaLogDrawer({ log, followup, onClose }: { log: CobrancaLog
                 )}
               </div>
 
-              {/* Dados originais da planilha (ERP) */}
-              <div className="px-7 py-6">
-                <h3 className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-5 flex items-center gap-2">
-                  <FileSpreadsheet size={13} /> Dados da Planilha (ERP)
-                </h3>
-                {metadataEntries.length === 0 ? (
-                  <p className="text-sm text-[var(--text-muted)]">Nenhum dado extra disponível para este disparo.</p>
-                ) : (
-                  <div className="space-y-4">
-                    {metadataEntries.map(([key, value]) => (
-                      <div key={key}>
-                        <p className="text-[11px] text-[var(--text-muted)] font-semibold uppercase tracking-wider">
-                          {FIELD_LABELS[key] ?? key}
-                        </p>
-                        <p className="text-sm font-medium text-[var(--text-primary)] mt-0.5 break-words">
-                          {String(value)}
-                        </p>
+              {/* Boletos individuais */}
+              {boletos.length > 0 && (
+                <div className="px-7 py-6 border-b border-[var(--border)]">
+                  <h3 className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <TrendingUp size={13} /> Boletos ({boletos.length})
+                  </h3>
+                  <div className="space-y-3">
+                    {boletos.map((b, i) => (
+                      <div key={i} className="rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider">#{i + 1} — {b.doc || "—"}</span>
+                          <span className="text-[13px] font-extrabold text-emerald-600 tabular-nums">{b.valor}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div>
+                            <span className="text-[var(--text-muted)]">Vencimento </span>
+                            <span className="font-semibold text-[var(--text-primary)]">{b.vencimento || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="text-[var(--text-muted)]">Juros </span>
+                            <span className="font-semibold text-amber-600">{b.juros}</span>
+                          </div>
+                          <div>
+                            <span className="text-[var(--text-muted)]">Multa </span>
+                            <span className="font-semibold text-red-500">{b.multa}</span>
+                          </div>
+                        </div>
+                        {b.observacao && (
+                          <p className="mt-2 text-[10px] text-[var(--text-muted)] leading-relaxed border-t border-[var(--border)] pt-2">{b.observacao}</p>
+                        )}
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+
+              {/* Dados originais da planilha (ERP) — campos não-internos */}
+              {metadataEntries.length > 0 && (
+                <div className="px-7 py-6">
+                  <h3 className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-5 flex items-center gap-2">
+                    <FileText size={13} /> Dados ERP
+                  </h3>
+                  <div className="space-y-4">
+                    {metadataEntries.map(([key, value]) => (
+                      <div key={key}>
+                        <p className="text-[11px] text-[var(--text-muted)] font-semibold uppercase tracking-wider">{key}</p>
+                        <p className="text-sm font-medium text-[var(--text-primary)] mt-0.5 break-words">{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Footer */}
