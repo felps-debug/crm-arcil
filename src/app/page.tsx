@@ -9,10 +9,10 @@ import { MetricCardSkeleton, CardSkeleton, TableRowSkeleton } from "@/components
 import { ErrorState } from "@/components/ui/error-state";
 import { LeadsAreaChart } from "@/components/charts/leads-chart";
 import { useSupabase } from "@/hooks/use-supabase";
-import { getDashboardStats, getLeadsTrend, getActiveLeads, getRecentActivity } from "@/lib/supabase/queries";
+import { getDashboardStats, getLeadsTrend, getActiveLeads, getRecentActivity, getCobrancaDashboardMetrics } from "@/lib/supabase/queries";
 import { SEGMENT_LABELS, STATUS_LABELS } from "@/types";
 import type { LeadSegment, LeadStatus } from "@/types";
-import { Users, UserCheck, Clock, MessageCircleReply, TrendingUp, UserPlus, Receipt, MessageCircle } from "lucide-react";
+import { Users, UserCheck, Clock, MessageCircleReply, TrendingUp, UserPlus, Receipt, MessageCircle, DollarSign, Banknote, BarChart2 } from "lucide-react";
 import { getInitials, formatRelativeTime } from "@/lib/utils";
 import type { ActivityItem } from "@/lib/supabase/queries";
 
@@ -28,6 +28,9 @@ export default function DashboardPage() {
 
   const { data: activity, loading: loadingActivity } =
     useSupabase(() => getRecentActivity(), []);
+
+  const { data: cobrancaMetrics } =
+    useSupabase(() => getCobrancaDashboardMetrics(), []);
 
   const last10 = recentLeads ?? [];
 
@@ -193,6 +196,42 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </section>
+        {/* Cobrança metrics */}
+        {cobrancaMetrics && (
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <h2 className="text-sm font-bold text-[var(--text-primary)]">Cobrança</h2>
+              <span className="text-xs text-[var(--text-muted)]">{cobrancaMetrics.total} disparos</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <MetricCard
+                label="Total em Aberto"
+                value={new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cobrancaMetrics.totalEmAberto)}
+                icon={DollarSign}
+                accent="amber"
+                change="pendente de pagamento"
+                trend="down"
+              />
+              <MetricCard
+                label="Valor Recuperado"
+                value={new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cobrancaMetrics.valorRecuperado)}
+                icon={Banknote}
+                accent="emerald"
+                change="pagamento confirmado"
+                trend="up"
+              />
+              <MetricCard
+                label="Taxa de Resposta"
+                value={`${cobrancaMetrics.taxaResposta}%`}
+                icon={BarChart2}
+                accent="violet"
+                change={`${cobrancaMetrics.totalDispararados} disparados`}
+                trend={cobrancaMetrics.taxaResposta > 30 ? "up" : "down"}
+              />
+            </div>
+          </section>
+        )}
+
         {/* Activity feed */}
         <section>
           <Card>

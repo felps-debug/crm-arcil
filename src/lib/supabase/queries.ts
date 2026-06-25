@@ -157,6 +157,42 @@ export async function getCobrancaStats() {
   };
 }
 
+export async function getCobrancaDashboardMetrics() {
+  const { data, error } = await supabase
+    .from("cobranca_log")
+    .select("valor, pagamento_confirmado, respondeu, status_disparo");
+  if (error) throw error;
+  const logs = data ?? [];
+
+  function parseBRL(v: string | null): number {
+    if (!v) return 0;
+    const n = parseFloat(v.replace(/[^\d,]/g, "").replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  const comValor = logs.filter((l) => l.valor);
+  const emAberto  = comValor.filter((l) => !l.pagamento_confirmado).reduce((s, l) => s + parseBRL(l.valor), 0);
+  const recuperado = comValor.filter((l) => l.pagamento_confirmado).reduce((s, l) => s + parseBRL(l.valor), 0);
+  const total = logs.length;
+  const responderam = logs.filter((l) => l.respondeu).length;
+
+  return {
+    totalEmAberto: emAberto,
+    valorRecuperado: recuperado,
+    taxaResposta: total > 0 ? Math.round((responderam / total) * 100) : 0,
+    totalDispararados: logs.filter((l) => l.status_disparo === "DISPARADO").length,
+    total,
+  };
+}
+
+export async function bulkSetPagamentoConfirmado(ids: string[], value: boolean) {
+  const { error } = await supabase
+    .from("cobranca_log")
+    .update({ pagamento_confirmado: value })
+    .in("id", ids);
+  if (error) throw error;
+}
+
 /* ── DASHBOARD STATS ────────────────────────────────────────────── */
 
 export async function getDashboardStats() {

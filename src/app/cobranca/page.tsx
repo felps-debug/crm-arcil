@@ -14,7 +14,7 @@ import { useSupabase } from "@/hooks/use-supabase";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { getCobrancaLog, getCobrancaStats, getFollowupsByType } from "@/lib/supabase/queries";
+import { getCobrancaLog, getCobrancaStats, getFollowupsByType, bulkSetPagamentoConfirmado } from "@/lib/supabase/queries";
 import type { CobrancaLog } from "@/types";
 import {
   Receipt, Clock, MessageCircleReply, CheckCircle2, XCircle,
@@ -330,6 +330,26 @@ export default function CobrancaPage() {
     }
   }
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  }
+  function toggleSelectAll() {
+    if (selectedIds.size === filteredLogs.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filteredLogs.map(l => l.id)));
+  }
+  async function handleBulkConfirm() {
+    if (!selectedIds.size) return;
+    setBulkLoading(true);
+    try {
+      await bulkSetPagamentoConfirmado([...selectedIds], true);
+      setSelectedIds(new Set());
+      await fetchLogs();
+    } catch { /* silent */ } finally { setBulkLoading(false); }
+  }
+
   const [expandedMeta, setExpandedMeta] = useState<string | null>(null);
   const [relatorioModal, setRelatorioModal] = useState(false);
   const [relFiltros, setRelFiltros] = useState({ de: "", ate: "", tipo: "Todos", status: "Todos" });
@@ -588,6 +608,34 @@ export default function CobrancaPage() {
                       <button onClick={() => setReenvioResult(null)} className="ml-auto opacity-60 hover:opacity-100"><X size={12} /></button>
                     </div>
                   )}
+                  <AnimatePresence>
+                    {selectedIds.size > 0 && (
+                      <motion.div
+                        initial={{ y: 80, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        exit={{ y: 80, opacity: 0 }}
+                        transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl border border-[var(--border)]"
+                        style={{ background: "var(--bg-surface)" }}
+                      >
+                        <span className="text-[13px] font-semibold text-[var(--text-primary)]">
+                          {selectedIds.size} selecionado{selectedIds.size !== 1 ? "s" : ""}
+                        </span>
+                        <button
+                          onClick={handleBulkConfirm}
+                          disabled={bulkLoading}
+                          className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[12px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-60"
+                        >
+                          {bulkLoading ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                          Marcar como pago
+                        </button>
+                        <button onClick={() => setSelectedIds(new Set())} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+                          <X size={14} />
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   {loadingLogs ? (
                     <div className="p-5">{Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
                   ) : errorLogs ? (
@@ -599,6 +647,14 @@ export default function CobrancaPage() {
                       <table className="w-full text-sm table-enterprise">
                         <thead>
                           <tr>
+                            <th className="w-8">
+                              <input
+                                type="checkbox"
+                                className="rounded border-[var(--border)] accent-[var(--blue)] cursor-pointer"
+                                checked={filteredLogs.length > 0 && selectedIds.size === filteredLogs.length}
+                                onChange={toggleSelectAll}
+                              />
+                            </th>
                             <SortTh col="nome"           label="Nome"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                             <SortTh col="telefone"       label="Telefone"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                             <SortTh col="valor"          label="Valor"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
@@ -613,25 +669,31 @@ export default function CobrancaPage() {
                           {filteredLogs.map((log) => (
                             <tr
                               key={log.id}
-                              onClick={() => setSelectedLog(log)}
-                              className="cursor-pointer hover:bg-[var(--bg-subtle)] transition-colors"
-                              title="Ver todos os detalhes deste disparo"
+                              className={`cursor-pointer hover:bg-[var(--bg-subtle)] transition-colors ${selectedIds.has(log.id) ? "bg-blue-500/5" : ""}`}
                             >
-                              <td className="font-medium text-[var(--text-primary)]">{log.nome ?? "—"}</td>
-                              <td className="tabular-nums">{log.telefone}</td>
-                              <td className="font-semibold tabular-nums">{log.valor ?? "—"}</td>
-                              <td>
+                              <td onClick={e => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-[var(--border)] accent-[var(--blue)] cursor-pointer"
+                                  checked={selectedIds.has(log.id)}
+                                  onChange={() => toggleSelect(log.id)}
+                                />
+                              </td>
+                              <td className="font-medium text-[var(--text-primary)]" onClick={() => setSelectedLog(log)}>{log.nome ?? "—"}</td>
+                              <td className="tabular-nums" onClick={() => setSelectedLog(log)}>{log.telefone}</td>
+                              <td className="font-semibold tabular-nums" onClick={() => setSelectedLog(log)}>{log.valor ?? "—"}</td>
+                              <td onClick={() => setSelectedLog(log)}>
                                 {log.boleto_count != null ? (
                                   <span className={`inline-flex items-center justify-center min-w-[22px] h-[18px] px-1.5 rounded-full text-[10px] font-bold ${log.boleto_count > 1 ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" : "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border)]"}`}>
                                     {log.boleto_count}
                                   </span>
                                 ) : "—"}
                               </td>
-                              <td>{log.vencimento ?? "—"}</td>
-                              <td><Badge variant={log.status_disparo === "DISPARADO" ? "success" : "warning"}>{log.status_disparo}</Badge></td>
-                              <td>{log.respondeu ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
-                              <td>{log.pagamento_confirmado ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
-                              <td className="text-xs tabular-nums text-[var(--text-muted)]">{log.data_disparo ? new Date(log.data_disparo).toLocaleString("pt-BR") : "—"}</td>
+                              <td onClick={() => setSelectedLog(log)}>{log.vencimento ?? "—"}</td>
+                              <td onClick={() => setSelectedLog(log)}><Badge variant={log.status_disparo === "DISPARADO" ? "success" : "warning"}>{log.status_disparo}</Badge></td>
+                              <td onClick={() => setSelectedLog(log)}>{log.respondeu ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
+                              <td onClick={() => setSelectedLog(log)}>{log.pagamento_confirmado ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
+                              <td className="text-xs tabular-nums text-[var(--text-muted)]" onClick={() => setSelectedLog(log)}>{log.data_disparo ? new Date(log.data_disparo).toLocaleString("pt-BR") : "—"}</td>
                             </tr>
                           ))}
                         </tbody>
