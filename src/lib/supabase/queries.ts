@@ -185,6 +185,21 @@ export async function getCobrancaDashboardMetrics() {
   };
 }
 
+export async function checkRedisparos(phones: string[]): Promise<{ telefone: string; nome: string | null; data_disparo: string | null }[]> {
+  if (!phones.length) return [];
+  const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+  const { data } = await supabase
+    .from("cobranca_log")
+    .select("telefone, nome, data_disparo")
+    .in("telefone", phones)
+    .eq("pagamento_confirmado", false)
+    .gte("data_disparo", cutoff)
+    .order("data_disparo", { ascending: false });
+  // Deduplicate — keep most recent per phone
+  const seen = new Set<string>();
+  return (data ?? []).filter(r => r.telefone && !seen.has(r.telefone) && seen.add(r.telefone));
+}
+
 export async function bulkSetPagamentoConfirmado(ids: string[], value: boolean) {
   const { error } = await supabase
     .from("cobranca_log")

@@ -14,12 +14,12 @@ import { useSupabase } from "@/hooks/use-supabase";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { getCobrancaLog, getCobrancaStats, getFollowupsByType, bulkSetPagamentoConfirmado } from "@/lib/supabase/queries";
+import { getCobrancaLog, getCobrancaStats, getFollowupsByType, bulkSetPagamentoConfirmado, checkRedisparos } from "@/lib/supabase/queries";
 import type { CobrancaLog } from "@/types";
 import {
   Receipt, Clock, MessageCircleReply, CheckCircle2, XCircle,
   Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw, ShieldAlert, ChevronDown, ChevronRight, FileText,
-  Search, DollarSign, ChevronUp,
+  Search, DollarSign, ChevronUp, AlertTriangle, Download,
 } from "lucide-react";
 
 type SortKey = "nome" | "telefone" | "valor" | "vencimento" | "status_disparo" | "data_disparo";
@@ -275,11 +275,12 @@ export default function CobrancaPage() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<{ ok: boolean; inserted?: number; error?: string } | null>(null);
+  const [redisparoWarnings, setRedisparoWarnings] = useState<{ telefone: string; nome: string | null; data_disparo: string | null }[]>([]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; e.target.value = "";
     if (!file) return;
-    setParseError(null); setPreview([]); setDispatchResult(null); setFileName(file.name);
+    setParseError(null); setPreview([]); setDispatchResult(null); setFileName(file.name); setRedisparoWarnings([]);
     const { read: xlsxRead, utils: xlsxUtils } = await import("xlsx");
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -291,6 +292,7 @@ export default function CobrancaPage() {
         const leads = parseSheetLeads(rows);
         if (!leads.length) throw new Error("Nenhum lead válido. Verifique se há coluna de telefone.");
         setPreview(leads);
+        checkRedisparos(leads.map(l => l.numero).filter(Boolean)).then(setRedisparoWarnings);
       } catch (err) { setParseError(err instanceof Error ? err.message : "Erro ao processar arquivo."); }
     };
     reader.readAsArrayBuffer(file);
@@ -313,6 +315,22 @@ export default function CobrancaPage() {
 
   const [reenvioLoading, setReenvioLoading] = useState(false);
   const [reenvioResult, setReenvioResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  function handleExportCSV() {
+    const headers = ["Nome","Telefone","Valor","Boletos","Vencimento","Status","Respondeu","Pagamento","Disparo em"];
+    const rows = filteredLogs.map(l => [
+      l.nome ?? "", l.telefone ?? "", l.valor ?? "", String(l.boleto_count ?? ""),
+      l.vencimento ?? "", l.status_disparo ?? "",
+      l.respondeu ? "Sim" : "Não", l.pagamento_confirmado ? "Sim" : "Não",
+      l.data_disparo ? new Date(l.data_disparo).toLocaleString("pt-BR") : "",
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `cobranca-${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function handleReenvio() {
     setReenvioLoading(true);
@@ -520,6 +538,22 @@ export default function CobrancaPage() {
                           </table>
                         </div>
                       </div>
+                      {redisparoWarnings.length > 0 && (
+                        <div className="flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-500/25 bg-amber-500/6">
+                          <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-[12px] font-semibold text-amber-600 mb-1">
+                              {redisparoWarnings.length} cliente{redisparoWarnings.length !== 1 ? "s" : ""} com cobrança pendente nos últimos 30 dias:
+                            </p>
+                            <ul className="text-[11px] text-amber-600/80 space-y-0.5">
+                              {redisparoWarnings.map(w => (
+                                <li key={w.telefone}>• {w.nome ?? w.telefone} — último disparo {w.data_disparo ? new Date(w.data_disparo).toLocaleDateString("pt-BR") : "—"}</li>
+                              ))}
+                            </ul>
+                            <p className="text-[10px] text-amber-500/70 mt-1.5">Pode continuar — é só um aviso.</p>
+                          </div>
+                        </div>
+                      )}
                       <button
                         onClick={handleDispatch}
                         disabled={dispatching}
@@ -552,6 +586,13 @@ export default function CobrancaPage() {
                           Reenviar Não Disparados
                         </button>
                       )}
+                      <button
+                        onClick={handleExportCSV}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[var(--text-secondary)] bg-[var(--bg-subtle)] hover:bg-[var(--bg-muted)] transition-colors border border-[var(--border)]"
+                        title="Exporta os registros visíveis no filtro atual"
+                      >
+                        <Download size={12} /> Exportar CSV
+                      </button>
                       <button
                         onClick={() => setRelatorioModal(true)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[var(--text-secondary)] bg-[var(--bg-subtle)] hover:bg-[var(--bg-muted)] transition-colors border border-[var(--border)]"
