@@ -232,10 +232,30 @@ export default function ChatbotPage() {
     }
   }
 
+  // Bucket é público: só tipos de imagem inertes, extensão derivada do MIME
+  // (nunca do nome do arquivo) para impedir hospedar HTML/SVG com script.
+  const ALLOWED_IMAGE_TYPES: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/heic": "heic",
+  };
+  const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
+
+    const ext = ALLOWED_IMAGE_TYPES[file.type];
+    if (!ext) {
+      setMessages((prev) => [...prev, { id: `err-${Date.now()}`, role: "assistant", content: "Formato não suportado. Envie uma foto JPG, PNG, WEBP ou HEIC.", timestamp: new Date().toISOString() }]);
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setMessages((prev) => [...prev, { id: `err-${Date.now()}`, role: "assistant", content: "Imagem muito grande (máx. 15MB). Tente uma foto menor.", timestamp: new Date().toISOString() }]);
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (ev) => setStagedPreview(ev.target?.result as string);
@@ -243,7 +263,6 @@ export default function ChatbotPage() {
 
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop() ?? "jpg";
       const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       const supabase = createClient();
       const { error } = await supabase.storage.from("chatbot-images").upload(filename, file, { contentType: file.type, upsert: false });

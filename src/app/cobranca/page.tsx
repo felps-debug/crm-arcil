@@ -623,7 +623,7 @@ export default function CobrancaPage() {
                       />
                     </div>
                     <div className="flex items-center gap-1">
-                      {(["Todos", "DISPARADO", "NAO_DISPARADO", "PENDENTE"] as const).map((s) => (
+                      {(["Todos", "DISPARADO", "NAO DISPARADO", "PENDENTE"] as const).map((s) => (
                         <button
                           key={s}
                           onClick={() => setStatusFilterLog(s)}
@@ -633,7 +633,7 @@ export default function CobrancaPage() {
                               : "bg-[var(--bg-subtle)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                           }`}
                         >
-                          {s === "Todos" ? "Todos" : s.replace("_", " ")}
+                          {s}
                         </button>
                       ))}
                     </div>
@@ -731,7 +731,7 @@ export default function CobrancaPage() {
                                 ) : "—"}
                               </td>
                               <td onClick={() => setSelectedLog(log)}>{log.vencimento ?? "—"}</td>
-                              <td onClick={() => setSelectedLog(log)}><Badge variant={log.status_disparo === "DISPARADO" ? "success" : "warning"}>{log.status_disparo}</Badge></td>
+                              <td onClick={() => setSelectedLog(log)}><Badge variant={log.status_disparo === "DISPARADO" ? "success" : log.status_disparo === "NAO DISPARADO" ? "danger" : "warning"}>{log.status_disparo}</Badge></td>
                               <td onClick={() => setSelectedLog(log)}>{log.respondeu ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
                               <td onClick={() => setSelectedLog(log)}>{log.pagamento_confirmado ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
                               <td className="text-xs tabular-nums text-[var(--text-muted)]" onClick={() => setSelectedLog(log)}>{log.data_disparo ? new Date(log.data_disparo).toLocaleString("pt-BR") : "—"}</td>
@@ -811,7 +811,7 @@ export default function CobrancaPage() {
                             const isExpanded = expandedMeta === log.id;
                             const statusColor = log.status_disparo === "DISPARADO"
                               ? "success"
-                              : log.status_disparo === "NAO_DISPARADO"
+                              : log.status_disparo === "NAO DISPARADO"
                               ? "danger"
                               : "warning";
                             return (

@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 /**
  * ARCIL Analytics — Seed de dados realistas no Supabase
- * Uso: node scripts/seed.mjs
+ * Uso: node --env-file=.env.local scripts/seed.mjs
  */
 
-const SUPABASE_URL = "https://swcqvrowqwylcegrcesu.supabase.co";
-const SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3Y3F2cm93cXd5bGNlZ3JjZXN1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzg0MDcyMSwiZXhwIjoyMDg5NDE2NzIxfQ.SSx5qoQzflm7n891dIwEqxzNZ9FVYGnl6LxUNdke-MU";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+  console.error("Faltam NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.");
+  console.error("Rode com: node --env-file=.env.local scripts/seed.mjs");
+  process.exit(1);
+}
 
 const headers = {
   apikey: SERVICE_ROLE_KEY,

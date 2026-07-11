@@ -16,13 +16,24 @@ export async function POST() {
     return Response.json({ error: "Sem permissão" }, { status: 403 });
   }
 
-  let pythonStatus: string | null = null;
+  let pythonStatus: string;
   try {
     const r = await fetch(`${PYTHON_BASE_URL}/reenviar-nao-disparados`, { method: "POST" });
     pythonStatus = `ok:${r.status}`;
+    if (!r.ok) {
+      console.error("[REENVIO] Python respondeu erro:", r.status);
+      return Response.json(
+        { ok: false, error: `Serviço de cobrança respondeu ${r.status} — reenvio não confirmado`, pythonStatus },
+        { status: 502 }
+      );
+    }
   } catch (err) {
     pythonStatus = `erro:${String(err)}`;
     console.error("[REENVIO] Falha ao chamar Python:", err);
+    return Response.json(
+      { ok: false, error: "Falha ao contatar o serviço de cobrança — reenvio não realizado", pythonStatus },
+      { status: 502 }
+    );
   }
 
   return Response.json({ ok: true, pythonStatus });

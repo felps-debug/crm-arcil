@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let pythonStatus: string | null = null;
+  let pythonStatus: string;
   try {
     const r = await fetch(PYTHON_COBRANCA_URL, {
       method: "POST",
@@ -38,9 +38,20 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({ leads }),
     });
     pythonStatus = `ok:${r.status}`;
+    if (!r.ok) {
+      console.error("[DISPARO] Python respondeu erro:", r.status);
+      return Response.json(
+        { ok: false, error: `Serviço de cobrança respondeu ${r.status} — disparo não confirmado`, pythonStatus },
+        { status: 502 }
+      );
+    }
   } catch (err) {
     pythonStatus = `erro:${String(err)}`;
     console.error("[DISPARO] Falha ao chamar Python:", err);
+    return Response.json(
+      { ok: false, error: "Falha ao contatar o serviço de cobrança — nada foi disparado", pythonStatus },
+      { status: 502 }
+    );
   }
 
   // After Python inserts the rows (synchronously before its response),
@@ -52,24 +63,25 @@ export async function POST(req: NextRequest) {
 
       const { data: recentRows } = await admin
         .from("cobranca_log")
-        .select("id, telefone")
+        .select("id, telefone, metadata")
         .in("telefone", phones)
         .gte("created_at", cutoff)
         .order("created_at", { ascending: false });
 
       if (recentRows) {
         // Pick the most-recent row per phone (recentRows already ordered desc)
-        const byPhone = new Map<string, string>();
+        const byPhone = new Map<string, { id: string; metadata: Record<string, unknown> | null }>();
         for (const row of recentRows) {
           if (row.telefone && !byPhone.has(row.telefone) && boletosByPhone[row.telefone]) {
-            byPhone.set(row.telefone, row.id);
+            byPhone.set(row.telefone, { id: row.id, metadata: row.metadata });
           }
         }
         await Promise.all(
-          [...byPhone.entries()].map(([phone, id]) =>
+          [...byPhone.entries()].map(([phone, row]) =>
+            // Merge: preserva a metadata gravada pelo ERP/Python (update substituiria a coluna inteira)
             admin.from("cobranca_log").update({
-              metadata: { boletos_json: boletosByPhone[phone] },
-            }).eq("id", id)
+              metadata: { ...(row.metadata ?? {}), boletos_json: boletosByPhone[phone] },
+            }).eq("id", row.id)
           )
         );
       }
