@@ -11,12 +11,15 @@ import {
   Gauge,
   Image as ImageIcon,
   LogOut,
+  Moon,
   Settings,
   ShieldCheck,
+  Sun,
   Users,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useTheme } from "@/hooks/use-theme";
 import { getUrgentFollowupsCount } from "@/lib/supabase/queries";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +37,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { profile } = useCurrentUser();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [urgentCount, setUrgentCount] = useState(0);
 
   useEffect(() => {
@@ -92,10 +96,18 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-[#1f2b3d] px-3 py-5">
-        <Link href="/admin" className="mb-5 flex items-center gap-3 rounded-[12px] px-4 py-2.5 text-[13px] font-semibold text-[#c8d1df] hover:bg-white/[0.06]">
+        <Link href="/admin" className="mb-2 flex items-center gap-3 rounded-[12px] px-4 py-2.5 text-[13px] font-semibold text-[#c8d1df] hover:bg-white/[0.06]">
           <Settings size={17} />
           Configuracoes
         </Link>
+
+        <button
+          onClick={toggleTheme}
+          className="mb-5 flex w-full items-center gap-3 rounded-[12px] px-4 py-2.5 text-[13px] font-semibold text-[#c8d1df] transition-colors hover:bg-white/[0.06]"
+        >
+          {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          {theme === "dark" ? "Modo claro" : "Modo escuro"}
+        </button>
 
         <div className="mb-4 flex items-center gap-3 px-3">
           <div className="grid h-10 w-10 place-items-center rounded-full border border-[#2a3a52] bg-[#0d1a2a] text-[12px] font-bold text-blue-200">
