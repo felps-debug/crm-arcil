@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, BarChart3, Bot, DollarSign, TrendingUp, Users, Zap } from "lucide-react";
+import { Activity, BarChart3, Bot, DollarSign, MessageCircle, Receipt, TrendingUp, UserPlus, Users, Zap } from "lucide-react";
 import {
   ConsoleCard,
   ConsoleError,
@@ -11,6 +11,9 @@ import {
   ConsoleTable,
 } from "@/components/console/console-shell";
 import { formatMoney, formatNumber, useApi } from "@/lib/client-api";
+import { useSupabase } from "@/hooks/use-supabase";
+import { getRecentActivity } from "@/lib/supabase/queries";
+import { formatRelativeTime } from "@/lib/utils";
 import type { DashboardSummaryResponse } from "@/types/api";
 
 function metricValue(value: number | string, unit?: string) {
@@ -25,6 +28,7 @@ function toneForIndex(index: number): "blue" | "green" | "amber" | "red" | "viol
 
 export default function DashboardPage() {
   const summary = useApi<DashboardSummaryResponse>("/api/dashboard/summary");
+  const { data: activity, loading: loadingActivity } = useSupabase(() => getRecentActivity(), []);
 
   const loading = summary.loading;
   const error = summary.error;
@@ -96,6 +100,42 @@ export default function DashboardPage() {
             <Breakdown title="Leads por Status" items={summary.data?.breakdowns.leadsByStatus ?? []} />
             <Breakdown title="Origem dos Leads" items={summary.data?.breakdowns.leadsByOrigin ?? []} />
           </section>
+
+          <ConsoleCard pad={false}>
+            <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-3">
+              <TrendingUp size={15} className="text-emerald-300" />
+              <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Atividade Recente</h2>
+            </div>
+            {loadingActivity ? (
+              <div className="p-4"><ConsoleLoading /></div>
+            ) : !activity?.length ? (
+              <p className="py-8 text-center text-[13px] text-[var(--text-muted)]">Nenhuma atividade recente.</p>
+            ) : (
+              <div className="divide-y divide-[var(--border)]">
+                {activity.map((item, i) => {
+                  const Icon = item.type === "lead" ? UserPlus : item.type === "cobranca" ? Receipt : MessageCircle;
+                  const tone =
+                    item.type === "lead"
+                      ? "text-blue-400 bg-blue-500/10"
+                      : item.type === "cobranca"
+                      ? "text-amber-400 bg-amber-500/10"
+                      : "text-emerald-400 bg-emerald-500/10";
+                  return (
+                    <div key={`${item.id}-${i}`} className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-[var(--bg-subtle)]">
+                      <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-[6px] ${tone}`}>
+                        <Icon size={14} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{item.label}</p>
+                        {item.sub && <p className="truncate text-[11px] text-[var(--text-muted)]">{item.sub}</p>}
+                      </div>
+                      <span className="shrink-0 font-data text-[11px] text-[var(--text-muted)]">{formatRelativeTime(item.date)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </ConsoleCard>
 
           <ConsoleCard pad={false}>
             <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">

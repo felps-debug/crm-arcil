@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
@@ -16,11 +17,12 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { getUrgentFollowupsCount } from "@/lib/supabase/queries";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: Gauge },
-  { href: "/leads", label: "Leads", icon: Users },
+  { href: "/leads", label: "Leads", icon: Users, badge: true },
   { href: "/agentes", label: "Agentes IA", icon: Bot },
   { href: "/demanda-estoque", label: "Demanda & Estoque", icon: Boxes },
   { href: "/cobranca", label: "Campanhas & Cobrancas", icon: CreditCard },
@@ -32,6 +34,13 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { profile } = useCurrentUser();
+  const [urgentCount, setUrgentCount] = useState(0);
+
+  useEffect(() => {
+    getUrgentFollowupsCount().then(setUrgentCount);
+    const id = setInterval(() => getUrgentFollowupsCount().then(setUrgentCount), 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   if (pathname === "/login") return null;
 
@@ -54,8 +63,9 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-2 px-3">
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {NAV.map(({ href, label, icon: Icon, badge }) => {
           const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+          const showBadge = badge && urgentCount > 0;
           return (
             <Link
               key={href}
@@ -68,7 +78,14 @@ export function Sidebar() {
               )}
             >
               <Icon size={18} strokeWidth={1.9} />
-              <span className="leading-tight">{label}</span>
+              <span className="flex flex-1 items-center justify-between leading-tight">
+                {label}
+                {showBadge && (
+                  <span className="ml-2 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                    {urgentCount > 99 ? "99+" : urgentCount}
+                  </span>
+                )}
+              </span>
             </Link>
           );
         })}

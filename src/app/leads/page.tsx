@@ -202,31 +202,53 @@ function LeadsKanban({ leads, onSelect }: { leads: LeadListItem[]; onSelect: (id
   );
 }
 
+function inactivityPill(lastContactAt: string | null | undefined) {
+  if (!lastContactAt) return null;
+  const days = Math.floor((Date.now() - new Date(lastContactAt).getTime()) / 86_400_000);
+  if (days < 7) return null;
+  const label = days >= 30 ? `${Math.floor(days / 30)}m` : `${days}d`;
+  const tone = days >= 30 ? "text-red-400 border-red-500/20 bg-red-500/8" : "text-amber-400 border-amber-500/20 bg-amber-500/8";
+  return { label, tone, days };
+}
+
 function LeadsCards({ leads, onSelect }: { leads: LeadListItem[]; onSelect: (id: string) => void }) {
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
-      {leads.map((lead) => (
-        <button key={lead.id} onClick={() => onSelect(lead.id)} className="text-left">
-          <ConsoleCard className="transition-colors hover:border-blue-500/50">
-            <div className="flex items-start gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-[8px] bg-blue-500/10 text-blue-300">
-                <UserRound size={16} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <h2 className="truncate text-[14px] font-bold text-[var(--text-primary)]">{lead.name ?? "Sem nome"}</h2>
-                  <ConsoleStatus tone={statusTone(lead.status)}>{lead.statusLabel}</ConsoleStatus>
+      {leads.map((lead) => {
+        const inactive = inactivityPill(lead.lastContactAt);
+        return (
+          <button key={lead.id} onClick={() => onSelect(lead.id)} className="text-left">
+            <ConsoleCard className="transition-colors hover:border-blue-500/50">
+              <div className="flex items-start gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-[8px] bg-blue-500/10 text-blue-300">
+                  <UserRound size={16} />
                 </div>
-                <p className="mt-1 text-[12px] text-[var(--text-muted)]">{lead.phone ?? "-"}</p>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
-                  <Info icon={Building2} label="Empresa" value={lead.company ?? "-"} />
-                  <Info icon={Search} label="Origem" value={lead.origin ?? "-"} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="truncate text-[14px] font-bold text-[var(--text-primary)]">{lead.name ?? "Sem nome"}</h2>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {inactive && (
+                        <span
+                          title={`Sem atividade há ${inactive.days} dias`}
+                          className={`rounded-full border px-1.5 py-0.5 text-[10px] font-bold ${inactive.tone}`}
+                        >
+                          {inactive.label}
+                        </span>
+                      )}
+                      <ConsoleStatus tone={statusTone(lead.status)}>{lead.statusLabel}</ConsoleStatus>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-[12px] text-[var(--text-muted)]">{lead.phone ?? "-"}</p>
+                  <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
+                    <Info icon={Building2} label="Empresa" value={lead.company ?? "-"} />
+                    <Info icon={Search} label="Origem" value={lead.origin ?? "-"} />
+                  </div>
                 </div>
               </div>
-            </div>
-          </ConsoleCard>
-        </button>
-      ))}
+            </ConsoleCard>
+          </button>
+        );
+      })}
     </div>
   );
 }
