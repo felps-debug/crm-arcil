@@ -24,7 +24,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "ARCIL CRM",
   description: "Sistema CRM do Grupo Arcil — FLUXO Automações com IA",
-  icons: { icon: "/logo.png" },
+  icons: { icon: "/logo-icon.png" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

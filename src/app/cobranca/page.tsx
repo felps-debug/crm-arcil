@@ -1,149 +1,282 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, CheckCircle2, Clock, CreditCard, FileWarning, PauseCircle, PlayCircle, Receipt, Search, Send, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment } from "react";
 import {
-  ConsoleButton,
-  ConsoleCard,
-  ConsoleError,
-  ConsoleInput,
-  ConsoleLoading,
-  ConsoleMetric,
-  ConsolePage,
-  ConsoleStatus,
-  ConsoleTable,
-} from "@/components/console/console-shell";
-import { formatMoney, formatNumber, useApi } from "@/lib/client-api";
-import type { DashboardSummaryResponse, PendingCenterResponse } from "@/types/api";
+  Clock,
+  MessageCircleReply,
+  Receipt,
+  Send,
+  ShieldAlert,
+  DollarSign,
+  CheckCircle2,
+  XCircle,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ConsoleButton, ConsoleCard, ConsoleError, ConsoleLoading, ConsoleMetric, ConsolePage, ConsoleStatus } from "@/components/console/console-shell";
+import { CobrancaLogDrawer } from "@/components/ui/cobranca-log-drawer";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { useSupabase } from "@/hooks/use-supabase";
+import { createClient } from "@/lib/supabase/client";
+import { formatCurrency } from "@/lib/utils";
+import { getCobrancaLog, getCobrancaStats, getFollowupsByType } from "@/lib/supabase/queries";
+import type { CobrancaLog } from "@/types";
+import { DispararTab } from "./_components/disparar-tab";
+import { MonitoramentoTab } from "./_components/monitoramento-tab";
+import { parseMoneyToNumber } from "./cobranca-helpers";
 
-const invalidRows = [
-  { receipt: "#998421", phone: "(11) 90000-0000", error: "Formato de DDD invalido", status: "Rejeitado" },
-  { receipt: "#998422", phone: "(21) 98888-77", error: "Numero incompleto", status: "Rejeitado" },
-  { receipt: "#998425", phone: "(00) 91234-5678", error: "Prefixo inexistente", status: "Rejeitado" },
-  { receipt: "#998429", phone: "(41) 3232-1010", error: "Telefone fixo incompativel", status: "Rejeitado" },
-];
+type Tab = "disparar" | "logs" | "followups" | "tecnico";
 
 export default function CobrancaPage() {
-  const summary = useApi<DashboardSummaryResponse>("/api/dashboard/summary");
-  const pending = useApi<PendingCenterResponse>("/api/dashboard/pending-center");
-  const loading = summary.loading || pending.loading;
-  const error = summary.error || pending.error;
-  const collectionsToday = pending.data?.items.find((i) => i.id === "collections_due_today")?.count ?? 0;
-  const potential = summary.data?.metrics.find((m) => m.id === "potential_revenue")?.value ?? 0;
+  const [tab, setTab] = useState<Tab>("disparar");
+  const { isSuperAdmin, isManagerOrAbove } = useCurrentUser();
+  const [selectedLog, setSelectedLog] = useState<CobrancaLog | null>(null);
+  const [expandedMeta, setExpandedMeta] = useState<string | null>(null);
+
+  const { data: stats, loading: loadingStats, error: errorStats } = useSupabase(() => getCobrancaStats(), []);
+  const { data: followups, loading: loadingFu, error: errorFu, refetch: refetchFu } = useSupabase(() => getFollowupsByType("cobranca"), []);
+
+  const [logs, setLogs] = useState<CobrancaLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(true);
+  const [errorLogs, setErrorLogs] = useState<string | null>(null);
+
+  const fetchLogs = useCallback(async () => {
+    setLoadingLogs(true);
+    setErrorLogs(null);
+    try {
+      setLogs(await getCobrancaLog());
+    } catch (e) {
+      setErrorLogs(e instanceof Error ? e.message : "Erro");
+    } finally {
+      setLoadingLogs(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLogs();
+    const supabase = createClient();
+    const ch = supabase
+      .channel("cobranca-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, fetchLogs)
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [fetchLogs]);
+
+  const totalEmAberto = useMemo(() => logs.reduce((sum, l) => sum + (parseMoneyToNumber(l.valor ?? "") ?? 0), 0), [logs]);
+  const selectedFollowup = selectedLog ? followups?.find((f) => f.numero_cliente === selectedLog.telefone) ?? null : null;
+
+  const TABS: { id: Tab; label: string; count?: number; adminOnly?: boolean }[] = [
+    { id: "disparar", label: "Disparar" },
+    { id: "logs", label: "Monitoramento", count: logs.length },
+    { id: "followups", label: "Follow-ups", count: followups?.length },
+    { id: "tecnico", label: "Logs Técnicos", count: logs.length, adminOnly: true },
+  ];
 
   return (
-    <ConsolePage
-      title="Cobranca"
-      subtitle="Disparos e acompanhamento"
-      actions={<ConsoleInput placeholder="Buscar registro..." className="w-64" />}
-    >
-      {loading && <ConsoleLoading />}
-      {error && <ConsoleError message={error} />}
+    <ConsolePage title="Cobranca" subtitle="Disparos e acompanhamento em tempo real">
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {loadingStats ? (
+          <div className="xl:col-span-5"><ConsoleLoading /></div>
+        ) : errorStats ? (
+          <div className="xl:col-span-5"><ConsoleError message={errorStats} /></div>
+        ) : (
+          <>
+            <ConsoleMetric label="Total disparados" value={stats?.total ?? 0} helper={`${stats?.disparados ?? 0} enviados`} icon={Send} tone="blue" />
+            <ConsoleMetric label="Pendentes" value={stats?.pendentes ?? 0} helper="aguardando" icon={Clock} tone="amber" />
+            <ConsoleMetric
+              label="Responderam"
+              value={stats?.responderam ?? 0}
+              helper={`${stats?.total ? ((stats.responderam / stats.total) * 100).toFixed(0) : 0}% taxa`}
+              icon={MessageCircleReply}
+              tone="green"
+            />
+            <ConsoleMetric label="Pag. confirmado" value={stats?.pagos ?? 0} helper="confirmados" icon={Receipt} tone="violet" />
+            <ConsoleMetric
+              label="Total em aberto"
+              value={!loadingLogs && totalEmAberto > 0 ? formatCurrency(totalEmAberto) : "—"}
+              helper="soma dos valores"
+              icon={DollarSign}
+              tone="green"
+            />
+          </>
+        )}
+      </section>
 
-      {!loading && !error && (
-        <>
-          <div className="flex flex-wrap gap-2">
-            <ConsoleButton active>Disparar</ConsoleButton>
-            <ConsoleButton>Monitoramento</ConsoleButton>
-            <ConsoleButton>Follow-ups</ConsoleButton>
-            <ConsoleButton>Logs tecnicos</ConsoleButton>
-          </div>
+      <div className="flex flex-wrap gap-2">
+        {TABS.filter((t) => !t.adminOnly || isSuperAdmin).map((t) => (
+          <ConsoleButton key={t.id} active={tab === t.id} onClick={() => setTab(t.id)}>
+            {t.label}
+            {t.count !== undefined && t.count > 0 && <span className="font-data opacity-80">{t.count}</span>}
+          </ConsoleButton>
+        ))}
+      </div>
 
-          <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <ConsoleMetric label="Total disparados" value="-" helper="Aguardando campanha" icon={Send} tone="blue" />
-            <ConsoleMetric label="Pendentes" value={collectionsToday} helper="Vencem hoje" icon={Clock} tone="amber" />
-            <ConsoleMetric label="Responderam" value="-" helper="Resposta por campanha" icon={CheckCircle2} tone="green" />
-            <ConsoleMetric label="Pag. confirmado" value="-" helper="Confirmacao financeira" icon={Receipt} tone="green" />
-            <ConsoleMetric label="Total em aberto" value={formatMoney(potential)} helper="Receita potencial" icon={CreditCard} tone="blue" />
-          </section>
+      <AnimatePresence mode="wait">
+        {tab === "disparar" && (
+          <motion.div key="disparar" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+            <DispararTab onDispatched={() => setTab("logs")} />
+          </motion.div>
+        )}
 
-          <ConsoleCard>
-            <div className="mb-5 grid grid-cols-5 items-center gap-2">
-              {["Importar", "Mapear", "Validar", "Revisar", "Confirmar"].map((step, index) => (
-                <div key={step} className="flex items-center gap-2">
-                  <div className={`grid h-8 w-8 place-items-center rounded-full ${index < 2 ? "bg-emerald-500 text-black" : index === 2 ? "bg-blue-500 text-white" : "bg-[var(--bg-subtle)] text-[var(--text-muted)]"}`}>
-                    {index < 2 ? <CheckCircle2 size={14} /> : index === 2 ? <FileWarning size={14} /> : <PauseCircle size={14} />}
+        {tab === "logs" && (
+          <motion.div key="logs" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+            <MonitoramentoTab
+              logs={logs}
+              loading={loadingLogs}
+              error={errorLogs}
+              onRefetch={fetchLogs}
+              isManagerOrAbove={isManagerOrAbove}
+              onSelectLog={setSelectedLog}
+            />
+          </motion.div>
+        )}
+
+        {tab === "followups" && (
+          <motion.div key="followups" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+            <ConsoleCard pad={false}>
+              <div className="border-b border-[var(--border)] px-4 py-3">
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Follow-ups de Cobrança</h2>
+                <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">Acompanhamento de respostas</p>
+              </div>
+              {loadingFu ? (
+                <div className="p-4"><ConsoleLoading /></div>
+              ) : errorFu ? (
+                <div className="p-4"><ConsoleError message={errorFu} /></div>
+              ) : !followups?.length ? (
+                <p className="py-12 text-center text-[13px] text-[var(--text-muted)]">Nenhum follow-up</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left text-[12px]">
+                    <thead>
+                      <tr className="border-b border-[var(--border)] bg-[var(--bg-inset)]">
+                        {["Cliente", "Telefone", "Step", "Respondeu", "Última Msg", "Status"].map((h) => (
+                          <th key={h} className="whitespace-nowrap px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {followups.map((f) => (
+                        <tr key={f.id} className="border-b border-[var(--border)] last:border-0">
+                          <td className="px-3 py-2.5 font-semibold text-[var(--text-primary)]">{f.nome_cliente ?? "—"}</td>
+                          <td className="px-3 py-2.5 font-data text-[var(--text-secondary)]">{f.numero_cliente ?? "—"}</td>
+                          <td className="px-3 py-2.5">
+                            <ConsoleStatus tone={f.followup_step && f.followup_step >= 3 ? "red" : "blue"}>Step {f.followup_step ?? 0}</ConsoleStatus>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {f.respondeu ? <CheckCircle2 size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}
+                          </td>
+                          <td className="px-3 py-2.5 font-data text-[11px] text-[var(--text-muted)]">
+                            {f.ultima_msg_ia ? new Date(f.ultima_msg_ia).toLocaleString("pt-BR") : "—"}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <ConsoleStatus tone={f.status === "PENDING" ? "amber" : "slate"}>{f.status ?? "—"}</ConsoleStatus>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </ConsoleCard>
+          </motion.div>
+        )}
+
+        {tab === "tecnico" && isSuperAdmin && (
+          <motion.div key="tecnico" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+            <ConsoleCard pad={false}>
+              <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert size={14} className="text-amber-400" />
+                    <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Logs Técnicos da Automação</h2>
                   </div>
-                  <span className="text-[11px] font-bold uppercase text-[var(--text-secondary)]">{step}</span>
+                  <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">Dados brutos do sistema — visível apenas para superadmin</p>
                 </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <ValidationCard label="Registros validos" value="1.180" status="Simulacao" tone="green" />
-              <ValidationCard label="Registros invalidos" value="42" status="Correcao necessaria" tone="red" />
-              <ValidationCard label="Duplicados" value="18" status="Limpeza automatica" tone="amber" />
-            </div>
-          </ConsoleCard>
-
-          <ConsoleCard pad={false}>
-            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-              <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Registros com erro</h2>
-              <ConsoleButton>Todos os erros</ConsoleButton>
-            </div>
-            <ConsoleTable headers={["Registro", "Telefone", "Motivo do erro", "Status", "Acao"]}>
-              {invalidRows.map((row) => (
-                <tr key={row.receipt} className="border-b border-[var(--border)] last:border-0">
-                  <td className="px-3 py-3 font-data text-[var(--text-primary)]">{row.receipt}</td>
-                  <td className="px-3 py-3 font-data text-[var(--text-secondary)]">{row.phone}</td>
-                  <td className="px-3 py-3 text-[var(--text-secondary)]">{row.error}</td>
-                  <td className="px-3 py-3"><ConsoleStatus tone="red">{row.status}</ConsoleStatus></td>
-                  <td className="px-3 py-3"><ConsoleButton icon={Search}>Corrigir</ConsoleButton></td>
-                </tr>
-              ))}
-            </ConsoleTable>
-          </ConsoleCard>
-
-          <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <ConsoleCard>
-              <div className="flex items-center gap-2">
-                <AlertTriangle size={16} className="text-blue-300" />
-                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Mapa de Qualidade de Dados</h2>
+                <button onClick={fetchLogs} title="Atualizar" className="rounded-[8px] p-1.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]">
+                  <RefreshCw size={13} className={loadingLogs ? "animate-spin" : ""} />
+                </button>
               </div>
-              <div className="mt-4 grid h-48 place-items-center rounded-[8px] bg-[var(--bg-inset)]">
-                <div className="text-center">
-                  <p className="font-data text-[30px] font-bold text-blue-300">96.5%</p>
-                  <p className="text-[11px] font-bold uppercase text-[var(--text-muted)]">Precisao media</p>
+              {loadingLogs ? (
+                <div className="p-4"><ConsoleLoading /></div>
+              ) : errorLogs ? (
+                <div className="p-4"><ConsoleError message={errorLogs} /></div>
+              ) : !logs.length ? (
+                <p className="py-12 text-center text-[13px] text-[var(--text-muted)]">Nenhum registro encontrado</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left text-[12px]">
+                    <thead>
+                      <tr className="border-b border-[var(--border)] bg-[var(--bg-inset)]">
+                        {["", "Nome", "Telefone", "Documento", "Valor", "Vencimento", "Status Automação", "Data Disparo", "Metadata ERP"].map((h) => (
+                          <th key={h} className="whitespace-nowrap px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {logs.map((log) => {
+                        const isExpanded = expandedMeta === log.id;
+                        const tone = log.status_disparo === "DISPARADO" ? "green" : log.status_disparo === "NAO DISPARADO" ? "red" : "amber";
+                        return (
+                          <Fragment key={log.id}>
+                            <tr className="border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--bg-subtle)]">
+                              <td className="px-3 py-2.5">
+                                <button
+                                  onClick={() => setExpandedMeta(isExpanded ? null : log.id)}
+                                  className="p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                                >
+                                  {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                </button>
+                              </td>
+                              <td className="px-3 py-2.5 font-semibold text-[var(--text-primary)]">{log.nome ?? "—"}</td>
+                              <td className="px-3 py-2.5 font-data text-[11px]">{log.telefone}</td>
+                              <td className="px-3 py-2.5 text-[11px] text-[var(--text-muted)]">{log.documento ?? "—"}</td>
+                              <td className="px-3 py-2.5">{log.valor ?? "—"}</td>
+                              <td className="px-3 py-2.5">{log.vencimento ?? "—"}</td>
+                              <td className="px-3 py-2.5"><ConsoleStatus tone={tone}>{log.status_disparo ?? "—"}</ConsoleStatus></td>
+                              <td className="px-3 py-2.5 font-data text-[11px] text-[var(--text-muted)]">
+                                {log.data_disparo ? new Date(log.data_disparo).toLocaleString("pt-BR") : "—"}
+                              </td>
+                              <td className="px-3 py-2.5">
+                                {log.metadata ? (
+                                  <span className="cursor-pointer text-[11px] text-blue-400" onClick={() => setExpandedMeta(isExpanded ? null : log.id)}>
+                                    {isExpanded ? "ocultar" : "ver dados ERP"}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-[var(--text-muted)]">—</span>
+                                )}
+                              </td>
+                            </tr>
+                            {isExpanded && log.metadata && (
+                              <tr>
+                                <td colSpan={9} className="bg-[var(--bg-subtle)] px-4 py-3">
+                                  <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[11px] text-[var(--text-secondary)]">
+                                    {JSON.stringify(log.metadata, null, 2)}
+                                  </pre>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
+              )}
             </ConsoleCard>
-            <ConsoleCard>
-              <div className="mb-4 flex items-center gap-2">
-                <CalendarClock size={16} className="text-violet-300" />
-                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Agendamento de Disparo</h2>
-              </div>
-              <div className="space-y-2">
-                <ScheduleOption icon={PlayCircle} label="Disparo imediato" active />
-                <ScheduleOption icon={Clock} label="Agendar para mais tarde" />
-                <ScheduleOption icon={XCircle} label="Pausar campanha" />
-              </div>
-            </ConsoleCard>
-          </section>
-        </>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <CobrancaLogDrawer log={selectedLog} followup={selectedFollowup} onClose={() => setSelectedLog(null)} />
     </ConsolePage>
-  );
-}
-
-function ValidationCard({ label, value, status, tone }: { label: string; value: string; status: string; tone: "green" | "red" | "amber" }) {
-  return (
-    <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] p-3">
-      <p className="text-[10px] font-bold uppercase text-[var(--text-muted)]">{label}</p>
-      <div className="mt-2 flex items-end justify-between gap-3">
-        <p className="font-data text-[24px] font-bold text-[var(--text-primary)]">{formatNumber(value)}</p>
-        <ConsoleStatus tone={tone}>{status}</ConsoleStatus>
-      </div>
-    </div>
-  );
-}
-
-function ScheduleOption({ icon: Icon, label, active }: { icon: typeof PlayCircle; label: string; active?: boolean }) {
-  return (
-    <div className={`flex items-center justify-between rounded-[8px] border p-3 ${active ? "border-blue-500/40 bg-blue-500/10" : "border-[var(--border)] bg-[var(--bg-inset)]"}`}>
-      <div className="flex items-center gap-2">
-        <Icon size={15} className="text-[var(--text-muted)]" />
-        <span className="text-[12px] font-semibold text-[var(--text-primary)]">{label}</span>
-      </div>
-      <span className={`h-3 w-3 rounded-full border ${active ? "border-blue-400 bg-blue-400" : "border-[var(--border-strong)]"}`} />
-    </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bot,
@@ -44,9 +45,12 @@ export function Sidebar() {
 
   return (
     <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-[244px] flex-col border-r border-[#1f2b3d] bg-[#050b14] text-[#d8e2f2]">
-      <div className="px-6 pb-8 pt-8">
-        <div className="text-[34px] font-extrabold leading-none tracking-normal text-[#a9c9ff]">ARCIL</div>
-        <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7f8ca3]">Operacional Comercial</div>
+      <div className="flex items-center gap-3 px-6 pb-8 pt-8">
+        <Image src="/logo-icon.png" alt="Arcil" width={34} height={34} className="h-[34px] w-[34px] shrink-0 object-contain" />
+        <div>
+          <div className="text-[24px] font-extrabold leading-none tracking-normal text-[#a9c9ff]">ARCIL</div>
+          <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7f8ca3]">Operacional Comercial</div>
+        </div>
       </div>
 
       <nav className="flex-1 space-y-2 px-3">

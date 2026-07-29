@@ -144,11 +144,11 @@ export default function LoginPage() {
         style={{ maxWidth: 400 }}
       >
         <div
-          className="rounded-2xl overflow-hidden"
+          className="rounded-2xl overflow-hidden border"
           style={{
-            background: "linear-gradient(180deg, #0b1528 0%, #080f1f 100%)",
-            boxShadow:
-              "0 0 0 1px rgba(255,255,255,0.07), 0 4px 6px rgba(0,0,0,0.4), 0 24px 48px rgba(0,0,0,0.6)",
+            background: "#050b14",
+            borderColor: "#1f2b3d",
+            boxShadow: "0 4px 6px rgba(0,0,0,0.4), 0 24px 48px rgba(0,0,0,0.6)",
           }}
         >
           {/* Top rule — single blue accent line */}
@@ -165,16 +165,13 @@ export default function LoginPage() {
             {/* ── Logo ── */}
             <div className="flex flex-col items-center gap-3.5">
               <div
-                className="w-14 h-14 rounded-xl flex items-center justify-center"
-                style={{
-                  background: "linear-gradient(145deg, #2f6fe0, #1e40af)",
-                  boxShadow: "0 8px 24px rgba(29,78,216,0.4), inset 0 1px 0 rgba(255,255,255,0.12)",
-                }}
+                className="w-16 h-16 rounded-xl flex items-center justify-center border"
+                style={{ background: "#0b1528", borderColor: "#1f2b3d" }}
               >
-                <Image src="/logo.png" alt="Grupo Arcil" width={32} height={32} className="w-8 h-8 object-contain" />
+                <Image src="/logo-icon.png" alt="Grupo Arcil" width={36} height={36} className="w-9 h-9 object-contain" />
               </div>
               <div className="text-center">
-                <Image src="/logo-arcil-full.png" alt="Grupo Arcil" width={162} height={54} className="h-6 w-auto object-contain mx-auto" />
+                <Image src="/logo-lockup-dark.jpg" alt="Grupo Arcil" width={90} height={160} className="h-16 w-auto object-contain mx-auto rounded-md" />
                 <p
                   className="text-[9px] font-bold mt-2"
                   style={{ color: "rgba(96,165,250,0.4)", letterSpacing: "0.3em" }}
