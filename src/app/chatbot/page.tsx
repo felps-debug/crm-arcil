@@ -1,626 +1,355 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Header } from "@/components/layout/header";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Send, Paperclip, X, Download, Loader2, RotateCcw,
-  ZoomIn, Bot, History, ImageIcon, MessageSquare, Trash2,
+  AirVent,
+  ArrowLeftRight,
+  ArrowLeft,
+  ImagePlus,
+  Loader2,
+  MessageSquare,
+  RefreshCcw,
+  Sparkles,
 } from "lucide-react";
+import {
+  ConsoleButton,
+  ConsoleCard,
+  ConsolePage,
+  ConsoleStatus,
+} from "@/components/console/console-shell";
 import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/components/ui/toast";
 
 interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  imageUrl?: string;
-  generatedImageUrl?: string;
-  isGenerating?: boolean;
-  timestamp: string; // ISO string for JSON serialisation
-}
-
-interface ApiMessage {
   role: "user" | "assistant";
   content: string;
   imageUrl?: string;
 }
 
-interface Session {
-  id: string;
-  title: string;
-  createdAt: string;
-  messages: ChatMessage[];
-  generatedImageUrl?: string;
-}
+type Step =
+  | { key: string; question: string; type: "text" }
+  | { key: string; question: string; type: "file" }
+  | { key: string; question: string; type: "choice"; options: string[] };
 
-const STORAGE_KEY = "arcil_chatbot_sessions";
-const MAX_SESSIONS = 30;
-
-const INITIAL_MESSAGE: ChatMessage = {
-  id: "init",
-  role: "assistant",
-  content: "Olá! Sou o consultor de visualização da ARCIL. Para começar, me manda uma foto da parede onde o ar-condicionado será instalado — pode usar o ícone de clipe.",
-  timestamp: new Date().toISOString(),
-};
-
-function loadSessions(): Session[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-function saveSessions(sessions: Session[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.slice(0, MAX_SESSIONS)));
-  } catch {}
-}
-
-function sessionTitle(messages: ChatMessage[]): string {
-  const first = messages.find((m) => m.role === "user" && m.content);
-  if (first?.content) return first.content.slice(0, 45) + (first.content.length > 45 ? "…" : "");
-  return "Conversa sem título";
-}
-
-function sessionThumb(messages: ChatMessage[]): string | undefined {
-  return [...messages].reverse().find((m) => m.generatedImageUrl)?.generatedImageUrl;
-}
-
-function toApiMessages(msgs: ChatMessage[]): ApiMessage[] {
-  return msgs
-    .filter((m) => !m.isGenerating)
-    .map((m) => ({ role: m.role, content: m.content, imageUrl: m.imageUrl }));
-}
-
-function TypingIndicator() {
-  return (
-    <div className="flex gap-1.5 items-center px-1 py-1">
-      {[0, 0.18, 0.36].map((delay, i) => (
-        <motion.span
-          key={i}
-          className="w-2 h-2 rounded-full"
-          style={{ background: "var(--text-muted)" }}
-          animate={{ y: [0, -5, 0], opacity: [0.4, 1, 0.4] }}
-          transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut", delay }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function BotAvatar() {
-  return (
-    <div
-      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm"
-      style={{ background: "linear-gradient(135deg, #1c1c1e, #3a3a3c)" }}
-    >
-      <Bot size={14} className="text-white" />
-    </div>
-  );
-}
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDate(iso: string) {
-  const d = new Date(iso);
-  const today = new Date();
-  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-  if (d.toDateString() === today.toDateString()) return "Hoje";
-  if (d.toDateString() === yesterday.toDateString()) return "Ontem";
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
-}
+const STEPS: Step[] = [
+  { key: "ambiente", question: "Qual o ambiente da instalacao?", type: "text" },
+  { key: "foto", question: "Envie uma foto da parede", type: "file" },
+  { key: "modelo", question: "Qual o modelo do ar-condicionado?", type: "text" },
+  { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
+  { key: "ponto_eletrico", question: "Ja existe ponto eletrico na parede?", type: "choice", options: ["Sim", "Nao"] },
+  { key: "unidade_externa", question: "Onde ficara a unidade externa (condensadora)?", type: "text" },
+  { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente"] },
+];
 
 export default function ChatbotPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
-  const [currentSessionId, setCurrentSessionId] = useState<string>(() => `s-${Date.now()}`);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [input, setInput] = useState("");
-  const [responding, setResponding] = useState(false);
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const compareRef = useRef<HTMLDivElement>(null);
+
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [textValue, setTextValue] = useState("");
+  const [wallImageUrl, setWallImageUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [stagedImageUrl, setStagedImageUrl] = useState<string | null>(null);
-  const [stagedPreview, setStagedPreview] = useState<string | null>(null);
-  const [previewModal, setPreviewModal] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+  const [dividerPct, setDividerPct] = useState(50);
+  const [dragging, setDragging] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef   = useRef<HTMLInputElement>(null);
-  const inputRef       = useRef<HTMLInputElement>(null);
+  const current = STEPS[step];
+  const isLastStep = step === STEPS.length - 1;
 
-  // Load sessions from localStorage on mount
-  useEffect(() => { setSessions(loadSessions()); }, []);
-
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
-
-  useEffect(() => { scrollToBottom(); }, [messages, responding, scrollToBottom]);
-
-  // Persist current session whenever messages change (debounced-ish via useEffect)
   useEffect(() => {
-    const hasUserMessage = messages.some((m) => m.role === "user");
-    if (!hasUserMessage) return;
-    setSessions((prev) => {
-      const existing = prev.find((s) => s.id === currentSessionId);
-      const updated: Session = {
-        id: currentSessionId,
-        title: sessionTitle(messages),
-        createdAt: existing?.createdAt ?? new Date().toISOString(),
-        messages,
-        generatedImageUrl: sessionThumb(messages),
-      };
-      const rest = prev.filter((s) => s.id !== currentSessionId);
-      const next = [updated, ...rest];
-      saveSessions(next);
-      return next;
-    });
-  }, [messages, currentSessionId]);
+    if (current?.type === "text") setTextValue(answers[current.key] ?? "");
+  }, [step, current, answers]);
 
-  const triggerGeneration = useCallback(async (allMessages: ChatMessage[]) => {
-    const genId = `gen-${Date.now()}`;
-    setMessages((prev) => [
-      ...prev,
-      { id: genId, role: "assistant", content: "Perfeito! Estou gerando a visualização agora, pode levar alguns instantes...", isGenerating: true, timestamp: new Date().toISOString() },
-    ]);
+  const answered = current
+    ? current.type === "file"
+      ? Boolean(wallImageUrl)
+      : current.type === "text"
+        ? Boolean(textValue.trim())
+        : Boolean(answers[current.key])
+    : false;
 
-    try {
-      const latestImageUrl = [...allMessages].reverse().find((m) => m.imageUrl)?.imageUrl;
-      const res = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: toApiMessages(allMessages), imageUrl: latestImageUrl }),
-      });
-      if (!res.ok) throw new Error();
-      const { imageUrl } = await res.json();
-      setMessages((prev) => {
-        const updated = prev.map((m) =>
-          m.id === genId
-            ? { ...m, isGenerating: false, content: "Pronto! Aqui está a visualização da instalação:", generatedImageUrl: imageUrl }
-            : m
-        );
-        return [...updated, {
-          id: `followup-${Date.now()}`,
-          role: "assistant" as const,
-          content: "Gostou? Se quiser ajustar algo ou gerar uma nova versão é só me falar!",
-          timestamp: new Date().toISOString(),
-        }];
-      });
-    } catch {
-      setMessages((prev) =>
-        prev.map((m) => m.id === genId ? { ...m, isGenerating: false, content: "Ocorreu um erro ao gerar a visualização. Tente novamente." } : m)
-      );
+  const buildMessages = useCallback((finalAnswers: Record<string, string>): ChatMessage[] => {
+    const messages: ChatMessage[] = [];
+    for (const s of STEPS) {
+      messages.push({ role: "assistant", content: s.question });
+      if (s.type === "file") {
+        messages.push({ role: "user", content: "Foto da parede enviada.", imageUrl: wallImageUrl ?? undefined });
+      } else {
+        messages.push({ role: "user", content: finalAnswers[s.key] ?? "" });
+      }
     }
+    return messages;
+  }, [wallImageUrl]);
+
+  const requestGeneration = useCallback(
+    async (finalAnswers: Record<string, string>) => {
+      setGenerating(true);
+      try {
+        const res = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: buildMessages(finalAnswers), imageUrl: wallImageUrl }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          toast(data.error ?? "Nao foi possivel gerar a imagem.", "error");
+          return;
+        }
+        setGeneratedImageUrl(data.imageUrl);
+        setDividerPct(50);
+      } catch {
+        toast("Erro de conexao ao gerar a imagem.", "error");
+      } finally {
+        setGenerating(false);
+      }
+    },
+    [buildMessages, wallImageUrl, toast]
+  );
+
+  const handleNext = useCallback(() => {
+    if (!current || !answered) return;
+    const nextAnswers = current.type === "file" ? answers : { ...answers, [current.key]: textValue.trim() };
+    setAnswers(nextAnswers);
+    setTextValue("");
+
+    if (isLastStep) {
+      void requestGeneration(nextAnswers);
+      return;
+    }
+    setStep((s) => s + 1);
+  }, [current, answered, answers, textValue, isLastStep, requestGeneration]);
+
+  const handleBack = useCallback(() => {
+    if (step === 0) return;
+    setStep((s) => s - 1);
+  }, [step]);
+
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      setUploading(true);
+      try {
+        const supabase = createClient();
+        const path = `${crypto.randomUUID()}-${file.name}`;
+        const { error: uploadError } = await supabase.storage.from("chatbot-images").upload(path, file);
+        if (uploadError) {
+          toast("Erro ao enviar a foto.", "error");
+          return;
+        }
+        const { data } = supabase.storage.from("chatbot-images").getPublicUrl(path);
+        setWallImageUrl(data.publicUrl);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [toast]
+  );
+
+  const handleRestart = useCallback(() => {
+    setStep(0);
+    setAnswers({});
+    setTextValue("");
+    setWallImageUrl(null);
+    setGeneratedImageUrl(null);
   }, []);
 
-  async function handleSend() {
-    if ((!input.trim() && !stagedImageUrl) || responding || uploading) return;
+  const handleDrag = useCallback((clientX: number) => {
+    const rect = compareRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const pct = ((clientX - rect.left) / rect.width) * 100;
+    setDividerPct(Math.min(95, Math.max(5, pct)));
+  }, []);
 
-    const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
-      role: "user",
-      content: input.trim() || (stagedImageUrl ? "Segue a foto da parede." : ""),
-      imageUrl: stagedImageUrl ?? undefined,
-      timestamp: new Date().toISOString(),
-    };
+  const startDrag = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      setDragging(true);
+      handleDrag(e.clientX);
+      const move = (ev: PointerEvent) => handleDrag(ev.clientX);
+      const stop = () => {
+        setDragging(false);
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", stop);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", stop);
+    },
+    [handleDrag]
+  );
 
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
-    setInput("");
-    setStagedImageUrl(null);
-    setStagedPreview(null);
-    setResponding(true);
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: toApiMessages(updatedMessages) }),
-      });
-      if (!res.ok) throw new Error();
-      const { message, readyToGenerate } = await res.json();
-
-      const assistantMsg: ChatMessage = { id: `a-${Date.now()}`, role: "assistant", content: message, timestamp: new Date().toISOString() };
-      const finalMessages = [...updatedMessages, assistantMsg];
-      setMessages(finalMessages);
-
-      if (readyToGenerate) { setResponding(false); triggerGeneration(finalMessages); return; }
-    } catch {
-      setMessages((prev) => [...prev, { id: `err-${Date.now()}`, role: "assistant", content: "Ocorreu um erro. Tente novamente.", timestamp: new Date().toISOString() }]);
-    } finally {
-      setResponding(false);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }
-
-  // Bucket é público: só tipos de imagem inertes, extensão derivada do MIME
-  // (nunca do nome do arquivo) para impedir hospedar HTML/SVG com script.
-  const ALLOWED_IMAGE_TYPES: Record<string, string> = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-    "image/heic": "heic",
-  };
-  const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-
-    const ext = ALLOWED_IMAGE_TYPES[file.type];
-    if (!ext) {
-      setMessages((prev) => [...prev, { id: `err-${Date.now()}`, role: "assistant", content: "Formato não suportado. Envie uma foto JPG, PNG, WEBP ou HEIC.", timestamp: new Date().toISOString() }]);
-      return;
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setMessages((prev) => [...prev, { id: `err-${Date.now()}`, role: "assistant", content: "Imagem muito grande (máx. 15MB). Tente uma foto menor.", timestamp: new Date().toISOString() }]);
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (ev) => setStagedPreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
-
-    setUploading(true);
-    try {
-      const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const supabase = createClient();
-      const { error } = await supabase.storage.from("chatbot-images").upload(filename, file, { contentType: file.type, upsert: false });
-      if (error) throw new Error(error.message);
-      const { data: { publicUrl } } = supabase.storage.from("chatbot-images").getPublicUrl(filename);
-      setStagedImageUrl(publicUrl);
-    } catch (err) {
-      setStagedPreview(null); setStagedImageUrl(null);
-      setMessages((prev) => [...prev, { id: `err-${Date.now()}`, role: "assistant", content: `Erro ao enviar imagem: ${err instanceof Error ? err.message : "tente novamente."}`, timestamp: new Date().toISOString() }]);
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  function handleReset() {
-    const newId = `s-${Date.now()}`;
-    setCurrentSessionId(newId);
-    setMessages([{ ...INITIAL_MESSAGE, timestamp: new Date().toISOString() }]);
-    setInput(""); setStagedImageUrl(null); setStagedPreview(null);
-    setResponding(false); setUploading(false);
-    setTimeout(() => inputRef.current?.focus(), 50);
-  }
-
-  function handleLoadSession(session: Session) {
-    setCurrentSessionId(session.id);
-    setMessages(session.messages);
-    setInput(""); setStagedImageUrl(null); setStagedPreview(null);
-    setResponding(false); setUploading(false);
-    setTimeout(() => scrollToBottom(), 80);
-  }
-
-  function handleDeleteSession(e: React.MouseEvent, id: string) {
-    e.stopPropagation();
-    setSessions((prev) => {
-      const next = prev.filter((s) => s.id !== id);
-      saveSessions(next);
-      return next;
-    });
-    if (id === currentSessionId) handleReset();
-  }
+  const answeredSteps = useMemo(
+    () => STEPS.filter((s) => (s.type === "file" ? Boolean(wallImageUrl) : Boolean(answers[s.key]))).length,
+    [answers, wallImageUrl]
+  );
 
   return (
-    <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--bg-base)" }}>
-      <Header title="Gerador de Imagem" subtitle="Visualização de instalação de AC com IA" />
-
-      <main className="flex-1 flex min-h-0 px-3 sm:px-4 py-3 sm:py-4 gap-4 max-w-[1280px] mx-auto w-full">
-
-        {/* ── Chat panel ─────────────────────────────── */}
-        <div
-          className="flex-1 flex flex-col min-h-0 rounded-2xl border border-[var(--border)] overflow-hidden"
-          style={{ background: "var(--bg-surface)", boxShadow: "var(--shadow-md)" }}
-        >
-          {/* Toolbar */}
-          <div
-            className="flex items-center justify-between px-4 py-3 shrink-0"
-            style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-subtle)" }}
-          >
-            <div className="flex items-center gap-2.5">
-              <BotAvatar />
-              <div>
-                <p className="text-[13px] font-semibold text-[var(--text-primary)] leading-none">Consultor ARCIL</p>
-                <p className="text-[11px] text-emerald-500 mt-0.5 font-medium">Online</p>
+    <ConsolePage title="Gerador de Imagem" subtitle="Simulacao de instalacao com IA">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+        <ConsoleCard className="flex min-h-[520px] flex-col">
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="grid h-8 w-8 place-items-center rounded-full bg-violet-500/10 text-violet-300">
+                <AirVent size={15} />
               </div>
+              <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Assistente de Instalacao</h2>
             </div>
-            <button
-              onClick={handleReset}
-              className="flex items-center gap-1.5 text-[12px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-            >
-              <RotateCcw size={12} />
-              Nova conversa
-            </button>
+            <ConsoleStatus tone="slate">Pergunta {step + 1} de {STEPS.length}</ConsoleStatus>
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4 min-h-0">
-            <AnimatePresence initial={false}>
-              {messages.map((msg) => (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ duration: 0.18, ease: "easeOut" }}
-                  className={`flex gap-2.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  {msg.role === "assistant" && <BotAvatar />}
+          {generatedImageUrl ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-[var(--text-muted)]">
+              <Sparkles size={22} />
+              <p className="text-[12px] font-medium">Simulacao gerada. Veja o resultado ao lado.</p>
+              <ConsoleButton icon={RefreshCcw} onClick={handleRestart}>Comecar nova simulacao</ConsoleButton>
+            </div>
+          ) : (
+            <div className="flex flex-1 flex-col">
+              <div className="mb-2 h-1 w-full overflow-hidden rounded-full bg-[var(--bg-subtle)]">
+                <div
+                  className="h-full rounded-full bg-blue-400 transition-all"
+                  style={{ width: `${(answeredSteps / STEPS.length) * 100}%` }}
+                />
+              </div>
 
-                  <div className={`max-w-[72%] space-y-1.5 ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col`}>
-                    {msg.imageUrl && (
-                      <div className="rounded-2xl overflow-hidden border border-[var(--border)] shadow-sm max-w-[220px]">
-                        <img src={msg.imageUrl} alt="Foto enviada" className="w-full max-h-48 object-cover" />
-                      </div>
-                    )}
+              <p className="mt-6 text-[16px] font-bold text-[var(--text-primary)]">{current.question}</p>
 
-                    {msg.content && (
-                      <div
-                        className={`px-4 py-2.5 text-[13.5px] leading-relaxed ${
-                          msg.role === "user" ? "chat-bubble-user text-white" : "chat-bubble-assistant text-[var(--text-primary)]"
-                        }`}
-                      >
-                        {msg.isGenerating ? (
-                          <span className="flex items-center gap-2 text-[var(--text-secondary)]">
-                            <Loader2 size={13} className="animate-spin shrink-0" />
-                            {msg.content}
-                          </span>
-                        ) : msg.content}
-                      </div>
-                    )}
+              <div className="mt-5 flex-1">
+                {current.type === "text" && (
+                  <input
+                    autoFocus
+                    value={textValue}
+                    onChange={(e) => setTextValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleNext();
+                    }}
+                    placeholder="Digite sua resposta..."
+                    className="w-full rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2.5 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-blue-500/60"
+                  />
+                )}
 
-                    {msg.generatedImageUrl && (
-                      <div className="rounded-2xl overflow-hidden border border-[var(--border)] shadow-sm w-full max-w-[320px]">
-                        <div className="relative cursor-zoom-in group" onClick={() => setPreviewModal(msg.generatedImageUrl!)}>
-                          <img src={msg.generatedImageUrl} alt="Visualização gerada" className="w-full max-h-60 object-cover" />
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                            <ZoomIn size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between px-3 py-2" style={{ background: "var(--bg-subtle)", borderTop: "1px solid var(--border)" }}>
-                          <button onClick={() => setPreviewModal(msg.generatedImageUrl!)} className="flex items-center gap-1 text-[11px] text-[var(--blue)] font-medium">
-                            <ZoomIn size={11} /> Ver prévia
-                          </button>
-                          <a href={msg.generatedImageUrl} download="visualizacao-arcil.jpg" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-                            <Download size={11} /> Baixar
-                          </a>
-                        </div>
-                      </div>
-                    )}
-
-                    <p className="text-[10px] text-[var(--text-muted)] px-1">{formatTime(msg.timestamp)}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-
-            <AnimatePresence>
-              {responding && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 4 }}
-                  className="flex gap-2.5 justify-start"
-                >
-                  <BotAvatar />
-                  <div className="chat-bubble-assistant px-4 py-3">
-                    <TypingIndicator />
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Staged image preview */}
-          <AnimatePresence>
-            {stagedPreview && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="shrink-0 overflow-hidden"
-              >
-                <div className="px-4 py-2.5 flex items-center gap-3" style={{ borderTop: "1px solid var(--border)", background: "var(--bg-subtle)" }}>
-                  <div className="relative shrink-0">
-                    <img src={stagedPreview} alt="Preview" className="h-12 w-12 rounded-lg object-cover border border-[var(--border)]" />
-                    {uploading ? (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
-                        <Loader2 size={12} className="text-white animate-spin" />
+                {current.type === "file" && (
+                  <div className="flex flex-col gap-3">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleFileChange}
+                    />
+                    {wallImageUrl ? (
+                      <div className="flex items-center gap-3 rounded-[8px] border border-emerald-500/30 bg-emerald-500/10 p-3">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={wallImageUrl} alt="Foto enviada" className="h-14 w-14 rounded-[6px] object-cover" />
+                        <p className="text-[12px] font-semibold text-emerald-300">Foto enviada com sucesso.</p>
                       </div>
                     ) : (
-                      <button onClick={() => { setStagedPreview(null); setStagedImageUrl(null); }} className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center shadow">
-                        <X size={8} className="text-white" />
-                      </button>
+                      <ConsoleButton
+                        icon={uploading ? Loader2 : ImagePlus}
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploading}
+                        className="w-full justify-center"
+                      >
+                        {uploading ? "Enviando..." : "Selecionar foto"}
+                      </ConsoleButton>
                     )}
                   </div>
-                  <p className="text-[12px] text-[var(--text-muted)]">
-                    {uploading ? "Enviando imagem..." : "Pronto para enviar"}
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                )}
 
-          {/* Input bar */}
-          <div className="shrink-0 px-4 py-3" style={{ borderTop: "1px solid var(--border)", background: "var(--bg-surface)" }}>
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-            <form
-              onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-              className="flex items-center gap-2"
-            >
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={responding || uploading || !!stagedImageUrl}
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--blue)] hover:bg-blue-500/8 transition-all disabled:opacity-40 shrink-0"
-              >
-                <Paperclip size={16} />
-              </button>
-              <input
-                ref={inputRef}
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={stagedImageUrl ? "Adicione uma mensagem..." : "Mensagem..."}
-                className="flex-1 px-4 py-2.5 rounded-xl border text-[13.5px] border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--blue)] focus:ring-2 focus:ring-blue-500/8 transition-all"
-                disabled={responding}
-              />
-              <button
-                type="submit"
-                disabled={(!input.trim() && !stagedImageUrl) || responding || uploading}
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all disabled:opacity-40 shrink-0 hover:opacity-90"
-                style={{ background: "var(--blue)" }}
-              >
-                <Send size={15} />
-              </button>
-            </form>
-          </div>
-        </div>
-
-        {/* ── History panel ───────────────────────────── */}
-        <div
-          className="hidden lg:flex w-64 shrink-0 flex-col min-h-0 rounded-2xl border border-[var(--border)] overflow-hidden"
-          style={{ background: "var(--bg-surface)", boxShadow: "var(--shadow-sm)" }}
-        >
-          {/* Panel header */}
-          <div
-            className="flex items-center gap-2 px-4 py-3 shrink-0"
-            style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-subtle)" }}
-          >
-            <History size={14} className="text-[var(--text-muted)]" />
-            <p className="text-[13px] font-semibold text-[var(--text-primary)]">Histórico</p>
-            {sessions.length > 0 && (
-              <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--bg-base)] text-[var(--text-muted)] border border-[var(--border)]">
-                {sessions.length}
-              </span>
-            )}
-          </div>
-
-          {/* Session list */}
-          <div className="flex-1 overflow-y-auto min-h-0">
-            {sessions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3 px-4 text-center">
-                <div className="w-10 h-10 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border)] flex items-center justify-center">
-                  <MessageSquare size={16} className="text-[var(--text-muted)]" />
-                </div>
-                <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">
-                  As conversas aparecerão aqui automaticamente
-                </p>
-              </div>
-            ) : (
-              <div className="p-2 space-y-1">
-                {sessions.map((session) => {
-                  const isActive = session.id === currentSessionId;
-                  return (
-                    <motion.button
-                      key={session.id}
-                      layout
-                      initial={{ opacity: 0, x: 8 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      onClick={() => handleLoadSession(session)}
-                      className={`w-full text-left rounded-xl p-3 transition-all group relative ${
-                        isActive
-                          ? "bg-[var(--bg-subtle)] border border-[var(--border-strong)]"
-                          : "hover:bg-[var(--bg-subtle)] border border-transparent"
-                      }`}
-                    >
-                      {/* Thumbnail or icon */}
-                      <div className="flex items-start gap-2.5">
-                        {session.generatedImageUrl ? (
-                          <img
-                            src={session.generatedImageUrl}
-                            alt=""
-                            className="w-10 h-10 rounded-lg object-cover shrink-0 border border-[var(--border)]"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-[var(--bg-base)] border border-[var(--border)] flex items-center justify-center shrink-0">
-                            {session.messages.some((m) => m.imageUrl) ? (
-                              <ImageIcon size={14} className="text-[var(--text-muted)]" />
-                            ) : (
-                              <MessageSquare size={14} className="text-[var(--text-muted)]" />
-                            )}
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[12px] font-medium text-[var(--text-primary)] leading-snug line-clamp-2">
-                            {session.title}
-                          </p>
-                          <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                            {formatDate(session.createdAt)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Delete button */}
-                      <button
-                        onClick={(e) => handleDeleteSession(e, session.id)}
-                        className="absolute top-2 right-2 w-5 h-5 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-500"
-                        title="Apagar"
+                {current.type === "choice" && (
+                  <div className="flex flex-wrap gap-2">
+                    {current.options.map((opt) => (
+                      <ConsoleButton
+                        key={opt}
+                        active={answers[current.key] === opt}
+                        onClick={() => setAnswers((prev) => ({ ...prev, [current.key]: opt }))}
                       >
-                        <Trash2 size={10} />
-                      </button>
-                    </motion.button>
-                  );
-                })}
+                        {opt}
+                      </ConsoleButton>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Clear all */}
-          {sessions.length > 0 && (
-            <div
-              className="shrink-0 px-3 py-2.5"
-              style={{ borderTop: "1px solid var(--border)" }}
-            >
-              <button
-                onClick={() => {
-                  setSessions([]);
-                  saveSessions([]);
-                  handleReset();
-                }}
-                className="w-full flex items-center justify-center gap-1.5 text-[11px] text-[var(--text-muted)] hover:text-red-500 transition-colors py-1 rounded-lg hover:bg-red-500/5"
-              >
-                <Trash2 size={10} />
-                Limpar histórico
-              </button>
+              <div className="mt-6 flex items-center justify-between gap-2">
+                <ConsoleButton icon={ArrowLeft} onClick={handleBack} disabled={step === 0}>
+                  Voltar
+                </ConsoleButton>
+                <ConsoleButton active onClick={handleNext} disabled={!answered || generating}>
+                  {isLastStep ? "Gerar imagem" : "Proximo"}
+                </ConsoleButton>
+              </div>
             </div>
           )}
-        </div>
-      </main>
+        </ConsoleCard>
 
-      {/* Preview modal */}
-      <AnimatePresence>
-        {previewModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-            onClick={() => setPreviewModal(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className="relative max-w-[90vw] max-h-[90vh]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <img src={previewModal} alt="Visualização completa" className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl" />
-              <button onClick={() => setPreviewModal(null)} className="absolute -top-3 -right-3 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg hover:bg-slate-50 transition-colors">
-                <X size={14} />
-              </button>
-              <a href={previewModal} download="visualizacao-arcil.jpg" target="_blank" rel="noreferrer" className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl text-[12px] font-medium shadow-lg hover:bg-slate-50 transition-colors" onClick={(e) => e.stopPropagation()}>
-                <Download size={12} /> Baixar
-              </a>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+        <div className="space-y-4">
+          <ConsoleCard>
+            {generating ? (
+              <div className="flex h-[420px] flex-col items-center justify-center gap-3 rounded-[8px] border border-dashed border-[var(--border-strong)] text-[var(--text-muted)]">
+                <Loader2 size={22} className="animate-spin" />
+                <p className="text-[12px] font-medium">Gerando visualizacao...</p>
+              </div>
+            ) : generatedImageUrl && wallImageUrl ? (
+              <>
+                <div
+                  ref={compareRef}
+                  className="relative h-[420px] select-none overflow-hidden rounded-[8px] border border-[var(--border)]"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={wallImageUrl} alt="Antes" className="absolute inset-0 h-full w-full object-cover" />
+                  <div
+                    className="absolute inset-0 overflow-hidden"
+                    style={{ clipPath: `inset(0 0 0 ${dividerPct}%)` }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={generatedImageUrl} alt="Depois" className="h-full w-full object-cover" />
+                  </div>
+
+                  <div
+                    className="absolute inset-y-0 z-10 flex w-0 items-center justify-center"
+                    style={{ left: `${dividerPct}%` }}
+                  >
+                    <div className="absolute inset-y-0 w-[2px] bg-blue-400/90" />
+                    <button
+                      onPointerDown={startDrag}
+                      aria-label="Arrastar para comparar antes e depois"
+                      className={`relative z-10 grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-blue-500 text-white shadow-lg touch-none ${
+                        dragging ? "cursor-grabbing" : "cursor-grab"
+                      }`}
+                    >
+                      <ArrowLeftRight size={14} />
+                    </button>
+                  </div>
+
+                  <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[11px] font-bold text-white">Antes</span>
+                  <span className="absolute right-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[11px] font-bold text-white">Depois</span>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <ConsoleButton icon={RefreshCcw} onClick={() => requestGeneration(answers)}>
+                    Gerar outra versao
+                  </ConsoleButton>
+                  <ConsoleButton icon={MessageSquare} active>
+                    Criar orcamento
+                  </ConsoleButton>
+                </div>
+              </>
+            ) : (
+              <div className="flex h-[420px] flex-col items-center justify-center gap-2 rounded-[8px] border border-dashed border-[var(--border-strong)] text-center text-[var(--text-muted)]">
+                <Sparkles size={22} />
+                <p className="max-w-[220px] text-[12px] font-medium">
+                  Responda as perguntas ao lado pra gerar a visualizacao da instalacao.
+                </p>
+              </div>
+            )}
+          </ConsoleCard>
+        </div>
+      </div>
+    </ConsolePage>
   );
 }

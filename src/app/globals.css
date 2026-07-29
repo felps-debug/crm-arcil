@@ -45,27 +45,66 @@
 }
 
 .dark {
-  --bg-base:    #000000;
-  --bg-surface: #1c1c1e;
-  --bg-subtle:  #2c2c2e;
-  --bg-inset:   #141414;
+  /* Deep Space Console — surfaces */
+  --bg-base:    #070a0f;
+  --bg-surface: #161d27;
+  --bg-subtle:  #1e2733;
+  --bg-inset:   #10151d;
 
-  --text-primary:   #f5f5f7;
-  --text-secondary: #8d8d93;
-  --text-muted:     #636366;
+  --text-primary:   #f1f4f8;
+  --text-secondary: #a7b3c2;
+  --text-muted:     #6b7788;
 
-  --border:        rgba(255,255,255,0.08);
-  --border-strong: rgba(255,255,255,0.14);
+  --border:        #232c38;
+  --border-strong: #3d4a5a;
 
-  --sidebar-bg:     #081226;
-  --sidebar-border: rgba(255,255,255,0.06);
+  --sidebar-bg:     #070a0f;
+  --sidebar-border: #1a222d;
 
-  --shadow-xs:   0 1px 2px rgba(0,0,0,0.5);
-  --shadow-sm:   0 1px 3px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4);
-  --shadow-card: 0 2px 6px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.4);
-  --shadow-md:   0 4px 16px rgba(0,0,0,0.6), 0 2px 6px rgba(0,0,0,0.4);
-  --shadow-lg:   0 10px 32px rgba(0,0,0,0.7), 0 4px 10px rgba(0,0,0,0.5);
-  --shadow-xl:   0 20px 60px rgba(0,0,0,0.8), 0 8px 20px rgba(0,0,0,0.6);
+  --blue:    #4c93ff;
+  --emerald: #4fe0a6;
+  --amber:   #ffb545;
+  --red:     #ff7a68;
+  --violet:  #b98bff;
+  --sky:     #4c93ff;
+
+  --shadow-xs:   0 1px 2px rgba(0,0,0,0.4);
+  --shadow-sm:   0 1px 2px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3);
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.35);
+  --shadow-md:   0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.35);
+  --shadow-lg:   0 2px 4px rgba(0,0,0,0.5), 0 16px 40px rgba(0,0,0,0.45);
+  --shadow-xl:   0 4px 8px rgba(0,0,0,0.6), 0 24px 60px rgba(0,0,0,0.5);
+
+  /* Deep Space Console — semantic + glow */
+  --dsc-primary:    #4c93ff;
+  --dsc-primary-2:  #2f6fe0;
+  --dsc-success:    #4fe0a6;
+  --dsc-warning:    #ffb545;
+  --dsc-error:      #ff7a68;
+  --dsc-ai:         #b98bff;
+
+  --glow-primary: 0 0 16px rgba(76,147,255,0.25);
+  --glow-success: 0 0 16px rgba(79,224,166,0.25);
+  --glow-warning: 0 0 16px rgba(255,181,69,0.25);
+  --glow-error:   0 0 16px rgba(255,122,104,0.25);
+  --glow-ai:      0 0 16px rgba(185,139,255,0.25);
+}
+
+.dark body {
+  background: radial-gradient(ellipse 1200px 600px at 50% -10%, #10151f 0%, #070a0f 55%);
+}
+
+.dark .glow-primary { box-shadow: var(--glow-primary); }
+.dark .glow-success { box-shadow: var(--glow-success); }
+.dark .glow-warning { box-shadow: var(--glow-warning); }
+.dark .glow-error   { box-shadow: var(--glow-error); }
+.dark .glow-ai       { box-shadow: var(--glow-ai); }
+
+.dark .btn-primary-gradient {
+  background: linear-gradient(135deg, var(--dsc-primary), var(--dsc-primary-2));
+}
+.dark .btn-primary-gradient:hover {
+  box-shadow: var(--glow-primary);
 }
 
 /* ── Base ─────────────────────────────────────────────────────────── */
@@ -236,19 +275,21 @@ body {
 
 .table-enterprise tbody tr {
   border-bottom: 1px solid var(--border);
-  transition: background 0.1s;
+  transition: background 0.15s;
 }
 
 .table-enterprise tbody tr:last-child { border-bottom: none; }
 
 .table-enterprise tbody tr:hover { background: rgba(0,0,0,0.02); }
-.dark .table-enterprise tbody tr:hover { background: rgba(255,255,255,0.03); }
+.dark .table-enterprise tbody tr:hover { background: rgba(76,147,255,0.06); }
 
 .table-enterprise tbody td {
   padding: 12px 20px;
   font-size: 13px;
   color: var(--text-secondary);
 }
+
+.dark .table-enterprise tbody tr { min-height: 44px; }
 
 /* ══════════════════════════════════════════════════════════════════
    Sidebar hover expand
@@ -290,5 +331,38 @@ body {
 .chat-bubble-user {
   background: var(--blue);
   border-radius: 18px 18px 4px 18px;
+}
+
+/* ARCIL Operational Console v3 */
+.dark {
+  --bg-base: #050b14;
+  --bg-surface: #0d1624;
+  --bg-subtle: #121e2f;
+  --bg-inset: #09111d;
+  --text-primary: #f4f7fb;
+  --text-secondary: #c4cede;
+  --text-muted: #7d8a9f;
+  --border: #223047;
+  --border-strong: #34445f;
+  --blue: #2f80ff;
+  --emerald: #2de59a;
+  --amber: #ffb83d;
+  --red: #ff5e5e;
+  --violet: #a879ff;
+  --sky: #70a8ff;
+  --shadow-card: 0 10px 34px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at 78% 10%, rgba(47, 128, 255, 0.08), transparent 30%),
+    linear-gradient(180deg, #050b14 0%, #030710 100%);
+}
+
+.console-grid-bg {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+  background-size: 28px 28px;
 }
 

@@ -22,7 +22,8 @@ interface BadgeProps {
 export function Badge({ children, variant = "default", className, dot }: BadgeProps) {
   return (
     <span className={cn(
-      "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11.5px] font-semibold tracking-wide transition-all duration-150",
+      "inline-flex items-center gap-1.5 px-3 py-1 rounded-full dark:rounded-md text-[11.5px] font-semibold tracking-wide transition-all duration-150",
+      "dark:capitalize",
       variants[variant],
       className
     )}>

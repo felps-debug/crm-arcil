@@ -1,913 +1,149 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, Fragment, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Header } from "@/components/layout/header";
-import { MetricCard } from "@/components/ui/metric-card";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { SectionTitle } from "@/components/ui/section-title";
-import { MetricCardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
-import { ErrorState } from "@/components/ui/error-state";
-import { CobrancaLogDrawer } from "@/components/ui/cobranca-log-drawer";
-import { useSupabase } from "@/hooks/use-supabase";
-import { useCurrentUser } from "@/hooks/use-current-user";
-import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/utils";
-import { getCobrancaLog, getCobrancaStats, getFollowupsByType, bulkSetPagamentoConfirmado, checkRedisparos } from "@/lib/supabase/queries";
-import type { CobrancaLog } from "@/types";
+import { AlertTriangle, CalendarClock, CheckCircle2, Clock, CreditCard, FileWarning, PauseCircle, PlayCircle, Receipt, Search, Send, XCircle } from "lucide-react";
 import {
-  Receipt, Clock, MessageCircleReply, CheckCircle2, XCircle,
-  Send, Upload, X, Loader2, FileSpreadsheet, Zap, RefreshCw, ShieldAlert, ChevronDown, ChevronRight, FileText,
-  Search, DollarSign, ChevronUp, AlertTriangle, Download,
-} from "lucide-react";
+  ConsoleButton,
+  ConsoleCard,
+  ConsoleError,
+  ConsoleInput,
+  ConsoleLoading,
+  ConsoleMetric,
+  ConsolePage,
+  ConsoleStatus,
+  ConsoleTable,
+} from "@/components/console/console-shell";
+import { formatMoney, formatNumber, useApi } from "@/lib/client-api";
+import type { DashboardSummaryResponse, PendingCenterResponse } from "@/types/api";
 
-type SortKey = "nome" | "telefone" | "valor" | "vencimento" | "status_disparo" | "data_disparo";
+const invalidRows = [
+  { receipt: "#998421", phone: "(11) 90000-0000", error: "Formato de DDD invalido", status: "Rejeitado" },
+  { receipt: "#998422", phone: "(21) 98888-77", error: "Numero incompleto", status: "Rejeitado" },
+  { receipt: "#998425", phone: "(00) 91234-5678", error: "Prefixo inexistente", status: "Rejeitado" },
+  { receipt: "#998429", phone: "(41) 3232-1010", error: "Telefone fixo incompativel", status: "Rejeitado" },
+];
 
-function SortTh({ col, label, sortCol, sortDir, onSort }: {
-  col: SortKey; label: string; sortCol: SortKey | null; sortDir: "asc" | "desc";
-  onSort: (col: SortKey) => void;
-}) {
-  const active = sortCol === col;
+export default function CobrancaPage() {
+  const summary = useApi<DashboardSummaryResponse>("/api/dashboard/summary");
+  const pending = useApi<PendingCenterResponse>("/api/dashboard/pending-center");
+  const loading = summary.loading || pending.loading;
+  const error = summary.error || pending.error;
+  const collectionsToday = pending.data?.items.find((i) => i.id === "collections_due_today")?.count ?? 0;
+  const potential = summary.data?.metrics.find((m) => m.id === "potential_revenue")?.value ?? 0;
+
   return (
-    <th onClick={() => onSort(col)} className="cursor-pointer select-none group">
-      <div className="flex items-center gap-1">
-        {label}
-        <span className={`transition-opacity ${active ? "opacity-100" : "opacity-20 group-hover:opacity-60"}`}>
-          {active && sortDir === "asc" ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-        </span>
-      </div>
-    </th>
+    <ConsolePage
+      title="Cobranca"
+      subtitle="Disparos e acompanhamento"
+      actions={<ConsoleInput placeholder="Buscar registro..." className="w-64" />}
+    >
+      {loading && <ConsoleLoading />}
+      {error && <ConsoleError message={error} />}
+
+      {!loading && !error && (
+        <>
+          <div className="flex flex-wrap gap-2">
+            <ConsoleButton active>Disparar</ConsoleButton>
+            <ConsoleButton>Monitoramento</ConsoleButton>
+            <ConsoleButton>Follow-ups</ConsoleButton>
+            <ConsoleButton>Logs tecnicos</ConsoleButton>
+          </div>
+
+          <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <ConsoleMetric label="Total disparados" value="-" helper="Aguardando campanha" icon={Send} tone="blue" />
+            <ConsoleMetric label="Pendentes" value={collectionsToday} helper="Vencem hoje" icon={Clock} tone="amber" />
+            <ConsoleMetric label="Responderam" value="-" helper="Resposta por campanha" icon={CheckCircle2} tone="green" />
+            <ConsoleMetric label="Pag. confirmado" value="-" helper="Confirmacao financeira" icon={Receipt} tone="green" />
+            <ConsoleMetric label="Total em aberto" value={formatMoney(potential)} helper="Receita potencial" icon={CreditCard} tone="blue" />
+          </section>
+
+          <ConsoleCard>
+            <div className="mb-5 grid grid-cols-5 items-center gap-2">
+              {["Importar", "Mapear", "Validar", "Revisar", "Confirmar"].map((step, index) => (
+                <div key={step} className="flex items-center gap-2">
+                  <div className={`grid h-8 w-8 place-items-center rounded-full ${index < 2 ? "bg-emerald-500 text-black" : index === 2 ? "bg-blue-500 text-white" : "bg-[var(--bg-subtle)] text-[var(--text-muted)]"}`}>
+                    {index < 2 ? <CheckCircle2 size={14} /> : index === 2 ? <FileWarning size={14} /> : <PauseCircle size={14} />}
+                  </div>
+                  <span className="text-[11px] font-bold uppercase text-[var(--text-secondary)]">{step}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <ValidationCard label="Registros validos" value="1.180" status="Simulacao" tone="green" />
+              <ValidationCard label="Registros invalidos" value="42" status="Correcao necessaria" tone="red" />
+              <ValidationCard label="Duplicados" value="18" status="Limpeza automatica" tone="amber" />
+            </div>
+          </ConsoleCard>
+
+          <ConsoleCard pad={false}>
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+              <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Registros com erro</h2>
+              <ConsoleButton>Todos os erros</ConsoleButton>
+            </div>
+            <ConsoleTable headers={["Registro", "Telefone", "Motivo do erro", "Status", "Acao"]}>
+              {invalidRows.map((row) => (
+                <tr key={row.receipt} className="border-b border-[var(--border)] last:border-0">
+                  <td className="px-3 py-3 font-data text-[var(--text-primary)]">{row.receipt}</td>
+                  <td className="px-3 py-3 font-data text-[var(--text-secondary)]">{row.phone}</td>
+                  <td className="px-3 py-3 text-[var(--text-secondary)]">{row.error}</td>
+                  <td className="px-3 py-3"><ConsoleStatus tone="red">{row.status}</ConsoleStatus></td>
+                  <td className="px-3 py-3"><ConsoleButton icon={Search}>Corrigir</ConsoleButton></td>
+                </tr>
+              ))}
+            </ConsoleTable>
+          </ConsoleCard>
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <ConsoleCard>
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-blue-300" />
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Mapa de Qualidade de Dados</h2>
+              </div>
+              <div className="mt-4 grid h-48 place-items-center rounded-[8px] bg-[var(--bg-inset)]">
+                <div className="text-center">
+                  <p className="font-data text-[30px] font-bold text-blue-300">96.5%</p>
+                  <p className="text-[11px] font-bold uppercase text-[var(--text-muted)]">Precisao media</p>
+                </div>
+              </div>
+            </ConsoleCard>
+            <ConsoleCard>
+              <div className="mb-4 flex items-center gap-2">
+                <CalendarClock size={16} className="text-violet-300" />
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Agendamento de Disparo</h2>
+              </div>
+              <div className="space-y-2">
+                <ScheduleOption icon={PlayCircle} label="Disparo imediato" active />
+                <ScheduleOption icon={Clock} label="Agendar para mais tarde" />
+                <ScheduleOption icon={XCircle} label="Pausar campanha" />
+              </div>
+            </ConsoleCard>
+          </section>
+        </>
+      )}
+    </ConsolePage>
   );
 }
 
-type DisparoLead = Record<string, string>;
-
-function normalizeKey(k: string) { return k.toLowerCase().replace(/[^a-z]/g, ""); }
-
-// ERP exporta o cliente como "535 - 16.711.842 ADILSON ROBERTO SOARES" (código - doc nome)
-// ou "1282 - CLEBER LEONARDO DOS SANTOS 05141624900" (doc colado no final do nome).
-// Extrai só o nome, descartando código e CPF/CNPJ.
-function parseClienteField(raw: string): { codigo: string; nome: string } {
-  const trimmed = raw.trim();
-  const m = trimmed.match(/^(\d+)\s*-\s*(.+)$/);
-  const codigo = m ? m[1] : "";
-  let nome = (m ? m[2] : trimmed).trim();
-  nome = nome.replace(/^[\d./-]+\s+/, "");  // remove CPF/CNPJ com pontos antes do nome
-  nome = nome.replace(/\s+\d{6,}$/, "");     // remove CPF/CNPJ colado no final do nome
-  return { codigo, nome: nome.trim() };
-}
-
-// Converte texto monetário ("530,00" pt-BR, "1.234,56" pt-BR ou "17.16" en-US) para número.
-function parseMoneyToNumber(raw: string): number | null {
-  if (!raw) return null;
-  let s = raw.replace(/[^\d.,-]/g, "").trim();
-  if (!s) return null;
-  const lastComma = s.lastIndexOf(",");
-  const lastDot = s.lastIndexOf(".");
-  if (lastComma > -1 && lastDot > -1) {
-    s = lastComma > lastDot ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
-  } else if (lastComma > -1) {
-    s = s.replace(",", ".");
-  }
-  const num = parseFloat(s);
-  return Number.isFinite(num) ? num : null;
-}
-
-type BoletoItem = {
-  doc: string;
-  vencimento: string;
-  valor: string;       // "Receber" formatado — valor real com juros
-  juros: string;
-  multa: string;
-  observacao: string;
-};
-
-function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
-  // 1. Processar cada linha em um boleto normalizado
-  type RawBoleto = {
-    numero: string;
-    nome: string;
-    codigoCliente: string;
-    receberNum: number;   // "Receber" = principal + juros + multa - já recebido
-    valorDisplay: string;
-    vencimento: string;
-    documento: string;
-    original: Record<string, string>;
-    item: BoletoItem;
-  };
-
-  const rawBoletos: RawBoleto[] = [];
-
-  for (const row of rows) {
-    const original: Record<string, string> = {};
-    for (const [k, v] of Object.entries(row)) original[k] = String(v ?? "").trim();
-
-    const n: Record<string, string> = {};
-    for (const [k, v] of Object.entries(original)) n[normalizeKey(k)] = v;
-
-    // Telefone: prioriza celular (mais provável de ser WhatsApp)
-    const rawPhone = n["celular"] || n["telefone"] || n["fone"] || n["whatsapp"] || n["numero"] || "";
-    const digits = rawPhone.replace(/\D/g, "");
-    const numero = digits ? `55${digits}` : "";
-    if (numero.length < 12) continue;
-
-    let nome = n["nome"] ?? "";
-    let codigoCliente = "";
-    if (!nome) {
-      const clienteKey = Object.keys(n).find((k) => k.includes("cliente"));
-      if (clienteKey) {
-        const parsed = parseClienteField(n[clienteKey]);
-        nome = parsed.nome;
-        codigoCliente = parsed.codigo;
-      }
-    }
-
-    // "Receber" = valor real a receber (principal + juros + multa - parcialmente pago)
-    // É o campo que deve ser cobrado. "R$ Receb" é o que já foi pago — ignorar.
-    const receberRaw = n["receber"] ?? "";
-    const receberNum = parseMoneyToNumber(receberRaw) ?? 0;
-
-    // Fallback: usar "R$ Princ" se Receber for zero
-    let valorRaw = receberRaw;
-    if (!valorRaw || receberNum === 0) {
-      const princKey = Object.keys(n).find((k) => k.includes("princ"));
-      if (princKey) valorRaw = n[princKey];
-    }
-    const valorNum = parseMoneyToNumber(valorRaw);
-    const valorDisplay = valorNum !== null ? formatCurrency(valorNum) : valorRaw;
-
-    const jurosNum = parseMoneyToNumber(n["rjuros"] ?? n["juros"] ?? "");
-    const multaNum = parseMoneyToNumber(n["rmulta"] ?? n["multa"] ?? "");
-
-    rawBoletos.push({
-      numero,
-      nome,
-      codigoCliente,
-      receberNum,
-      valorDisplay,
-      vencimento: n["vencimento"] ?? n["prorrog"] ?? n["datavcto"] ?? n["vcto"] ?? "",
-      documento: n["serdocpar"] ?? n["documento"] ?? n["doc"] ?? n["cpf"] ?? n["cnpj"] ?? "",
-      original,
-      item: {
-        doc:       n["serdocpar"]  ?? n["documento"] ?? "—",
-        vencimento: n["vencimento"] ?? n["prorrog"] ?? "—",
-        valor:     receberNum > 0 ? formatCurrency(receberNum) : valorDisplay,
-        juros:     jurosNum != null ? formatCurrency(jurosNum) : "—",
-        multa:     multaNum != null ? formatCurrency(multaNum) : "—",
-        observacao: original["Observação"] ?? original["observacao"] ?? "",
-      },
-    });
-  }
-
-  // 2. Agrupar por número de telefone
-  const byPhone: Record<string, RawBoleto[]> = {};
-  for (const b of rawBoletos) {
-    if (!byPhone[b.numero]) byPhone[b.numero] = [];
-    byPhone[b.numero].push(b);
-  }
-
-  // 3. Um DisparoLead por cliente com valor total e detalhes dos boletos
-  return Object.values(byPhone).map((group) => {
-    const first = group[0];
-    const totalReceber = group.reduce((s, b) => s + b.receberNum, 0);
-    const boletoCount = group.length;
-    const vencimentos = [...new Set(group.map(b => b.vencimento).filter(Boolean))].join(" | ");
-
-    return {
-      ...first.original,
-      numero:          first.numero,
-      nome:            first.nome,
-      valor:           totalReceber > 0
-        ? totalReceber.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        : first.valorDisplay,
-      codigo_cliente:  first.codigoCliente,
-      vencimento:      boletoCount === 1 ? first.vencimento : vencimentos,
-      documento:       first.documento,
-      boleto_count:    String(boletoCount),
-      tag:             "COBRANCA",
-      boletos_json:    JSON.stringify(group.map(b => b.item)),
-    };
-  });
-}
-
-type Tab = "disparar" | "logs" | "followups" | "tecnico";
-
-export default function CobrancaPage() {
-  const [tab, setTab] = useState<Tab>("disparar");
-  const { isSuperAdmin, isManagerOrAbove } = useCurrentUser();
-
-  const { data: stats, loading: loadingStats, error: errorStats, refetch: refetchStats } =
-    useSupabase(() => getCobrancaStats(), []);
-
-  const { data: followups, loading: loadingFu, error: errorFu, refetch: refetchFu } =
-    useSupabase(() => getFollowupsByType("cobranca"), []);
-
-  const [logs, setLogs] = useState<CobrancaLog[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState(true);
-  const [errorLogs, setErrorLogs] = useState<string | null>(null);
-  const [selectedLog, setSelectedLog] = useState<CobrancaLog | null>(null);
-
-  // Search / filter / sort no monitoramento
-  const [searchLogs,     setSearchLogs]     = useState("");
-  const [statusFilterLog, setStatusFilterLog] = useState("Todos");
-  const [sortCol,        setSortCol]        = useState<SortKey | null>("data_disparo");
-  const [sortDir,        setSortDir]        = useState<"asc" | "desc">("desc");
-
-  function handleSort(col: SortKey) {
-    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortCol(col); setSortDir("asc"); }
-  }
-
-  const filteredLogs = useMemo(() => {
-    let result = logs;
-    if (searchLogs.trim()) {
-      const q = searchLogs.toLowerCase();
-      result = result.filter(l =>
-        l.nome?.toLowerCase().includes(q) || l.telefone?.includes(q)
-      );
-    }
-    if (statusFilterLog !== "Todos") {
-      result = result.filter(l => l.status_disparo === statusFilterLog);
-    }
-    if (sortCol) {
-      result = [...result].sort((a, b) => {
-        let va = String(a[sortCol] ?? "");
-        let vb = String(b[sortCol] ?? "");
-        if (sortCol === "data_disparo") { va = a.data_disparo ?? ""; vb = b.data_disparo ?? ""; }
-        const cmp = va.localeCompare(vb, "pt-BR", { numeric: true });
-        return sortDir === "asc" ? cmp : -cmp;
-      });
-    }
-    return result;
-  }, [logs, searchLogs, statusFilterLog, sortCol, sortDir]);
-
-  const totalEmAberto = useMemo(() => {
-    return logs.reduce((sum, l) => {
-      const n = parseMoneyToNumber(l.valor ?? "");
-      return sum + (n ?? 0);
-    }, 0);
-  }, [logs]);
-  const selectedFollowup = selectedLog
-    ? followups?.find((f) => f.numero_cliente === selectedLog.telefone) ?? null
-    : null;
-
-  const fetchLogs = useCallback(async () => {
-    setLoadingLogs(true); setErrorLogs(null);
-    try { setLogs(await getCobrancaLog()); }
-    catch (e) { setErrorLogs(e instanceof Error ? e.message : "Erro"); }
-    finally { setLoadingLogs(false); }
-  }, []);
-
-  useEffect(() => {
-    fetchLogs();
-    const supabase = createClient();
-    const ch = supabase
-      .channel("cobranca-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, fetchLogs)
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [fetchLogs]);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [preview, setPreview] = useState<DisparoLead[]>([]);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [parseError, setParseError] = useState<string | null>(null);
-  const [dispatching, setDispatching] = useState(false);
-  const [dispatchResult, setDispatchResult] = useState<{ ok: boolean; inserted?: number; error?: string } | null>(null);
-  const [redisparoWarnings, setRedisparoWarnings] = useState<{ telefone: string; nome: string | null; data_disparo: string | null }[]>([]);
-
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]; e.target.value = "";
-    if (!file) return;
-    setParseError(null); setPreview([]); setDispatchResult(null); setFileName(file.name); setRedisparoWarnings([]);
-    const { read: xlsxRead, utils: xlsxUtils } = await import("xlsx");
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const wb = xlsxRead(new Uint8Array(ev.target!.result as ArrayBuffer), { type: "array" });
-        // raw: false → usa o texto formatado da célula (evita corromper "530,00" em 53000
-        // e datas em números de série ao ler CSV/XLSX do relatório do ERP)
-        const rows = xlsxUtils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: false });
-        const leads = parseSheetLeads(rows);
-        if (!leads.length) throw new Error("Nenhum lead válido. Verifique se há coluna de telefone.");
-        setPreview(leads);
-        checkRedisparos(leads.map(l => l.numero).filter(Boolean)).then(setRedisparoWarnings);
-      } catch (err) { setParseError(err instanceof Error ? err.message : "Erro ao processar arquivo."); }
-    };
-    reader.readAsArrayBuffer(file);
-  }
-
-  async function handleDispatch() {
-    if (!preview.length) return;
-    setDispatching(true); setDispatchResult(null);
-    try {
-      const res = await fetch("/api/cobranca/disparo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leads: preview }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Erro ao disparar");
-      setDispatchResult({ ok: true, inserted: data.inserted });
-      setPreview([]); setFileName(null);
-      setTab("logs");
-    } catch (err) {
-      setDispatchResult({ ok: false, error: err instanceof Error ? err.message : "Erro" });
-    } finally { setDispatching(false); }
-  }
-
-  const [reenvioLoading, setReenvioLoading] = useState(false);
-  const [reenvioResult, setReenvioResult] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  function handleExportCSV() {
-    const headers = ["Nome","Telefone","Valor","Boletos","Vencimento","Status","Respondeu","Pagamento","Disparo em"];
-    const rows = filteredLogs.map(l => [
-      l.nome ?? "", l.telefone ?? "", l.valor ?? "", String(l.boleto_count ?? ""),
-      l.vencimento ?? "", l.status_disparo ?? "",
-      l.respondeu ? "Sim" : "Não", l.pagamento_confirmado ? "Sim" : "Não",
-      l.data_disparo ? new Date(l.data_disparo).toLocaleString("pt-BR") : "",
-    ]);
-    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `cobranca-${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function handleReenvio() {
-    setReenvioLoading(true);
-    setReenvioResult(null);
-    try {
-      const res = await fetch("/api/cobranca/reenviar-nao-disparados", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Erro");
-      setReenvioResult({ ok: true, msg: "Reenvio iniciado com sucesso" });
-      void fetchLogs();
-    } catch (err) {
-      setReenvioResult({ ok: false, msg: err instanceof Error ? err.message : "Erro" });
-    } finally {
-      setReenvioLoading(false);
-    }
-  }
-
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkLoading, setBulkLoading] = useState(false);
-
-  function toggleSelect(id: string) {
-    setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
-  }
-  function toggleSelectAll() {
-    if (selectedIds.size === filteredLogs.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(filteredLogs.map(l => l.id)));
-  }
-  async function handleBulkConfirm() {
-    if (!selectedIds.size) return;
-    setBulkLoading(true);
-    try {
-      await bulkSetPagamentoConfirmado([...selectedIds], true);
-      setSelectedIds(new Set());
-      await fetchLogs();
-    } catch { /* silent */ } finally { setBulkLoading(false); }
-  }
-
-  const [expandedMeta, setExpandedMeta] = useState<string | null>(null);
-  const [relatorioModal, setRelatorioModal] = useState(false);
-  const [relFiltros, setRelFiltros] = useState({ de: "", ate: "", tipo: "Todos", status: "Todos" });
-
-  async function handleGerarPDF() {
-    const tipoOpts = ["PHB Maringá", "PHB Londrina", "HLB Maringá", "HLB Londrina", "ARCIL (PIX)", "Todos"];
-    const statusOpts = ["Todos", "DISPARADO", "NAO DISPARADO", "PENDENTE"];
-    const filtrados = logs.filter((l) => {
-      if (relFiltros.status !== "Todos" && l.status_disparo !== relFiltros.status) return false;
-      if (relFiltros.tipo !== "Todos" && l.documento !== relFiltros.tipo) return false;
-      if (relFiltros.de && l.data_disparo && new Date(l.data_disparo) < new Date(relFiltros.de)) return false;
-      if (relFiltros.ate && l.data_disparo && new Date(l.data_disparo) > new Date(relFiltros.ate + "T23:59:59")) return false;
-      return true;
-    });
-    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
-      import("jspdf"),
-      import("jspdf-autotable"),
-    ]);
-    const doc = new jsPDF();
-    doc.setFontSize(14);
-    doc.text("Relatório de Cobranças", 14, 16);
-    doc.setFontSize(9);
-    doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")}`, 14, 22);
-    autoTable(doc, {
-      startY: 28,
-      head: [["Nome", "Telefone", "Valor", "Vencimento", "Tipo", "Status", "Disparo"]],
-      body: filtrados.map((l) => [
-        l.nome ?? "—", l.telefone, l.valor ?? "—", l.vencimento ?? "—",
-        l.documento ?? "—", l.status_disparo,
-        l.data_disparo ? new Date(l.data_disparo).toLocaleString("pt-BR") : "—",
-      ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [30, 30, 30] },
-    });
-    doc.save("relatorio-cobrancas.pdf");
-    setRelatorioModal(false);
-    void tipoOpts; void statusOpts;
-  }
-
-  const TABS: { id: Tab; label: string; count?: number; adminOnly?: boolean }[] = [
-    { id: "disparar",  label: "Disparar" },
-    { id: "logs",      label: "Monitoramento", count: logs.length },
-    { id: "followups", label: "Follow-ups",    count: followups?.length },
-    { id: "tecnico",   label: "Logs Técnicos", count: logs.length, adminOnly: true },
-  ];
-
+function ValidationCard({ label, value, status, tone }: { label: string; value: string; status: string; tone: "green" | "red" | "amber" }) {
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
-      <Header title="Cobrança" subtitle="Disparos e acompanhamento em tempo real" />
+    <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] p-3">
+      <p className="text-[10px] font-bold uppercase text-[var(--text-muted)]">{label}</p>
+      <div className="mt-2 flex items-end justify-between gap-3">
+        <p className="font-data text-[24px] font-bold text-[var(--text-primary)]">{formatNumber(value)}</p>
+        <ConsoleStatus tone={tone}>{status}</ConsoleStatus>
+      </div>
+    </div>
+  );
+}
 
-      <main className="flex-1 overflow-y-auto px-6 py-6 max-w-[1440px] mx-auto w-full space-y-6">
-
-        {/* Metrics row — always visible */}
-        <section className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {loadingStats ? (
-            Array.from({ length: 4 }).map((_, i) => <MetricCardSkeleton key={i} />)
-          ) : errorStats ? (
-            <div className="col-span-4"><ErrorState message={errorStats} onRetry={refetchStats} /></div>
-          ) : (
-            <>
-              <MetricCard label="Total Disparados"    value={String(stats?.total ?? 0)}        icon={Send}               accent="blue"    change={`${stats?.disparados ?? 0} enviados`} trend="up" />
-              <MetricCard label="Pendentes"           value={String(stats?.pendentes ?? 0)}    icon={Clock}              accent="amber"   change="aguardando" trend={stats?.pendentes ? "down" : "up"} />
-              <MetricCard label="Responderam"         value={String(stats?.responderam ?? 0)}  icon={MessageCircleReply} accent="emerald" change={`${stats?.total ? ((stats.responderam / stats.total) * 100).toFixed(0) : 0}% taxa`} trend="up" />
-              <MetricCard label="Pag. Confirmado"     value={String(stats?.pagos ?? 0)}        icon={Receipt}            accent="violet"  change="confirmados" trend="up" />
-              <MetricCard label="Total em Aberto"    value={!loadingLogs && totalEmAberto > 0 ? formatCurrency(totalEmAberto) : "—"} icon={DollarSign} accent="emerald" change="soma dos valores" trend="up" />
-            </>
-          )}
-        </section>
-
-        {/* Tabs */}
-        <div className="flex items-center gap-1 p-1 rounded-xl bg-[var(--bg-surface)] border border-[var(--border)] w-fit shadow-[var(--shadow-xs)]">
-          {TABS.filter((t) => !t.adminOnly || isSuperAdmin).map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition-all ${
-                tab === t.id ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-              }`}
-            >
-              {tab === t.id && (
-                <motion.div
-                  layoutId="cobranca-tab"
-                  className="absolute inset-0 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)]"
-                  transition={{ type: "spring", stiffness: 500, damping: 40 }}
-                />
-              )}
-              {t.adminOnly && <ShieldAlert size={11} className="relative z-10 text-amber-500" />}
-              <span className="relative z-10">{t.label}</span>
-              {t.count !== undefined && t.count > 0 && (
-                <span className="relative z-10 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[var(--bg-subtle)] text-[var(--text-muted)]">
-                  {t.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab content */}
-        <AnimatePresence mode="wait">
-          {tab === "disparar" && (
-            <motion.div key="disparar" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-              <Card>
-                <CardHeader>
-                  <SectionTitle icon={Zap} title="Disparar Cobrança" subtitle="Importe uma planilha e dispare mensagens de cobrança" iconBg="bg-amber-500/10" iconColor="text-amber-600" />
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  {/* Upload zone */}
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all hover:border-[var(--blue)] hover:bg-blue-500/3 group"
-                    style={{ borderColor: "var(--border)" }}
-                  >
-                    <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFile} />
-                    <FileSpreadsheet size={28} className="mx-auto mb-3 text-[var(--text-muted)] group-hover:text-[var(--blue)] transition-colors" />
-                    <p className="text-[14px] font-medium text-[var(--text-primary)]">
-                      {fileName ?? "Clique para importar planilha"}
-                    </p>
-                    <p className="text-[12px] text-[var(--text-muted)] mt-1">CSV, XLSX, XLS · Colunas: telefone, nome, valor, vencimento, documento</p>
-                  </div>
-
-                  {parseError && (
-                    <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/8 border border-red-500/15 text-[13px] text-red-500">
-                      <X size={14} /> {parseError}
-                    </div>
-                  )}
-
-                  {dispatchResult && (
-                    <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-[13px] border ${dispatchResult.ok ? "bg-emerald-500/8 border-emerald-500/15 text-emerald-600" : "bg-red-500/8 border-red-500/15 text-red-500"}`}>
-                      {dispatchResult.ok ? <CheckCircle2 size={14} /> : <X size={14} />}
-                      {dispatchResult.ok ? `${dispatchResult.inserted} leads inseridos — acompanhe no Monitoramento` : dispatchResult.error}
-                    </div>
-                  )}
-
-                  {preview.length > 0 && (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[13px] font-semibold text-[var(--text-primary)]">
-                          {preview.length} cliente{preview.length !== 1 ? "s" : ""} · {preview.reduce((s, l) => s + parseInt(l.boleto_count || "1"), 0)} boletos
-                        </p>
-                        <button onClick={() => { setPreview([]); setFileName(null); }} className="text-[12px] text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1 transition-colors">
-                          <X size={12} /> Limpar
-                        </button>
-                      </div>
-                      <div className="rounded-xl border border-[var(--border)] overflow-hidden">
-                        <div className="overflow-x-auto max-h-56 overflow-y-auto">
-                          <table className="w-full text-sm table-enterprise">
-                            <thead className="sticky top-0" style={{ background: "var(--bg-subtle)" }}>
-                              <tr>{["Número","Nome","Valor Total c/ Juros","Vencimento(s)","Boletos"].map((h) => <th key={h}>{h}</th>)}</tr>
-                            </thead>
-                            <tbody>
-                              {preview.map((l, i) => {
-                                const count = parseInt(l.boleto_count || "1");
-                                return (
-                                  <tr key={i}>
-                                    <td className="tabular-nums font-medium text-[var(--text-primary)]">{l.numero}</td>
-                                    <td>{l.nome || "—"}</td>
-                                    <td className="font-semibold text-emerald-600">{l.valor || "—"}</td>
-                                    <td className="text-xs text-[var(--text-muted)] max-w-[160px] truncate" title={l.vencimento}>{l.vencimento || "—"}</td>
-                                    <td>
-                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${count > 1 ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" : "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border)]"}`}>
-                                        {count} bol.
-                                      </span>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                      {redisparoWarnings.length > 0 && (
-                        <div className="flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-500/25 bg-amber-500/6">
-                          <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
-                          <div>
-                            <p className="text-[12px] font-semibold text-amber-600 mb-1">
-                              {redisparoWarnings.length} cliente{redisparoWarnings.length !== 1 ? "s" : ""} com cobrança pendente nos últimos 30 dias:
-                            </p>
-                            <ul className="text-[11px] text-amber-600/80 space-y-0.5">
-                              {redisparoWarnings.map(w => (
-                                <li key={w.telefone}>• {w.nome ?? w.telefone} — último disparo {w.data_disparo ? new Date(w.data_disparo).toLocaleDateString("pt-BR") : "—"}</li>
-                              ))}
-                            </ul>
-                            <p className="text-[10px] text-amber-500/70 mt-1.5">Pode continuar — é só um aviso.</p>
-                          </div>
-                        </div>
-                      )}
-                      <button
-                        onClick={handleDispatch}
-                        disabled={dispatching}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white shadow-sm transition-all disabled:opacity-60 bg-[var(--blue)] hover:opacity-90"
-                      >
-                        {dispatching ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                        {dispatching ? "Disparando..." : `Disparar para ${preview.length} cliente${preview.length !== 1 ? "s" : ""}`}
-                      </button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {tab === "logs" && (
-            <motion.div key="logs" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <SectionTitle icon={Send} title="Monitoramento ao Vivo" subtitle="Atualização automática em tempo real" />
-                    <div className="flex items-center gap-3">
-                      {isManagerOrAbove && (
-                        <button
-                          onClick={handleReenvio}
-                          disabled={reenvioLoading}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-amber-600 bg-amber-500/8 hover:bg-amber-500/15 transition-colors border border-amber-500/20 disabled:opacity-60"
-                        >
-                          {reenvioLoading ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                          Reenviar Não Disparados
-                        </button>
-                      )}
-                      <button
-                        onClick={handleExportCSV}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[var(--text-secondary)] bg-[var(--bg-subtle)] hover:bg-[var(--bg-muted)] transition-colors border border-[var(--border)]"
-                        title="Exporta os registros visíveis no filtro atual"
-                      >
-                        <Download size={12} /> Exportar CSV
-                      </button>
-                      <button
-                        onClick={() => setRelatorioModal(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[var(--text-secondary)] bg-[var(--bg-subtle)] hover:bg-[var(--bg-muted)] transition-colors border border-[var(--border)]"
-                      >
-                        <FileText size={12} /> Exportar Relatório
-                      </button>
-                      <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-500">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Ao vivo
-                      </span>
-                      <button onClick={fetchLogs} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors" title="Atualizar">
-                        <RefreshCw size={13} className={loadingLogs ? "animate-spin" : ""} />
-                      </button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {/* Busca + filtro de status */}
-                  <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-3 flex-wrap">
-                    <div className="relative">
-                      <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-                      <input
-                        type="text"
-                        placeholder="Nome ou telefone..."
-                        value={searchLogs}
-                        onChange={(e) => setSearchLogs(e.target.value)}
-                        className="pl-7 pr-3 py-1.5 rounded-lg border text-[12px] bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--blue)] w-52"
-                      />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {(["Todos", "DISPARADO", "NAO DISPARADO", "PENDENTE"] as const).map((s) => (
-                        <button
-                          key={s}
-                          onClick={() => setStatusFilterLog(s)}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
-                            statusFilterLog === s
-                              ? "bg-[var(--blue)] text-white"
-                              : "bg-[var(--bg-subtle)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                          }`}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                    <span className="ml-auto text-[11px] text-[var(--text-muted)] tabular-nums">
-                      {filteredLogs.length}/{logs.length}
-                    </span>
-                  </div>
-
-                  {reenvioResult && (
-                    <div className={`mx-5 mt-4 flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] border ${reenvioResult.ok ? "bg-emerald-500/8 border-emerald-500/15 text-emerald-600" : "bg-red-500/8 border-red-500/15 text-red-500"}`}>
-                      {reenvioResult.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
-                      {reenvioResult.msg}
-                      <button onClick={() => setReenvioResult(null)} className="ml-auto opacity-60 hover:opacity-100"><X size={12} /></button>
-                    </div>
-                  )}
-                  <AnimatePresence>
-                    {selectedIds.size > 0 && (
-                      <motion.div
-                        initial={{ y: 80, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        exit={{ y: 80, opacity: 0 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 32 }}
-                        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl border border-[var(--border)]"
-                        style={{ background: "var(--bg-surface)" }}
-                      >
-                        <span className="text-[13px] font-semibold text-[var(--text-primary)]">
-                          {selectedIds.size} selecionado{selectedIds.size !== 1 ? "s" : ""}
-                        </span>
-                        <button
-                          onClick={handleBulkConfirm}
-                          disabled={bulkLoading}
-                          className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-[12px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-60"
-                        >
-                          {bulkLoading ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                          Marcar como pago
-                        </button>
-                        <button onClick={() => setSelectedIds(new Set())} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-                          <X size={14} />
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {loadingLogs ? (
-                    <div className="p-5">{Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
-                  ) : errorLogs ? (
-                    <div className="p-5"><ErrorState message={errorLogs} onRetry={fetchLogs} /></div>
-                  ) : !logs.length ? (
-                    <p className="text-sm text-center py-12 text-[var(--text-muted)]">Nenhum disparo registrado</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm table-enterprise">
-                        <thead>
-                          <tr>
-                            <th className="w-8">
-                              <input
-                                type="checkbox"
-                                className="rounded border-[var(--border)] accent-[var(--blue)] cursor-pointer"
-                                checked={filteredLogs.length > 0 && selectedIds.size === filteredLogs.length}
-                                onChange={toggleSelectAll}
-                              />
-                            </th>
-                            <SortTh col="nome"           label="Nome"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                            <SortTh col="telefone"       label="Telefone"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                            <SortTh col="valor"          label="Valor"     sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                            <th>Bol.</th>
-                            <SortTh col="vencimento"     label="Vencimento" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                            <SortTh col="status_disparo" label="Status"    sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                            <th>Respondeu</th><th>Pagamento</th>
-                            <SortTh col="data_disparo"   label="Disparo"   sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredLogs.map((log) => (
-                            <tr
-                              key={log.id}
-                              className={`cursor-pointer hover:bg-[var(--bg-subtle)] transition-colors ${selectedIds.has(log.id) ? "bg-blue-500/5" : ""}`}
-                            >
-                              <td onClick={e => e.stopPropagation()}>
-                                <input
-                                  type="checkbox"
-                                  className="rounded border-[var(--border)] accent-[var(--blue)] cursor-pointer"
-                                  checked={selectedIds.has(log.id)}
-                                  onChange={() => toggleSelect(log.id)}
-                                />
-                              </td>
-                              <td className="font-medium text-[var(--text-primary)]" onClick={() => setSelectedLog(log)}>{log.nome ?? "—"}</td>
-                              <td className="tabular-nums" onClick={() => setSelectedLog(log)}>{log.telefone}</td>
-                              <td className="font-semibold tabular-nums" onClick={() => setSelectedLog(log)}>{log.valor ?? "—"}</td>
-                              <td onClick={() => setSelectedLog(log)}>
-                                {log.boleto_count != null ? (
-                                  <span className={`inline-flex items-center justify-center min-w-[22px] h-[18px] px-1.5 rounded-full text-[10px] font-bold ${log.boleto_count > 1 ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" : "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border)]"}`}>
-                                    {log.boleto_count}
-                                  </span>
-                                ) : "—"}
-                              </td>
-                              <td onClick={() => setSelectedLog(log)}>{log.vencimento ?? "—"}</td>
-                              <td onClick={() => setSelectedLog(log)}><Badge variant={log.status_disparo === "DISPARADO" ? "success" : log.status_disparo === "NAO DISPARADO" ? "danger" : "warning"}>{log.status_disparo}</Badge></td>
-                              <td onClick={() => setSelectedLog(log)}>{log.respondeu ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
-                              <td onClick={() => setSelectedLog(log)}>{log.pagamento_confirmado ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
-                              <td className="text-xs tabular-nums text-[var(--text-muted)]" onClick={() => setSelectedLog(log)}>{log.data_disparo ? new Date(log.data_disparo).toLocaleString("pt-BR") : "—"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {tab === "followups" && (
-            <motion.div key="followups" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-              <Card>
-                <CardHeader>
-                  <SectionTitle icon={MessageCircleReply} title="Follow-ups de Cobrança" subtitle="Acompanhamento de respostas" iconBg="bg-violet-500/10" iconColor="text-violet-600" />
-                </CardHeader>
-                <CardContent className="p-0">
-                  {loadingFu ? (
-                    <div className="p-5">{Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
-                  ) : errorFu ? (
-                    <div className="p-5"><ErrorState message={errorFu} onRetry={refetchFu} /></div>
-                  ) : !followups?.length ? (
-                    <p className="text-sm text-center py-12 text-[var(--text-muted)]">Nenhum follow-up</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm table-enterprise">
-                        <thead><tr>{["Cliente","Telefone","Step","Respondeu","Última Msg","Status"].map((h) => <th key={h}>{h}</th>)}</tr></thead>
-                        <tbody>
-                          {followups.map((f) => (
-                            <tr key={f.id}>
-                              <td className="font-medium text-[var(--text-primary)]">{f.nome_cliente ?? "—"}</td>
-                              <td className="tabular-nums">{f.numero_cliente ?? "—"}</td>
-                              <td><Badge variant={f.followup_step && f.followup_step >= 3 ? "danger" : "info"}>Step {f.followup_step ?? 0}</Badge></td>
-                              <td>{f.respondeu ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
-                              <td className="text-xs tabular-nums text-[var(--text-muted)]">{f.ultima_msg_ia ? new Date(f.ultima_msg_ia).toLocaleString("pt-BR") : "—"}</td>
-                              <td><Badge variant={f.status === "PENDING" ? "warning" : "default"}>{f.status ?? "—"}</Badge></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-          {tab === "tecnico" && isSuperAdmin && (
-            <motion.div key="tecnico" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <SectionTitle icon={ShieldAlert} title="Logs Técnicos da Automação" subtitle="Dados brutos do sistema Python — visível apenas para superadmin" iconBg="bg-amber-500/10" iconColor="text-amber-600" />
-                    <button onClick={fetchLogs} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors" title="Atualizar">
-                      <RefreshCw size={13} className={loadingLogs ? "animate-spin" : ""} />
-                    </button>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {loadingLogs ? (
-                    <div className="p-5">{Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
-                  ) : errorLogs ? (
-                    <div className="p-5"><ErrorState message={errorLogs} onRetry={fetchLogs} /></div>
-                  ) : !logs.length ? (
-                    <p className="text-sm text-center py-12 text-[var(--text-muted)]">Nenhum registro encontrado</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm table-enterprise">
-                        <thead>
-                          <tr>{["","Nome","Telefone","Documento","Valor","Vencimento","Status Automação","Data Disparo","Metadata ERP"].map((h) => <th key={h}>{h}</th>)}</tr>
-                        </thead>
-                        <tbody>
-                          {logs.map((log) => {
-                            const isExpanded = expandedMeta === log.id;
-                            const statusColor = log.status_disparo === "DISPARADO"
-                              ? "success"
-                              : log.status_disparo === "NAO DISPARADO"
-                              ? "danger"
-                              : "warning";
-                            return (
-                              <Fragment key={log.id}>
-                                <tr className="hover:bg-[var(--bg-subtle)] transition-colors">
-                                  <td>
-                                    <button
-                                      onClick={() => setExpandedMeta(isExpanded ? null : log.id)}
-                                      className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                                    >
-                                      {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                                    </button>
-                                  </td>
-                                  <td className="font-medium text-[var(--text-primary)]">{log.nome ?? "—"}</td>
-                                  <td className="tabular-nums text-xs">{log.telefone}</td>
-                                  <td className="text-xs text-[var(--text-muted)]">{log.documento ?? "—"}</td>
-                                  <td>{log.valor ?? "—"}</td>
-                                  <td>{log.vencimento ?? "—"}</td>
-                                  <td><Badge variant={statusColor}>{log.status_disparo ?? "—"}</Badge></td>
-                                  <td className="text-xs tabular-nums text-[var(--text-muted)]">{log.data_disparo ? new Date(log.data_disparo).toLocaleString("pt-BR") : "—"}</td>
-                                  <td>
-                                    {log.metadata ? (
-                                      <span className="text-xs text-[var(--blue)] cursor-pointer" onClick={() => setExpandedMeta(isExpanded ? null : log.id)}>
-                                        {isExpanded ? "ocultar" : "ver dados ERP"}
-                                      </span>
-                                    ) : <span className="text-xs text-[var(--text-muted)]">—</span>}
-                                  </td>
-                                </tr>
-                                {isExpanded && log.metadata && (
-                                  <tr>
-                                    <td colSpan={9} className="bg-[var(--bg-subtle)] px-4 py-3">
-                                      <pre className="text-[11px] text-[var(--text-secondary)] whitespace-pre-wrap break-all font-mono max-h-48 overflow-y-auto">
-                                        {JSON.stringify(log.metadata, null, 2)}
-                                      </pre>
-                                    </td>
-                                  </tr>
-                                )}
-                              </Fragment>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-        </AnimatePresence>
-      </main>
-
-      <CobrancaLogDrawer log={selectedLog} followup={selectedFollowup} onClose={() => setSelectedLog(null)} />
-
-      {relatorioModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setRelatorioModal(false)}>
-          <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-sm shadow-xl space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Exportar Relatório PDF</h2>
-              <button onClick={() => setRelatorioModal(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={16} /></button>
-            </div>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide">De</label>
-                  <input type="date" value={relFiltros.de} onChange={(e) => setRelFiltros((f) => ({ ...f, de: e.target.value }))}
-                    className="mt-1 w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] text-[13px] text-[var(--text-primary)]" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide">Até</label>
-                  <input type="date" value={relFiltros.ate} onChange={(e) => setRelFiltros((f) => ({ ...f, ate: e.target.value }))}
-                    className="mt-1 w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] text-[13px] text-[var(--text-primary)]" />
-                </div>
-              </div>
-              <div>
-                <label className="text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide">Tipo</label>
-                <select value={relFiltros.tipo} onChange={(e) => setRelFiltros((f) => ({ ...f, tipo: e.target.value }))}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] text-[13px] text-[var(--text-primary)]">
-                  {["Todos", "PHB Maringá", "PHB Londrina", "HLB Maringá", "HLB Londrina", "ARCIL (PIX)"].map((o) => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide">Status</label>
-                <select value={relFiltros.status} onChange={(e) => setRelFiltros((f) => ({ ...f, status: e.target.value }))}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] text-[13px] text-[var(--text-primary)]">
-                  {["Todos", "DISPARADO", "NAO DISPARADO", "PENDENTE"].map((o) => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-            </div>
-            <button onClick={handleGerarPDF}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white bg-[var(--blue)] hover:opacity-90 transition-opacity">
-              <FileText size={14} /> Gerar PDF
-            </button>
-          </div>
-        </div>
-      )}
+function ScheduleOption({ icon: Icon, label, active }: { icon: typeof PlayCircle; label: string; active?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between rounded-[8px] border p-3 ${active ? "border-blue-500/40 bg-blue-500/10" : "border-[var(--border)] bg-[var(--bg-inset)]"}`}>
+      <div className="flex items-center gap-2">
+        <Icon size={15} className="text-[var(--text-muted)]" />
+        <span className="text-[12px] font-semibold text-[var(--text-primary)]">{label}</span>
+      </div>
+      <span className={`h-3 w-3 rounded-full border ${active ? "border-blue-400 bg-blue-400" : "border-[var(--border-strong)]"}`} />
     </div>
   );
 }

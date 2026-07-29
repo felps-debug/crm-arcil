@@ -12,7 +12,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { MetricCard } from "@/components/ui/metric-card";
 import { useSupabase } from "@/hooks/use-supabase";
 import { getActiveLeads, getFollowups, getRecentConversations } from "@/lib/supabase/queries";
-import { SEGMENT_LABELS, STATUS_LABELS } from "@/types";
+import { STATUS_LABELS } from "@/types";
 import type { Lead, LeadSegment, LeadStatus, Followup, Conversation } from "@/types";
 import {
   ArrowLeft, Users, UserCheck, ArrowRightLeft, MessageCircleReply,
@@ -28,7 +28,7 @@ const AGENT_CONFIG: Record<string, {
   bg: string;
   accent: string;
 }> = {
-  installer: { label: "Instalador",      description: "Técnicos e instaladores de AC",    icon: Wrench,       color: "text-blue-600",    bg: "bg-blue-500/8",    accent: "#2563eb" },
+  installer: { label: "Instalador",      description: "Técnicos e instaladores de AC",    icon: Wrench,       color: "text-blue-600",    bg: "bg-blue-500/8",    accent: "#4c93ff" },
   builder:   { label: "Construtor",      description: "Construtoras e empreiteiras",      icon: Building2,    color: "text-emerald-600", bg: "bg-emerald-500/8", accent: "#059669" },
   reseller:  { label: "Revenda",         description: "Revendas e distribuidores",        icon: Store,        color: "text-violet-600",  bg: "bg-violet-500/8",  accent: "#7c3aed" },
   consumer:  { label: "Consumidor",      description: "Pessoa física — consumidor final", icon: ShoppingBag,  color: "text-amber-600",   bg: "bg-amber-500/8",   accent: "#d97706" },

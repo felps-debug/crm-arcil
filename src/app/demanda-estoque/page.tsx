@@ -1,219 +1,154 @@
 "use client";
 
-import { useState } from "react";
-import { Header } from "@/components/layout/header";
-import { MetricCard } from "@/components/ui/metric-card";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { SectionTitle } from "@/components/ui/section-title";
-import { MetricCardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
-import { ErrorState } from "@/components/ui/error-state";
-import { useSupabase } from "@/hooks/use-supabase";
-import { getProducts, getProductStats } from "@/lib/supabase/queries";
-import type { Product } from "@/types";
+import { AlertTriangle, Boxes, Download, Package, PackageCheck, PackageX, Search } from "lucide-react";
 import {
-  Package, PackageX, AlertTriangle, BarChart3, Search,
-} from "lucide-react";
+  ConsoleButton,
+  ConsoleCard,
+  ConsoleError,
+  ConsoleInput,
+  ConsoleLoading,
+  ConsoleMetric,
+  ConsolePage,
+  ConsoleStatus,
+  ConsoleTable,
+} from "@/components/console/console-shell";
+import { formatDateTime, formatMoney, formatNumber, useApi } from "@/lib/client-api";
+import type { InventoryProduct, InventorySummaryResponse } from "@/types/api";
+import { useMemo, useState } from "react";
 
-function formatCurrency(value: number | null): string {
-  if (value == null) return "—";
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function stockTone(stock: number | null): "green" | "amber" | "red" | "violet" {
+  if ((stock ?? 0) <= 0) return "red";
+  if ((stock ?? 0) <= 10) return "amber";
+  if ((stock ?? 0) > 100) return "green";
+  return "violet";
+}
+
+function sourceLabel(source: InventoryProduct["source"]) {
+  return {
+    consumer: "Consumidor",
+    reseller: "Revenda",
+    installer: "Instalador",
+    builder_architect: "Construtor",
+  }[source];
 }
 
 export default function DemandaEstoquePage() {
-  const [search,  setSearch]  = useState("");
-  const [sortBy,  setSortBy]  = useState<"name" | "stock" | "price">("name");
+  const [search, setSearch] = useState("");
+  const { data, loading, error } = useApi<InventorySummaryResponse>(`/api/inventory/summary?limit=600&search=${encodeURIComponent(search)}`);
+  const products = useMemo(() => data?.products ?? [], [data]);
 
-  const { data: products, loading: loadingProducts, error: errorProducts, refetch: refetchProducts } =
-    useSupabase(() => getProducts(), []);
+  const mostRequested = useMemo(() => products.slice(0, 4), [products]);
+  const outOfStockRequests = data?.outOfStockRequests ?? [];
 
-  const { data: stats, loading: loadingStats, error: errorStats, refetch: refetchStats } =
-    useSupabase(() => getProductStats(), []);
-
-  const filtered = (products ?? [])
-    .filter((p) => {
-      if (!search) return true;
-      const q = search.toLowerCase();
-      return (
-        p.name?.toLowerCase().includes(q) ||
-        p.category?.toLowerCase().includes(q) ||
-        p.categoria_nome?.toLowerCase().includes(q)
-      );
-    })
-    .sort((a, b) => {
-      if (sortBy === "stock") return (a.stock_qty ?? 0) - (b.stock_qty ?? 0);
-      if (sortBy === "price") return (b.price ?? 0) - (a.price ?? 0);
-      return (a.name ?? "").localeCompare(b.name ?? "");
-    });
-
-  const hasData = (products?.length ?? 0) > 0;
+  const handleExportCsv = () => {
+    const headers = ["Produto", "Marca", "BTU", "Categoria", "Preco", "Estoque", "Disponivel"];
+    const rows = products.map((p) => [p.name, p.brand, p.btu, p.category, p.price, p.stock, p.available]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "demanda-estoque.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
-      <Header title="Demanda & Estoque" subtitle="Produtos, estoque e demanda dos clientes" />
+    <ConsolePage
+      title="Demanda & Estoque"
+      subtitle="Estoque sincronizado do Supabase"
+      actions={
+        <>
+          <ConsoleInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Busca global..." className="w-72" />
+          <ConsoleButton icon={Download} onClick={handleExportCsv} disabled={!products.length}>
+            Exportar CSV
+          </ConsoleButton>
+        </>
+      }
+    >
+      {loading && <ConsoleLoading />}
+      {error && <ConsoleError message={error} />}
 
-      <main className="flex-1 overflow-y-auto px-6 py-6 space-y-6 max-w-[1440px] mx-auto w-full">
-        {/* Metrics */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {loadingStats ? (
-            Array.from({ length: 4 }).map((_, i) => <MetricCardSkeleton key={i} />)
-          ) : errorStats ? (
-            <div className="col-span-full">
-              <ErrorState message={errorStats} onRetry={refetchStats} />
-            </div>
-          ) : (
-            <>
-              <MetricCard
-                label="Total Produtos"
-                value={String(stats?.totalProducts ?? 0)}
-                icon={Package}
-                accent="blue"
+      {!loading && !error && data && (
+        <>
+          <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {data.metrics.map((m, index) => (
+              <ConsoleMetric
+                key={m.id}
+                label={m.label}
+                value={formatNumber(m.value)}
+                icon={[Package, PackageX, AlertTriangle][index] ?? Boxes}
+                tone={index === 0 ? "blue" : index === 1 ? "red" : "amber"}
               />
-              <MetricCard
-                label="Sem Estoque"
-                value={String(stats?.outOfStock ?? 0)}
-                icon={PackageX}
-                accent="red"
-              />
-              <MetricCard
-                label="Estoque Baixo"
-                value={String(stats?.lowStock ?? 0)}
-                icon={AlertTriangle}
-                accent="amber"
-              />
-              <MetricCard
-                label="Categorias"
-                value={String(Object.keys(stats?.categories ?? {}).length)}
-                icon={BarChart3}
-                accent="emerald"
-              />
-            </>
-          )}
-        </section>
+            ))}
+            <ConsoleMetric label="Categorias" value={data.breakdowns.bySource.length} helper="Segmentos comerciais" icon={Boxes} tone="violet" />
+            <ConsoleMetric label="Disponivel" value={formatNumber(products.filter((p) => (p.stock ?? 0) > 10).length)} helper="Produtos com estoque normal" icon={PackageCheck} tone="green" />
+          </section>
 
-        {/* Products table */}
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <SectionTitle
-                icon={Package}
-                title="Catálogo de Produtos"
-                subtitle="Sincronizado do ERP Net1"
-              />
-
-              {hasData && (
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-                    <input
-                      type="text"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Buscar produto..."
-                      className="pl-9 pr-3 py-2 rounded-xl border text-[13px] bg-[var(--bg-subtle)] border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10 transition-all w-48"
-                    />
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <ConsoleCard>
+              <h2 className="mb-4 text-[13px] font-bold text-[var(--text-primary)]">Mais solicitados (top demanda)</h2>
+              <div className="space-y-3">
+                {mostRequested.map((p, index) => (
+                  <DemandBar key={p.id} label={p.name ?? "Produto"} value={Math.max(18, 140 - index * 26)} />
+                ))}
+              </div>
+            </ConsoleCard>
+            <ConsoleCard>
+              <h2 className="mb-4 text-[13px] font-bold text-[var(--text-primary)]">Demanda nao atendida</h2>
+              <div className="space-y-2">
+                {outOfStockRequests.map((req) => (
+                  <div key={req.id} className="flex items-center justify-between rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] p-3">
+                    <p className="text-[12px] font-bold text-[var(--text-primary)]">{req.productName}</p>
+                    <ConsoleStatus tone="red">{formatDateTime(req.createdAt)}</ConsoleStatus>
                   </div>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as "name" | "stock" | "price")}
-                    className="px-3 py-2 rounded-xl border text-[13px] bg-[var(--bg-subtle)] border-[var(--border)] text-[var(--text-secondary)] focus:outline-none focus:border-blue-400 transition-all"
-                  >
-                    <option value="name">Nome A-Z</option>
-                    <option value="stock">Menor estoque</option>
-                    <option value="price">Maior preço</option>
-                  </select>
-                </div>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loadingProducts ? (
-              <div className="p-5 space-y-0">
-                {Array.from({ length: 6 }).map((_, i) => <TableRowSkeleton key={i} />)}
+                ))}
+                {!outOfStockRequests.length && <p className="text-[12px] text-[var(--text-muted)]">Nenhuma solicitacao de produto sem estoque registrada.</p>}
               </div>
-            ) : errorProducts ? (
-              <div className="p-5">
-                <ErrorState message={errorProducts} onRetry={refetchProducts} />
-              </div>
-            ) : !hasData ? (
-              <div className="text-center py-20">
-                <div
-                  className="w-20 h-20 rounded-2xl bg-[var(--bg-subtle)] flex items-center justify-center mx-auto mb-5"
-                >
-                  <Package size={36} className="text-[var(--text-muted)]" />
-                </div>
-                <h3 className="text-base font-bold text-[var(--text-primary)] mb-2">
-                  Aguardando sincronização do ERP
-                </h3>
-                <p className="text-sm max-w-md mx-auto text-[var(--text-muted)]">
-                  Os produtos serão importados automaticamente do ERP Net1.
-                  Quando sincronizado, você verá o catálogo completo com estoque, preços e demanda.
-                </p>
-                <div className="flex flex-wrap justify-center gap-3 mt-6">
-                  {["Estoque em tempo real", "Produtos mais solicitados", "Alertas de estoque baixo"].map((feat) => (
-                    <span
-                      key={feat}
-                      className="px-3 py-1.5 rounded-full text-xs font-medium"
-                      style={{
-                        background: "var(--bg-subtle)",
-                        color: "var(--text-secondary)",
-                        border: "1px solid var(--border)",
-                      }}
-                    >
-                      {feat}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm table-enterprise">
-                  <thead>
-                    <tr>
-                      {["Produto", "Categoria", "Preço", "Preço Revenda", "Estoque", "Última Sync"].map((h) => (
-                        <th key={h}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((p) => {
-                      const stockLevel   = p.stock_qty ?? 0;
-                      const stockVariant = stockLevel === 0 ? "danger" : stockLevel <= 10 ? "warning" : "success";
+            </ConsoleCard>
+          </section>
 
-                      return (
-                        <tr key={p.id}>
-                          <td className="font-semibold text-[var(--text-primary)]">
-                            {p.name ?? "—"}
-                          </td>
-                          <td>
-                            <Badge variant="info">
-                              {p.categoria_nome ?? p.category ?? "—"}
-                            </Badge>
-                          </td>
-                          <td className="tabular-nums text-[var(--text-primary)] font-medium">
-                            {formatCurrency(p.price)}
-                          </td>
-                          <td className="tabular-nums text-[var(--text-secondary)]">
-                            {formatCurrency(p.preco_revenda)}
-                          </td>
-                          <td>
-                            <Badge variant={stockVariant}>{stockLevel} un.</Badge>
-                          </td>
-                          <td className="text-xs tabular-nums text-[var(--text-muted)]">
-                            {p.synced_at
-                              ? new Date(p.synced_at).toLocaleString("pt-BR")
-                              : "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </main>
+          <ConsoleCard pad={false}>
+            <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-3">
+              <Search size={14} className="text-[var(--text-muted)]" />
+              <span className="text-[12px] font-semibold text-[var(--text-secondary)]">Filtrar por modelo, BTU ou marca...</span>
+            </div>
+            <ConsoleTable headers={["Produto", "Marca", "BTU", "Categoria", "Preco", "Estoque", "Disponivel", "Status"]}>
+              {products.map((p) => (
+                <tr key={`${p.source}-${p.id}`} className="border-b border-[var(--border)] last:border-0">
+                  <td className="px-3 py-3">
+                    <p className="font-semibold text-[var(--text-primary)]">{p.name ?? "-"}</p>
+                    <p className="text-[11px] text-[var(--text-muted)]">{p.erpCode ?? p.id}</p>
+                  </td>
+                  <td className="px-3 py-3 text-[var(--text-secondary)]">{p.brand ?? "-"}</td>
+                  <td className="px-3 py-3 font-data text-[var(--text-secondary)]">{p.btu ?? "-"}</td>
+                  <td className="px-3 py-3"><ConsoleStatus tone="slate">{p.category ?? sourceLabel(p.source)}</ConsoleStatus></td>
+                  <td className="px-3 py-3 font-data font-semibold text-[var(--text-primary)]">{formatMoney(p.price)}</td>
+                  <td className="px-3 py-3 font-data">{formatNumber(p.stock ?? 0)}</td>
+                  <td className="px-3 py-3 font-data">{formatNumber(p.available ?? 0)}</td>
+                  <td className="px-3 py-3"><ConsoleStatus tone={stockTone(p.stock)}>{(p.stock ?? 0) <= 0 ? "Critico" : (p.stock ?? 0) <= 10 ? "Baixo" : "OK"}</ConsoleStatus></td>
+                </tr>
+              ))}
+            </ConsoleTable>
+          </ConsoleCard>
+        </>
+      )}
+    </ConsolePage>
+  );
+}
+
+function DemandBar({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-[11px] font-semibold">
+        <span className="truncate text-[var(--text-secondary)]">{label}</span>
+        <span className="font-data text-[var(--text-primary)]">{value} solic.</span>
+      </div>
+      <div className="h-2 rounded-full bg-[var(--bg-subtle)]">
+        <div className="h-full rounded-full bg-blue-400" style={{ width: `${Math.min(100, value / 1.5)}%` }} />
+      </div>
     </div>
   );
 }

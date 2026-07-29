@@ -1,497 +1,315 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Header } from "@/components/layout/header";
-import { Badge } from "@/components/ui/badge";
-import { ErrorState } from "@/components/ui/error-state";
-import { LeadDrawer } from "@/components/ui/lead-drawer";
-import { useSupabase } from "@/hooks/use-supabase";
-import { getActiveLeads, getLeads, getFollowupsByType, subscribeToLeads } from "@/lib/supabase/queries";
-import { SEGMENT_LABELS, STATUS_LABELS } from "@/types";
-import type { Lead, LeadSegment, LeadStatus, Followup } from "@/types";
+import { useMemo, useState } from "react";
+import { Building2, CalendarDays, ChevronRight, Grid2X2, Kanban, List, Phone, Search, UserRound } from "lucide-react";
 import {
-  Users, Search, Eye, EyeOff, Phone, Building2, MapPin, RefreshCw,
-  MessageCircleReply, CheckCircle2, XCircle, ChevronDown, ChevronUp,
-} from "lucide-react";
-import { getInitials } from "@/lib/utils";
+  ConsoleButton,
+  ConsoleCard,
+  ConsoleError,
+  ConsoleInput,
+  ConsoleLoading,
+  ConsolePage,
+  ConsoleStatus,
+  ConsoleTable,
+} from "@/components/console/console-shell";
+import { formatDateTime, useApi } from "@/lib/client-api";
+import type { LeadDetailResponse, LeadListItem, LeadsResponse } from "@/types/api";
 
-const PAGE_SIZE = 30;
+type ViewMode = "table" | "kanban" | "cards";
 
-const STATUS_BADGE: Record<LeadStatus, "success" | "danger" | "warning"> = {
-  ACTIVE:      "success",
-  LOST:        "danger",
-  IN_PROGRESS: "warning",
-};
+type KanbanStageId = "NOVO" | "CONVERSANDO" | "FOLLOWUP" | "ENCAMINHADO" | "PERDIDO";
 
-const SEGMENT_TABS: { key: string; label: string }[] = [
-  { key: "",          label: "Todos"      },
-  { key: "NEW",       label: "Novos"      },
-  { key: "CONSUMER",  label: "Consumidor" },
-  { key: "INSTALLER", label: "Instalador" },
-  { key: "BUILDER",   label: "Construtor" },
-  { key: "RESELLER",  label: "Revenda"    },
-  { key: "COBRANCA",  label: "Cobrança"   },
+const PIPELINE: { id: KanbanStageId; label: string; tone: "green" | "amber" | "red" }[] = [
+  { id: "NOVO", label: "Novo Lead", tone: "amber" },
+  { id: "CONVERSANDO", label: "Conversando", tone: "green" },
+  { id: "FOLLOWUP", label: "Recebendo Follow-up", tone: "amber" },
+  { id: "ENCAMINHADO", label: "Encaminhado ao Vendedor", tone: "green" },
+  { id: "PERDIDO", label: "Perdido", tone: "red" },
 ];
 
-function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
-  const name = lead.name ?? "Sem nome";
-  const daysSince = lead.updated_at
-    ? Math.floor((Date.now() - new Date(lead.updated_at).getTime()) / 86_400_000)
-    : null;
-  const inactiveLabel = daysSince !== null && daysSince >= 7
-    ? daysSince >= 30 ? `${Math.floor(daysSince / 30)}m` : `${daysSince}d`
-    : null;
-  const inactiveColor = daysSince !== null && daysSince >= 30
-    ? "text-red-500 border-red-500/20 bg-red-500/8"
-    : "text-amber-500 border-amber-500/20 bg-amber-500/8";
+function kanbanStage(lead: LeadListItem): KanbanStageId {
+  if (lead.status === "LOST") return "PERDIDO";
+  if (lead.responsible) return "ENCAMINHADO";
+  if (lead.nextActionAt) return "FOLLOWUP";
+  if (lead.hasConversation) return "CONVERSANDO";
+  return "NOVO";
+}
+
+function statusTone(status: string | null): "green" | "amber" | "red" | "blue" | "slate" {
+  if (status === "ACTIVE") return "green";
+  if (status === "IN_PROGRESS") return "blue";
+  if (status === "LOST") return "red";
+  return "slate";
+}
+
+export default function LeadsPage() {
+  const [view, setView] = useState<ViewMode>("kanban");
+  const [segment, setSegment] = useState("");
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const params = new URLSearchParams();
+  if (segment) params.set("segment", segment);
+  if (search) params.set("search", search);
+  params.set("limit", "300");
+
+  const leads = useApi<LeadsResponse>(`/api/leads?${params.toString()}`);
+  const detail = useApi<LeadDetailResponse>(selectedId ? `/api/leads/${selectedId}` : null);
+  const items = useMemo(() => leads.data?.items ?? [], [leads.data]);
+
+  const segments = useMemo(() => {
+    const unique = new Map<string, string>();
+    for (const lead of items) {
+      if (lead.segment) unique.set(lead.segment, lead.segmentLabel);
+    }
+    return [...unique.entries()].map(([id, label]) => ({ id, label }));
+  }, [items]);
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 4 }}
-      transition={{ duration: 0.18 }}
-      onClick={onClick}
-      className="group cursor-pointer rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] p-4 hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-md)] transition-all duration-200"
+    <ConsolePage
+      title="Leads"
+      subtitle="Gestao de leads e oportunidades"
+      actions={
+        <ConsoleInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar lead..." className="w-64" />
+      }
     >
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[var(--text-muted)] text-[11px] font-semibold bg-[var(--bg-subtle)] border border-[var(--border)]">
-          {getInitials(name)}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <ConsoleButton active={!segment} onClick={() => setSegment("")}>Todos <span className="font-data opacity-80">{items.length}</span></ConsoleButton>
+          {segments.map((s) => (
+            <ConsoleButton key={s.id} active={segment === s.id} onClick={() => setSegment(s.id)}>
+              {s.label} <span className="font-data opacity-80">{items.filter((i) => i.segment === s.id).length}</span>
+            </ConsoleButton>
+          ))}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-[13.5px] font-semibold text-[var(--text-primary)] truncate leading-tight">{name}</p>
-            {lead.status && (
-              <Badge variant={STATUS_BADGE[lead.status as LeadStatus] ?? "default"} className="shrink-0 text-[10px]">
-                {STATUS_LABELS[lead.status as LeadStatus] ?? lead.status}
-              </Badge>
-            )}
+        <div className="flex gap-2">
+          <ConsoleButton icon={Grid2X2} active={view === "cards"} onClick={() => setView("cards")}>Cards</ConsoleButton>
+          <ConsoleButton icon={List} active={view === "table"} onClick={() => setView("table")}>Tabela</ConsoleButton>
+          <ConsoleButton icon={Kanban} active={view === "kanban"} onClick={() => setView("kanban")}>Kanban</ConsoleButton>
+        </div>
+      </div>
+
+      {leads.loading && <ConsoleLoading />}
+      {leads.error && <ConsoleError message={leads.error} />}
+
+      {!leads.loading && !leads.error && (
+        <div className={view === "kanban" ? "block" : "grid grid-cols-1 gap-4 xl:grid-cols-[1fr_380px]"}>
+          <div className="min-w-0">
+            {view === "table" && <LeadsTable leads={items} onSelect={setSelectedId} selectedId={selectedId} />}
+            {view === "kanban" && <LeadsKanban leads={items} onSelect={setSelectedId} />}
+            {view === "cards" && <LeadsCards leads={items} onSelect={setSelectedId} />}
           </div>
-          {lead.company && (
-            <div className="flex items-center gap-1 mt-0.5">
-              <Building2 size={10} className="text-[var(--text-muted)] shrink-0" />
-              <p className="text-[11.5px] text-[var(--text-muted)] truncate">{lead.company}</p>
-            </div>
+          {view !== "kanban" && (
+            <LeadPanel
+              loading={detail.loading && !!selectedId}
+              detail={selectedId ? detail.data : null}
+              onClose={() => setSelectedId(null)}
+            />
           )}
         </div>
-      </div>
-      <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center gap-3 flex-wrap">
-        {lead.wa_phone && (
-          <span className="flex items-center gap-1 text-[11px] text-[var(--text-muted)]">
-            <Phone size={10} />{lead.wa_phone}
-          </span>
-        )}
-        {(lead.city ?? lead.region) && (
-          <span className="flex items-center gap-1 text-[11px] text-[var(--text-muted)]">
-            <MapPin size={10} />{lead.city ?? lead.region}
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-1.5">
-          {inactiveLabel && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${inactiveColor}`} title={`Sem atividade há ${daysSince} dias`}>
-              {inactiveLabel}
-            </span>
-          )}
-          {lead.segment && (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border)]">
-              {SEGMENT_LABELS[lead.segment as LeadSegment] ?? lead.segment}
-            </span>
-          )}
-        </div>
-      </div>
-    </motion.div>
+      )}
+    </ConsolePage>
   );
 }
 
-function SkeletonCard() {
+function LeadsTable({ leads, onSelect, selectedId }: { leads: LeadListItem[]; onSelect: (id: string) => void; selectedId: string | null }) {
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] p-4 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl animate-shimmer shrink-0" />
-        <div className="flex-1 space-y-2">
-          <div className="h-3.5 rounded-full animate-shimmer w-3/4" />
-          <div className="h-3 rounded-full animate-shimmer w-1/2" />
-        </div>
+    <ConsoleCard pad={false}>
+      <ConsoleTable headers={["", "Lead", "Segmento", "Status", "Responsavel", "Ultimo contato", "Proxima acao"]}>
+        {leads.map((lead) => (
+          <tr
+            key={lead.id}
+            onClick={() => onSelect(lead.id)}
+            className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-blue-500/5 ${selectedId === lead.id ? "bg-blue-500/10" : ""}`}
+          >
+            <td className="px-3 py-3"><input type="checkbox" onClick={(e) => e.stopPropagation()} /></td>
+            <td className="px-3 py-3">
+              <div className="font-semibold text-[var(--text-primary)]">{lead.name ?? "Sem nome"}</div>
+              <div className="mt-1 flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
+                <Phone size={11} /> {lead.phone ?? "-"}
+              </div>
+            </td>
+            <td className="px-3 py-3"><ConsoleStatus tone="slate">{lead.segmentLabel}</ConsoleStatus></td>
+            <td className="px-3 py-3"><ConsoleStatus tone={statusTone(lead.status)}>{lead.statusLabel}</ConsoleStatus></td>
+            <td className="px-3 py-3 text-[var(--text-secondary)]">{lead.responsible ?? lead.aiAgent ?? "Sem responsavel"}</td>
+            <td className="px-3 py-3 text-[var(--text-muted)]">{formatDateTime(lead.lastContactAt)}</td>
+            <td className="px-3 py-3">
+              {lead.nextActionAt ? <ConsoleStatus tone="amber">{formatDateTime(lead.nextActionAt)}</ConsoleStatus> : <span className="text-[var(--text-muted)]">-</span>}
+            </td>
+          </tr>
+        ))}
+      </ConsoleTable>
+      <div className="flex items-center justify-between border-t border-[var(--border)] px-4 py-3 text-[11px] text-[var(--text-muted)]">
+        <span>Exibindo {leads.length} leads</span>
+        <span className="font-data">1 / 1</span>
       </div>
-      <div className="h-px bg-[var(--border)]" />
-      <div className="flex gap-2">
-        <div className="h-3 rounded-full animate-shimmer w-24" />
-        <div className="h-3 rounded-full animate-shimmer w-16 ml-auto" />
-      </div>
+    </ConsoleCard>
+  );
+}
+
+function LeadsKanban({ leads, onSelect }: { leads: LeadListItem[]; onSelect: (id: string) => void }) {
+  return (
+    <div className="-mx-1 flex min-h-[650px] gap-4 overflow-x-auto pb-4">
+      {PIPELINE.map((stage) => {
+        const stageLeads = leads.filter((l) => kanbanStage(l) === stage.id);
+        return (
+          <ConsoleCard key={stage.id} className="min-h-[620px] w-[284px] shrink-0 p-3">
+            <div className="mb-3 flex items-start justify-between">
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.04em] text-[var(--text-primary)]">{stage.label}</h2>
+              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#17283f] px-1.5 font-data text-[10px] text-blue-200">
+                {stageLeads.length}
+              </span>
+            </div>
+            <div className="space-y-3">
+              {stageLeads.length === 0 && (
+                <p className="px-1 py-6 text-center text-[11px] text-[#66748a]">Nenhum lead neste estado</p>
+              )}
+              {stageLeads.map((lead) => (
+                <button
+                  key={lead.id}
+                  onClick={() => onSelect(lead.id)}
+                  className="w-full rounded-[10px] border border-[#223047] bg-[#101b2c] p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-blue-500/60"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[13px] font-bold text-white">{lead.name ?? "Sem nome"}</p>
+                      <ConsoleStatus tone={lead.segment === "INSTALLER" ? "green" : lead.segment === "RESELLER" ? "violet" : "slate"}>
+                        {lead.segmentLabel}
+                      </ConsoleStatus>
+                    </div>
+                    <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-bold text-violet-200">IA</span>
+                  </div>
+                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-[#9aa8bb]">
+                    <Phone size={11} /> {lead.phone ?? "-"}
+                  </div>
+                  <div className="mt-3 space-y-1.5 text-[10px] text-[#9aa8bb]">
+                    <div className="flex items-center gap-1.5">
+                      <CalendarDays size={11} /> Ultimo contato: {formatDateTime(lead.lastContactAt)}
+                    </div>
+                    {lead.nextActionAt && (
+                      <div className="flex items-center gap-1.5">
+                        <CalendarDays size={11} /> Follow-up: {formatDateTime(lead.nextActionAt)}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </ConsoleCard>
+        );
+      })}
     </div>
   );
 }
 
-type View = "leads" | "followups";
+function LeadsCards({ leads, onSelect }: { leads: LeadListItem[]; onSelect: (id: string) => void }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
+      {leads.map((lead) => (
+        <button key={lead.id} onClick={() => onSelect(lead.id)} className="text-left">
+          <ConsoleCard className="transition-colors hover:border-blue-500/50">
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-[8px] bg-blue-500/10 text-blue-300">
+                <UserRound size={16} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <h2 className="truncate text-[14px] font-bold text-[var(--text-primary)]">{lead.name ?? "Sem nome"}</h2>
+                  <ConsoleStatus tone={statusTone(lead.status)}>{lead.statusLabel}</ConsoleStatus>
+                </div>
+                <p className="mt-1 text-[12px] text-[var(--text-muted)]">{lead.phone ?? "-"}</p>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
+                  <Info icon={Building2} label="Empresa" value={lead.company ?? "-"} />
+                  <Info icon={Search} label="Origem" value={lead.origin ?? "-"} />
+                </div>
+              </div>
+            </div>
+          </ConsoleCard>
+        </button>
+      ))}
+    </div>
+  );
+}
 
-export default function LeadsPage() {
-  const [view,          setView]          = useState<View>("leads");
-  const [showLegacy,    setShowLegacy]    = useState(false);
-  const [segmentFilter, setSegmentFilter] = useState("");
-  const [statusFilter,  setStatusFilter]  = useState("");
-  const [search,        setSearch]        = useState("");
-  const [selectedLead,  setSelectedLead]  = useState<Lead | null>(null);
-  const [lastUpdated,   setLastUpdated]   = useState<Date>(new Date());
-  const [visibleCount,  setVisibleCount]  = useState(PAGE_SIZE);
+function Info({ icon: Icon, label, value }: { icon: typeof Phone; label: string; value: string }) {
+  return (
+    <div className="rounded-[6px] bg-[var(--bg-inset)] p-2">
+      <div className="flex items-center gap-1 text-[10px] font-bold uppercase text-[var(--text-muted)]">
+        <Icon size={10} /> {label}
+      </div>
+      <p className="mt-1 truncate font-semibold text-[var(--text-secondary)]">{value}</p>
+    </div>
+  );
+}
 
-  const { data: activeLeads, loading: loadingActive, error: errorActive, refetch: refetchActive } =
-    useSupabase(() => getActiveLeads(), []);
-
-  const { data: allLeads, loading: loadingAll, error: errorAll, refetch: refetchAll } =
-    useSupabase(() => getLeads(), []);
-
-  const { data: followups, loading: loadingFu, error: errorFu, refetch: refetchFu } =
-    useSupabase(() => getFollowupsByType("lead"), []);
-
-  const baseLeads = showLegacy ? allLeads : activeLeads;
-  const loading   = showLegacy ? loadingAll  : loadingActive;
-  const error     = showLegacy ? errorAll    : errorActive;
-
-  function refetchAll_() {
-    refetchActive();
-    refetchAll();
-    setLastUpdated(new Date());
-  }
-
-  const refetchActiveRef = useRef(refetchActive);
-  const refetchAllRef    = useRef(refetchAll);
-  useEffect(() => {
-    refetchActiveRef.current = refetchActive;
-    refetchAllRef.current    = refetchAll;
-  });
-
-  useEffect(() => {
-    const channel = subscribeToLeads(() => {
-      refetchActiveRef.current();
-      refetchAllRef.current();
-      setLastUpdated(new Date());
-    });
-    const fallback = setInterval(() => {
-      refetchActiveRef.current();
-      if (showLegacy) refetchAllRef.current();
-      setLastUpdated(new Date());
-    }, 60_000);
-    return () => { channel.unsubscribe(); clearInterval(fallback); };
-  }, [showLegacy]);
-
-  const filteredLeads = useMemo(() => {
-    if (!baseLeads) return [];
-    return baseLeads.filter((lead) => {
-      if (segmentFilter && lead.segment !== segmentFilter) return false;
-      if (statusFilter  && lead.status  !== statusFilter)  return false;
-      if (search) {
-        const q = search.toLowerCase();
-        if (!lead.name?.toLowerCase().includes(q) &&
-            !lead.wa_phone?.includes(q) &&
-            !lead.company?.toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-  }, [baseLeads, segmentFilter, statusFilter, search]);
-
-  // Reset page when filters change
-  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [segmentFilter, statusFilter, search, showLegacy]);
-
-  const visibleLeads = filteredLeads.slice(0, visibleCount);
-  const hasMore = filteredLeads.length > visibleCount;
-
-  const grouped = useMemo(() => {
-    if (segmentFilter) return { [segmentFilter]: visibleLeads };
-    const map: Record<string, Lead[]> = {};
-    for (const l of visibleLeads) {
-      const key = l.segment ?? "OTHER";
-      if (!map[key]) map[key] = [];
-      map[key].push(l);
-    }
-    return map;
-  }, [visibleLeads, segmentFilter]);
-
-  const totalCount = filteredLeads.length;
-
-  function handleLeadUpdate(updated: Lead) {
-    setSelectedLead(updated);
-    refetchAll_();
+function LeadPanel({
+  detail,
+  loading,
+  onClose,
+}: {
+  detail: LeadDetailResponse | null;
+  loading: boolean;
+  onClose: () => void;
+}) {
+  if (loading) return <ConsoleLoading />;
+  if (!detail) {
+    return (
+      <ConsoleCard className="hidden min-h-[520px] xl:block">
+        <div className="flex h-full items-center justify-center text-center text-[13px] font-semibold text-[var(--text-muted)]">
+          Selecione um lead para abrir o prontuario comercial.
+        </div>
+      </ConsoleCard>
+    );
   }
 
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
-      <LeadDrawer lead={selectedLead} onClose={() => setSelectedLead(null)} onUpdate={handleLeadUpdate} />
-
-      <Header
-        title="Leads"
-        subtitle={view === "followups" ? `${followups?.length ?? 0} follow-up${(followups?.length ?? 0) !== 1 ? "s" : ""}` : `${totalCount} lead${totalCount !== 1 ? "s" : ""}${showLegacy ? "" : " ativos"}`}
-      />
-
-      {/* Segment tabs — only for leads view */}
-      {view === "leads" && (
-        <div className="shrink-0 px-6 pt-4 max-w-[1440px] mx-auto w-full" style={{ borderBottom: "1px solid var(--border)" }}>
-          <div className="flex items-center gap-1 overflow-x-auto pb-0 no-scrollbar">
-            {SEGMENT_TABS.map(({ key, label }) => {
-              const active = segmentFilter === key;
-              const segLeads = !loading && baseLeads
-                ? baseLeads.filter((l) => key === "" || l.segment === key).length
-                : null;
-              return (
-                <button
-                  key={key}
-                  onClick={() => setSegmentFilter(key)}
-                  className={`relative flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium whitespace-nowrap transition-colors focus-visible:outline-none ${
-                    active ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                  }`}
-                >
-                  {label}
-                  {segLeads !== null && (
-                    <span className={`text-[10px] font-semibold tabular-nums ${active ? "text-[var(--text-secondary)]" : "text-[var(--text-muted)]"}`}>
-                      {segLeads}
-                    </span>
-                  )}
-                  {active && (
-                    <motion.div
-                      layoutId="segment-tab-indicator"
-                      className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full"
-                      style={{ background: "var(--blue)" }}
-                      transition={{ type: "spring", stiffness: 500, damping: 40 }}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
+    <ConsoleCard className="min-h-[520px]">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[16px] font-bold text-[var(--text-primary)]">{detail.lead.name ?? "Sem nome"}</h2>
+          <p className="mt-1 text-[12px] text-[var(--text-muted)]">{detail.lead.company ?? detail.lead.phone ?? "-"}</p>
         </div>
-      )}
-
-      {/* Controls */}
-      <div className="shrink-0 px-6 pt-3 pb-3 max-w-[1440px] mx-auto w-full" style={{ borderBottom: "1px solid var(--border)" }}>
-        <div className="flex items-center gap-3">
-          {/* View toggle */}
-          <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border)]">
-            <button
-              onClick={() => setView("leads")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all ${
-                view === "leads" ? "bg-[var(--blue)] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-              }`}
-            >
-              <Users size={12} /> Leads
-            </button>
-            <button
-              onClick={() => setView("followups")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all ${
-                view === "followups" ? "bg-[var(--blue)] text-white shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-              }`}
-            >
-              <MessageCircleReply size={12} /> Follow-ups
-              {(followups?.length ?? 0) > 0 && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${view === "followups" ? "bg-white/20 text-white" : "bg-[var(--bg-subtle)] text-[var(--text-muted)]"}`}>
-                  {followups?.length}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {view === "leads" && (
-            <>
-              <div className="relative flex-1 max-w-md">
-                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-                <input
-                  type="text"
-                  placeholder="Nome, telefone ou empresa..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border text-[13px] bg-[var(--bg-surface)] border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--blue)] focus:ring-2 focus:ring-blue-500/10 transition-all shadow-[var(--shadow-xs)]"
-                />
-              </div>
-
-              <div className="hidden sm:flex items-center gap-1.5">
-                {(["", "ACTIVE", "IN_PROGRESS", "LOST"] as const).map((key) => (
-                  <button
-                    key={key}
-                    onClick={() => setStatusFilter(key)}
-                    className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
-                      statusFilter === key
-                        ? "bg-[var(--blue)] text-white"
-                        : "bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                    }`}
-                  >
-                    {key ? STATUS_LABELS[key] : "Todos status"}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                onClick={refetchAll_}
-                title={`Última atualização: ${lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-[13px] font-medium transition-all shadow-[var(--shadow-xs)] border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-              >
-                <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-              </button>
-
-              <button
-                onClick={() => setShowLegacy(!showLegacy)}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border text-[13px] font-medium transition-all shadow-[var(--shadow-xs)] border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                title={showLegacy ? "Mostrar apenas ativos" : "Mostrar todos incluindo legado"}
-              >
-                {showLegacy ? <Eye size={14} /> : <EyeOff size={14} />}
-                <span className="hidden sm:inline">{showLegacy ? "Com legado" : "Sem legado"}</span>
-              </button>
-            </>
-          )}
-
-          {view === "followups" && (
-            <button
-              onClick={() => { refetchFu(); setLastUpdated(new Date()); }}
-              className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-[13px] font-medium transition-all shadow-[var(--shadow-xs)] border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-            >
-              <RefreshCw size={13} className={loadingFu ? "animate-spin" : ""} />
-            </button>
-          )}
-        </div>
+        <ConsoleButton onClick={onClose} aria-label="Fechar prontuario">
+          <ChevronRight size={14} />
+        </ConsoleButton>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4 max-w-[1440px] mx-auto w-full">
-        {view === "leads" ? (
-          <>
-            {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}
-              </div>
-            ) : error ? (
-              <ErrorState message={error} onRetry={refetchAll_} />
-            ) : filteredLeads.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 space-y-3">
-                <div className="w-16 h-16 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border)] flex items-center justify-center shadow-[var(--shadow-sm)]">
-                  <Users size={24} className="text-[var(--text-muted)]" />
-                </div>
-                <p className="text-[14px] font-medium text-[var(--text-muted)]">Nenhum lead encontrado</p>
-                {(segmentFilter || statusFilter || search) && (
-                  <button
-                    onClick={() => { setSearch(""); setSegmentFilter(""); setStatusFilter(""); }}
-                    className="text-[13px] text-[var(--blue)] hover:underline"
-                  >
-                    Limpar filtros
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-8">
-                {Object.entries(grouped).map(([segment, leads]) => (
-                  <section key={segment}>
-                    {!segmentFilter && (
-                      <div className="flex items-center gap-3 mb-4">
-                        <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                          {SEGMENT_LABELS[segment as LeadSegment] ?? segment}
-                        </h2>
-                        <div className="flex-1 h-px bg-[var(--border)]" />
-                        <span className="text-[11px] font-semibold text-[var(--text-muted)]">{leads.length}</span>
-                      </div>
-                    )}
-                    <AnimatePresence mode="popLayout">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                        {leads.map((lead) => (
-                          <LeadCard key={lead.id} lead={lead} onClick={() => setSelectedLead(lead)} />
-                        ))}
-                      </div>
-                    </AnimatePresence>
-                  </section>
-                ))}
-
-                {/* Load more */}
-                {hasMore && (
-                  <div className="flex justify-center pt-2">
-                    <button
-                      onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] text-[13px] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--border-strong)] transition-all shadow-[var(--shadow-xs)]"
-                    >
-                      <ChevronDown size={14} />
-                      Ver mais ({filteredLeads.length - visibleCount} restantes)
-                    </button>
-                  </div>
-                )}
-
-                {visibleCount > PAGE_SIZE && !hasMore && (
-                  <div className="flex justify-center pt-2">
-                    <button
-                      onClick={() => setVisibleCount(PAGE_SIZE)}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] text-[13px] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-all"
-                    >
-                      <ChevronUp size={14} />
-                      Recolher
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        ) : (
-          /* Follow-ups view */
-          <>
-            {loadingFu ? (
-              <div className="space-y-2">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="h-12 rounded-xl animate-shimmer" />
-                ))}
-              </div>
-            ) : errorFu ? (
-              <ErrorState message={errorFu} onRetry={refetchFu} />
-            ) : !followups?.length ? (
-              <div className="flex flex-col items-center justify-center py-20 space-y-3">
-                <div className="w-16 h-16 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border)] flex items-center justify-center shadow-[var(--shadow-sm)]">
-                  <MessageCircleReply size={24} className="text-[var(--text-muted)]" />
-                </div>
-                <p className="text-[14px] font-medium text-[var(--text-muted)]">Nenhum follow-up de vendas</p>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] overflow-hidden shadow-[var(--shadow-xs)]">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm table-enterprise">
-                    <thead>
-                      <tr>
-                        {["Cliente", "Telefone", "Produto", "Preço", "Step", "Respondeu", "Última Msg", "Status"].map((h) => (
-                          <th key={h}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(followups as Followup[]).map((f) => (
-                        <tr key={f.id}>
-                          <td className="font-medium text-[var(--text-primary)]">{f.nome_cliente ?? "—"}</td>
-                          <td className="tabular-nums text-xs">{f.numero_cliente ?? "—"}</td>
-                          <td className="max-w-[140px] truncate text-[var(--text-secondary)]">{f.produto_negociado ?? "—"}</td>
-                          <td className="tabular-nums">
-                            {f.preco_ofertado != null
-                              ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(f.preco_ofertado)
-                              : "—"}
-                          </td>
-                          <td>
-                            <Badge variant={f.followup_step != null && f.followup_step >= 3 ? "danger" : "info"}>
-                              Step {f.followup_step ?? 0}
-                            </Badge>
-                          </td>
-                          <td>
-                            {f.respondeu
-                              ? <CheckCircle2 size={16} className="text-emerald-500" />
-                              : <XCircle size={16} className="text-[var(--text-muted)]" />}
-                          </td>
-                          <td className="text-xs tabular-nums text-[var(--text-muted)]">
-                            {f.ultima_msg_ia ? new Date(f.ultima_msg_ia).toLocaleString("pt-BR") : "—"}
-                          </td>
-                          <td>
-                            <Badge variant={f.status === "PENDING" ? "warning" : f.status === "CONVERTED" ? "success" : "default"}>
-                              {f.status ?? "—"}
-                            </Badge>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </>
-        )}
+      <div className="grid grid-cols-2 gap-2">
+        <Info icon={Phone} label="Contato" value={detail.lead.phone ?? "-"} />
+        <Info icon={Building2} label="Empresa" value={detail.lead.company ?? "-"} />
+        <Info icon={UserRound} label="Responsavel" value={detail.lead.responsible ?? detail.lead.aiAgent ?? "-"} />
+        <Info icon={Search} label="Origem" value={detail.lead.origin ?? "-"} />
       </div>
+
+      <div className="mt-5 grid grid-cols-3 gap-2">
+        <MiniStat label="Conversas" value={detail.summary.conversations} />
+        <MiniStat label="Follow-ups" value={detail.summary.followups} />
+        <MiniStat label="Imagens" value={detail.summary.generatedImages} />
+      </div>
+
+      <div className="mt-5">
+        <h3 className="mb-3 text-[12px] font-bold text-[var(--text-primary)]">Historico recente</h3>
+        <div className="space-y-2">
+          {detail.timeline.slice(0, 6).map((item) => (
+            <div key={`${item.type}-${item.id}`} className="rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[12px] font-bold text-[var(--text-primary)]">{item.title}</p>
+                <span className="text-[10px] text-[var(--text-muted)]">{formatDateTime(item.occurredAt)}</span>
+              </div>
+              {item.description && <p className="mt-1 line-clamp-2 text-[11px] text-[var(--text-muted)]">{item.description}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </ConsoleCard>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] p-2">
+      <p className="text-[10px] font-bold uppercase text-[var(--text-muted)]">{label}</p>
+      <p className="mt-1 font-data text-[18px] font-bold text-[var(--text-primary)]">{value}</p>
     </div>
   );
 }

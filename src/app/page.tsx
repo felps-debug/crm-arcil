@@ -1,274 +1,148 @@
 "use client";
 
-import { Header } from "@/components/layout/header";
-import { MetricCard } from "@/components/ui/metric-card";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { SectionTitle } from "@/components/ui/section-title";
-import { MetricCardSkeleton, CardSkeleton, TableRowSkeleton } from "@/components/ui/skeleton";
-import { ErrorState } from "@/components/ui/error-state";
-import { LeadsAreaChart } from "@/components/charts/leads-chart";
-import { useSupabase } from "@/hooks/use-supabase";
-import { getDashboardStats, getLeadsTrend, getActiveLeads, getRecentActivity, getCobrancaDashboardMetrics } from "@/lib/supabase/queries";
-import { SEGMENT_LABELS, STATUS_LABELS } from "@/types";
-import type { LeadSegment, LeadStatus } from "@/types";
-import { Users, UserCheck, Clock, MessageCircleReply, TrendingUp, UserPlus, Receipt, MessageCircle, DollarSign, Banknote, BarChart2 } from "lucide-react";
-import { getInitials, formatRelativeTime } from "@/lib/utils";
-import type { ActivityItem } from "@/lib/supabase/queries";
+import { Activity, BarChart3, Bot, DollarSign, TrendingUp, Users, Zap } from "lucide-react";
+import {
+  ConsoleCard,
+  ConsoleError,
+  ConsoleLoading,
+  ConsoleMetric,
+  ConsolePage,
+  ConsoleStatus,
+  ConsoleTable,
+} from "@/components/console/console-shell";
+import { formatMoney, formatNumber, useApi } from "@/lib/client-api";
+import type { DashboardSummaryResponse } from "@/types/api";
+
+function metricValue(value: number | string, unit?: string) {
+  if (unit === "BRL") return formatMoney(value);
+  if (unit === "%") return `${formatNumber(value)}%`;
+  return formatNumber(value);
+}
+
+function toneForIndex(index: number): "blue" | "green" | "amber" | "red" | "violet" {
+  return (["blue", "green", "amber", "red", "violet"] as const)[index % 5];
+}
 
 export default function DashboardPage() {
-  const { data: stats, loading: loadingStats, error: errorStats, refetch: refetchStats } =
-    useSupabase(() => getDashboardStats(), []);
+  const summary = useApi<DashboardSummaryResponse>("/api/dashboard/summary");
 
-  const { data: trend, loading: loadingTrend, error: errorTrend, refetch: refetchTrend } =
-    useSupabase(() => getLeadsTrend(), []);
-
-  const { data: recentLeads, loading: loadingRecent, error: errorRecent, refetch: refetchRecent } =
-    useSupabase(() => getActiveLeads({ limit: 10 }), []);
-
-  const { data: activity, loading: loadingActivity } =
-    useSupabase(() => getRecentActivity(), []);
-
-  const { data: cobrancaMetrics } =
-    useSupabase(() => getCobrancaDashboardMetrics(), []);
-
-  const last10 = recentLeads ?? [];
+  const loading = summary.loading;
+  const error = summary.error;
+  const metrics = summary.data?.metrics ?? [];
+  const indicators = summary.data?.commercialIndicators ?? [];
 
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
-      <Header title="Dashboard" subtitle="Visão geral ARCIL CRM" />
+    <ConsolePage title="Dashboard" subtitle="Visao central da operacao">
+      {loading && <ConsoleLoading />}
+      {error && <ConsoleError message={error} />}
 
-      <main className="flex-1 overflow-y-auto px-6 py-6 space-y-6 max-w-[1440px] mx-auto w-full">
-        {/* Metric cards */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {loadingStats ? (
-            Array.from({ length: 5 }).map((_, i) => <MetricCardSkeleton key={i} />)
-          ) : errorStats ? (
-            <div className="col-span-full">
-              <ErrorState message={errorStats} onRetry={refetchStats} />
-            </div>
-          ) : (
-            <>
-              <MetricCard
-                label="Total Leads"
-                value={String(stats?.totalLeads ?? 0)}
-                icon={Users}
-                accent="blue"
-                change="excl. legado"
-                trend="up"
+      {!loading && !error && (
+        <>
+          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {metrics.slice(0, 5).map((m, index) => (
+              <ConsoleMetric
+                key={m.id}
+                label={m.label}
+                value={metricValue(m.value, m.unit)}
+                helper={m.previous.deltaPercent != null ? `${m.previous.deltaPercent > 0 ? "+" : ""}${m.previous.deltaPercent}% vs ant.` : undefined}
+                icon={[Users, Zap, DollarSign, BarChart3, Bot][index]}
+                tone={toneForIndex(index)}
               />
-              <MetricCard
-                label="Leads Ativos"
-                value={String(stats?.leadsAtivos ?? 0)}
-                icon={UserCheck}
-                accent="emerald"
-                change="status ACTIVE"
-                trend="up"
-              />
-              <MetricCard
-                label="Cobranças Pendentes"
-                value={String(stats?.cobrancasPendentes ?? 0)}
-                icon={Clock}
-                accent="amber"
-                change="aguardando"
-                trend={stats?.cobrancasPendentes ? "down" : "up"}
-              />
-              <MetricCard
-                label="Follow-ups Respondidos"
-                value={String(stats?.followupsRespondidos ?? 0)}
-                icon={MessageCircleReply}
-                accent="violet"
-                change={`de ${(stats?.followupsRespondidos ?? 0) + 30} total`}
-                trend="up"
-              />
-              <MetricCard
-                label="Taxa Resposta"
-                value={`${stats?.taxaResposta ?? "0"}%`}
-                icon={TrendingUp}
-                accent="sky"
-                change="follow-ups"
-                trend={parseFloat(stats?.taxaResposta ?? "0") > 20 ? "up" : "down"}
-              />
-            </>
-          )}
-        </section>
-
-        {/* Charts + Recent leads */}
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {loadingTrend ? (
-            <CardSkeleton />
-          ) : errorTrend ? (
-            <Card>
-              <ErrorState message={errorTrend} onRetry={refetchTrend} />
-            </Card>
-          ) : (
-            <Card accent>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-bold text-[var(--text-primary)]">Evolução de Leads</h2>
-                    <p className="text-xs mt-1 text-[var(--text-muted)]">Últimos 6 meses (excl. legado)</p>
-                  </div>
-                  <Badge variant="info" dot>Atualizado</Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <LeadsAreaChart data={trend ?? []} />
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <SectionTitle icon={Users} title="Leads Recentes" />
-                {last10.length > 0 && (
-                  <Badge variant="default">{last10.length}</Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {loadingRecent ? (
-                <div className="p-5 space-y-0">
-                  {Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)}
-                </div>
-              ) : errorRecent ? (
-                <div className="p-5">
-                  <ErrorState message={errorRecent} onRetry={refetchRecent} />
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm table-enterprise">
-                    <thead>
-                      <tr>
-                        {["Nome", "Segmento", "Status", "Data"].map((h) => (
-                          <th key={h}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {last10.map((lead) => (
-                        <tr key={lead.id}>
-                          <td>
-                            <div className="flex items-center gap-3">
-                              <div
-                                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                                style={{ background: "linear-gradient(135deg, #2563eb, #1d4ed8)" }}
-                              >
-                                <span className="text-white text-[10px] font-bold">
-                                  {getInitials(lead.name ?? "?")}
-                                </span>
-                              </div>
-                              <span className="font-semibold text-[var(--text-primary)]">
-                                {lead.name ?? "Sem nome"}
-                              </span>
-                            </div>
-                          </td>
-                          <td>
-                            <Badge variant={lead.segment === "COBRANCA" ? "warning" : "info"}>
-                              {SEGMENT_LABELS[lead.segment as LeadSegment] ?? lead.segment ?? "—"}
-                            </Badge>
-                          </td>
-                          <td>
-                            <Badge
-                              variant={
-                                lead.status === "ACTIVE"
-                                  ? "success"
-                                  : lead.status === "LOST"
-                                  ? "danger"
-                                  : "warning"
-                              }
-                            >
-                              {STATUS_LABELS[lead.status as LeadStatus] ?? lead.status ?? "—"}
-                            </Badge>
-                          </td>
-                          <td className="text-xs tabular-nums text-[var(--text-muted)]">
-                            {lead.created_at
-                              ? new Date(lead.created_at).toLocaleDateString("pt-BR")
-                              : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-        {/* Cobrança metrics */}
-        {cobrancaMetrics && (
-          <section>
-            <div className="flex items-center gap-2 mb-3">
-              <h2 className="text-sm font-bold text-[var(--text-primary)]">Cobrança</h2>
-              <span className="text-xs text-[var(--text-muted)]">{cobrancaMetrics.total} disparos</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <MetricCard
-                label="Total em Aberto"
-                value={new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cobrancaMetrics.totalEmAberto)}
-                icon={DollarSign}
-                accent="amber"
-                change="pendente de pagamento"
-                trend="down"
-              />
-              <MetricCard
-                label="Valor Recuperado"
-                value={new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cobrancaMetrics.valorRecuperado)}
-                icon={Banknote}
-                accent="emerald"
-                change="pagamento confirmado"
-                trend="up"
-              />
-              <MetricCard
-                label="Taxa de Resposta"
-                value={`${cobrancaMetrics.taxaResposta}%`}
-                icon={BarChart2}
-                accent="violet"
-                change={`${cobrancaMetrics.totalDispararados} disparados`}
-                trend={cobrancaMetrics.taxaResposta > 30 ? "up" : "down"}
-              />
-            </div>
+            ))}
           </section>
-        )}
 
-        {/* Activity feed */}
-        <section>
-          <Card>
-            <CardHeader>
-              <SectionTitle icon={TrendingUp} title="Atividade Recente" />
-            </CardHeader>
-            <CardContent className="p-0">
-              {loadingActivity ? (
-                <div className="p-5 space-y-0">
-                  {Array.from({ length: 6 }).map((_, i) => <TableRowSkeleton key={i} />)}
-                </div>
-              ) : !activity?.length ? (
-                <p className="px-6 py-8 text-center text-sm text-[var(--text-muted)]">Nenhuma atividade recente.</p>
-              ) : (
-                <div className="divide-y divide-[var(--border)]">
-                  {(activity as ActivityItem[]).map((item, i) => {
-                    const Icon = item.type === "lead" ? UserPlus : item.type === "cobranca" ? Receipt : MessageCircle;
-                    const color = item.type === "lead" ? "text-blue-500 bg-blue-500/10" : item.type === "cobranca" ? "text-amber-500 bg-amber-500/10" : "text-emerald-500 bg-emerald-500/10";
-                    return (
-                      <div key={`${item.id}-${i}`} className="flex items-center gap-4 px-5 py-3 hover:bg-[var(--bg-subtle)] transition-colors">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
-                          <Icon size={14} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[13px] font-semibold text-[var(--text-primary)] truncate">{item.label}</p>
-                          {item.sub && <p className="text-[11px] text-[var(--text-muted)] truncate">{item.sub}</p>}
-                        </div>
-                        <span className="text-[11px] text-[var(--text-muted)] tabular-nums shrink-0">{formatRelativeTime(item.date)}</span>
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <ConsoleCard>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Funil Comercial</h2>
+                <ConsoleStatus tone="slate">Compacto</ConsoleStatus>
+              </div>
+              <div className="space-y-4">
+                {(summary.data?.commercialFunnel ?? []).map((item) => {
+                  const max = Math.max(...(summary.data?.commercialFunnel ?? []).map((i) => i.value), 1);
+                  return (
+                    <div key={item.id}>
+                      <div className="mb-1 flex items-center justify-between text-[11px] font-semibold">
+                        <span className="text-[var(--text-secondary)]">{item.label}</span>
+                        <span className="font-data text-[var(--text-primary)]">{formatNumber(item.value)}</span>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-      </main>
-    </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-subtle)]">
+                        <div className="h-full rounded-full bg-blue-400" style={{ width: `${Math.max(6, (item.value / max) * 100)}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </ConsoleCard>
+
+            <ConsoleCard>
+              <div className="mb-4 flex items-center gap-2">
+                <TrendingUp size={15} className="text-emerald-300" />
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Indicadores Comerciais</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {indicators.map((m) => (
+                  <div key={m.id} title={m.tooltip} className="rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{m.label}</p>
+                    <p className="mt-2 font-data text-[24px] font-bold text-[var(--text-primary)]">{metricValue(m.value, m.unit)}</p>
+                  </div>
+                ))}
+              </div>
+            </ConsoleCard>
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <Breakdown title="Leads por Segmento" items={summary.data?.breakdowns.leadsBySegment ?? []} />
+            <Breakdown title="Leads por Status" items={summary.data?.breakdowns.leadsByStatus ?? []} />
+            <Breakdown title="Origem dos Leads" items={summary.data?.breakdowns.leadsByOrigin ?? []} />
+          </section>
+
+          <ConsoleCard pad={false}>
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Activity size={15} className="text-[var(--text-muted)]" />
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Resumo Operacional</h2>
+              </div>
+              <a href="/leads" className="text-[12px] font-bold text-blue-300">Ver tudo</a>
+            </div>
+            <ConsoleTable headers={["Area", "Base", "Acao"]}>
+              {metrics.slice(0, 4).map((m) => (
+                <tr key={m.id} className="border-b border-[var(--border)] last:border-0">
+                  <td className="px-3 py-3 font-semibold text-[var(--text-primary)]">{m.label}</td>
+                  <td className="px-3 py-3 font-data text-[var(--text-secondary)]">{metricValue(m.value, m.unit)}</td>
+                  <td className="px-3 py-3">
+                    <a href="/leads" className="inline-block">
+                      <ConsoleStatus tone="blue">Abrir</ConsoleStatus>
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </ConsoleTable>
+          </ConsoleCard>
+        </>
+      )}
+    </ConsolePage>
+  );
+}
+
+function Breakdown({ title, items }: { title: string; items: { id: string; label: string; value: number }[] }) {
+  const max = Math.max(...items.map((i) => i.value), 1);
+  return (
+    <ConsoleCard>
+      <h2 className="mb-4 text-[13px] font-bold text-[var(--text-primary)]">{title}</h2>
+      <div className="space-y-3">
+        {items.slice(0, 5).map((item) => (
+          <div key={item.id}>
+            <div className="mb-1 flex justify-between text-[11px] font-semibold">
+              <span className="text-[var(--text-secondary)]">{item.label}</span>
+              <span className="font-data text-[var(--text-primary)]">{formatNumber(item.value)}</span>
+            </div>
+            <div className="h-2 rounded-full bg-[var(--bg-subtle)]">
+              <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.max(8, (item.value / max) * 100)}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </ConsoleCard>
   );
 }

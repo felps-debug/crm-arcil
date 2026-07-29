@@ -1,11 +1,12 @@
 "use client";
 
-import { Search, X, Building2, User } from "lucide-react";
+import { Search, X, Building2, User, Sun, Moon } from "lucide-react";
 import { getInitials } from "@/lib/utils";
 import { PeriodSelector } from "@/components/ui/period-selector";
 import { LeadDrawer } from "@/components/ui/lead-drawer";
 import { getLeadsBySearch } from "@/lib/supabase/queries";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useTheme } from "@/hooks/use-theme";
 import type { Lead } from "@/types";
 import { useState, useEffect, useRef, useCallback } from "react";
 
@@ -25,6 +26,7 @@ export function Header({ title, subtitle, action }: HeaderProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { profile } = useCurrentUser();
+  const { theme, toggle } = useTheme();
   const displayName = profile?.full_name ?? profile?.email ?? "";
   const initials = displayName ? getInitials(displayName) : "?";
 
@@ -144,7 +146,7 @@ export function Header({ title, subtitle, action }: HeaderProps) {
                         >
                           <div
                             className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
-                            style={{ background: "#2563eb" }}
+                            style={{ background: "#4c93ff" }}
                           >
                             <span className="text-white text-[9px] font-bold">
                               {getInitials(lead.name ?? "?")}
@@ -180,11 +182,26 @@ export function Header({ title, subtitle, action }: HeaderProps) {
             )}
           </div>
 
+          {/* Theme toggle */}
+          <button
+            onClick={toggle}
+            aria-label={theme === "dark" ? "Ativar modo claro" : "Ativar modo escuro"}
+            title={theme === "dark" ? "Ativar modo claro" : "Ativar modo escuro"}
+            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors focus-visible:outline-none"
+            style={{
+              background: "var(--bg-subtle)",
+              border: "1px solid var(--border-strong)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
+
           {/* Avatar */}
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
             style={{
-              background: "linear-gradient(145deg,#2563eb,#1d4ed8)",
+              background: "linear-gradient(145deg,#4c93ff,#2f6fe0)",
               boxShadow: "0 2px 6px rgba(37,99,235,0.3)",
             }}
           >

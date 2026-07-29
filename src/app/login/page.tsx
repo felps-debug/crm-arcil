@@ -167,7 +167,7 @@ export default function LoginPage() {
               <div
                 className="w-14 h-14 rounded-xl flex items-center justify-center"
                 style={{
-                  background: "linear-gradient(145deg, #1d4ed8, #1e40af)",
+                  background: "linear-gradient(145deg, #2f6fe0, #1e40af)",
                   boxShadow: "0 8px 24px rgba(29,78,216,0.4), inset 0 1px 0 rgba(255,255,255,0.12)",
                 }}
               >
@@ -191,7 +191,7 @@ export default function LoginPage() {
 
             {/* ── Tab switcher ── */}
             <div className="flex gap-0">
-              {(["login", "signup"] as Tab[]).map((t, i) => (
+              {(["login", "signup"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => switchTab(t)}
@@ -206,7 +206,7 @@ export default function LoginPage() {
                     <motion.div
                       layoutId="tab-line"
                       className="absolute bottom-0 left-0 right-0"
-                      style={{ height: 1, background: "#2563eb" }}
+                      style={{ height: 1, background: "#4c93ff" }}
                       transition={{ type: "spring", stiffness: 500, damping: 40 }}
                     />
                   )}
@@ -264,7 +264,7 @@ export default function LoginPage() {
                     whileTap={{ scale: 0.987 }}
                     className="w-full py-3 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-opacity"
                     style={{
-                      background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)",
+                      background: "linear-gradient(180deg, #4c93ff 0%, #2f6fe0 100%)",
                       boxShadow: "0 1px 0 rgba(255,255,255,0.1) inset, 0 4px 16px rgba(37,99,235,0.35)",
                     }}
                   >
@@ -378,7 +378,7 @@ export default function LoginPage() {
                           whileTap={{ scale: 0.987 }}
                           className="w-full py-3 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-opacity"
                           style={{
-                            background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)",
+                            background: "linear-gradient(180deg, #4c93ff 0%, #2f6fe0 100%)",
                             boxShadow: "0 1px 0 rgba(255,255,255,0.1) inset, 0 4px 16px rgba(37,99,235,0.35)",
                           }}
                         >

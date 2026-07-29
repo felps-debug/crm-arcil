@@ -3,7 +3,7 @@
    ================================================================ */
 
 import { createClient } from "./client";
-import type { Lead, Followup, CobrancaLog, Product, Vendor } from "@/types";
+import type { Lead, Followup, CobrancaLog, Vendor } from "@/types";
 
 const supabase = createClient();
 
@@ -271,46 +271,6 @@ export async function getLeadsTrend() {
     const month = parseInt(key.split("-")[1]);
     return { month: monthNames[month], count };
   });
-}
-
-/* ── DEMANDA & ESTOQUE ─────────────────────────────────────────── */
-
-export async function getProducts() {
-  const { data, error } = await supabase
-    .from("products_cache")
-    .select("*")
-    .order("name", { ascending: true });
-  if (error) throw error;
-  return data as Product[];
-}
-
-export async function getLowStockProducts(threshold = 10) {
-  const { data, error } = await supabase
-    .from("products_cache")
-    .select("*")
-    .lt("stock_qty", threshold)
-    .order("stock_qty", { ascending: true });
-  if (error) throw error;
-  return data as Product[];
-}
-
-export async function getProductStats() {
-  const { data, error } = await supabase
-    .from("products_cache")
-    .select("stock_qty, category, categoria_nome");
-  if (error) throw error;
-  const products = data ?? [];
-  const totalProducts = products.length;
-  const outOfStock = products.filter(p => (p.stock_qty ?? 0) === 0).length;
-  const lowStock = products.filter(p => (p.stock_qty ?? 0) > 0 && (p.stock_qty ?? 0) <= 10).length;
-
-  const categories: Record<string, number> = {};
-  for (const p of products) {
-    const cat = p.categoria_nome ?? p.category ?? "Sem categoria";
-    categories[cat] = (categories[cat] ?? 0) + 1;
-  }
-
-  return { totalProducts, outOfStock, lowStock, categories };
 }
 
 export async function getVendors() {

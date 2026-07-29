@@ -1,183 +1,150 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { Header } from "@/components/layout/header";
-import { MetricCard } from "@/components/ui/metric-card";
-import { MetricCardSkeleton } from "@/components/ui/skeleton";
-import { ErrorState } from "@/components/ui/error-state";
-import { useSupabase } from "@/hooks/use-supabase";
-import { getAgentStats } from "@/lib/supabase/queries";
+import { useMemo, useState } from "react";
+import { Bot, CheckCircle2, Clock, MessageSquare, Pause, PlugZap, Wrench } from "lucide-react";
 import {
-  Bot, Users, UserCheck, Wrench, Building2, Store,
-  ShoppingBag, RotateCcw, ChevronRight, TrendingUp,
-} from "lucide-react";
+  ConsoleCard,
+  ConsoleError,
+  ConsoleInput,
+  ConsoleLoading,
+  ConsoleMetric,
+  ConsoleButton,
+  ConsolePage,
+  ConsoleStatus,
+  ConsoleTable,
+} from "@/components/console/console-shell";
+import { AgentConversationsDrawer } from "@/components/ui/agent-conversations-drawer";
+import { formatDateTime, formatNumber, useApi } from "@/lib/client-api";
+import type { AgentSummaryResponse } from "@/types/api";
 
-const AGENT_CONFIG: Record<string, {
-  label: string;
-  description: string;
-  icon: typeof Bot;
-  color: string;
-  bg: string;
-  accent: string;
-}> = {
-  INSTALLER: {
-    label: "Instalador",
-    description: "Técnicos e instaladores de AC",
-    icon: Wrench,
-    color: "text-blue-600",
-    bg: "bg-blue-500/8",
-    accent: "#2563eb",
-  },
-  BUILDER: {
-    label: "Construtor",
-    description: "Construtoras e empreiteiras",
-    icon: Building2,
-    color: "text-emerald-600",
-    bg: "bg-emerald-500/8",
-    accent: "#059669",
-  },
-  RESELLER: {
-    label: "Revenda",
-    description: "Revendas e distribuidores",
-    icon: Store,
-    color: "text-violet-600",
-    bg: "bg-violet-500/8",
-    accent: "#7c3aed",
-  },
-  CONSUMER: {
-    label: "Consumidor",
-    description: "Pessoa física — consumidor final",
-    icon: ShoppingBag,
-    color: "text-amber-600",
-    bg: "bg-amber-500/8",
-    accent: "#d97706",
-  },
-  NEW: {
-    label: "Roteadora",
-    description: "Classifica e roteia novos leads",
-    icon: RotateCcw,
-    color: "text-sky-600",
-    bg: "bg-sky-500/8",
-    accent: "#0284c7",
-  },
-};
+export default function AgentesPage() {
+  const { data, loading, error } = useApi<AgentSummaryResponse>("/api/agents/summary");
+  const [search, setSearch] = useState("");
+  const [selectedAgent, setSelectedAgent] = useState<{ id: string; name: string } | null>(null);
 
-function AgentCard({
-  segment, total, active, converted, index,
-}: { segment: string; total: number; active: number; converted: number; index: number }) {
-  const router = useRouter();
-  const cfg = AGENT_CONFIG[segment] ?? AGENT_CONFIG.NEW;
-  const Icon = cfg.icon;
-  const rate = total > 0 ? ((converted / total) * 100).toFixed(0) : "0";
-  const activeRate = total > 0 ? ((active / total) * 100).toFixed(0) : "0";
+  const filteredAgents = useMemo(() => {
+    const agents = data?.agents ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q) return agents;
+    return agents.filter((a) => a.name.toLowerCase().includes(q));
+  }, [data, search]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, delay: index * 0.06 }}
-      onClick={() => router.push(`/agentes/${segment.toLowerCase()}`)}
-      className="group relative cursor-pointer rounded-2xl border border-[var(--border)] bg-[var(--bg-surface)] p-5 hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-lg)] transition-all duration-250"
-    >
-      {/* Accent bar */}
-      <div
-        className="absolute top-0 left-5 right-5 h-px rounded-full opacity-60"
-        style={{ background: cfg.accent }}
-      />
-
-      <div className="flex items-start justify-between mb-4">
-        <div className={`w-11 h-11 rounded-xl ${cfg.bg} flex items-center justify-center`}>
-          <Icon size={20} className={cfg.color} strokeWidth={1.8} />
-        </div>
-        <ChevronRight
-          size={16}
-          className="text-[var(--text-muted)] group-hover:text-[var(--text-secondary)] group-hover:translate-x-0.5 transition-all"
+    <ConsolePage
+      title="Agentes IA"
+      subtitle="Monitoramento e controle dos agentes"
+      actions={
+        <ConsoleInput
+          placeholder="Buscar agentes..."
+          className="w-60"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
         />
-      </div>
+      }
+    >
+      {loading && <ConsoleLoading />}
+      {error && <ConsoleError message={error} />}
 
-      <h3 className="text-[15px] font-semibold text-[var(--text-primary)] leading-tight">{cfg.label}</h3>
-      <p className="text-[12px] text-[var(--text-muted)] mt-0.5 leading-relaxed">{cfg.description}</p>
+      {!loading && !error && data && (
+        <>
+          <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {data.metrics.slice(0, 3).map((m, index) => (
+              <ConsoleMetric
+                key={m.id}
+                label={m.label}
+                value={formatNumber(m.value)}
+                icon={[Bot, CheckCircle2, PlugZap][index]}
+                tone={index === 1 ? "green" : index === 2 ? "violet" : "blue"}
+              />
+            ))}
+          </section>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t border-[var(--border)]">
-        <div>
-          <p className="font-data text-[20px] font-bold text-[var(--text-primary)] leading-none">{total}</p>
-          <p className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1">Total</p>
-        </div>
-        <div>
-          <p className="font-data text-[20px] font-bold leading-none" style={{ color: cfg.accent }}>{active}</p>
-          <p className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1">Ativos</p>
-        </div>
-        <div>
-          <div className="flex items-baseline gap-0.5">
-            <p className="font-data text-[20px] font-bold text-[var(--text-primary)] leading-none">{rate}</p>
-            <span className="text-[11px] text-[var(--text-muted)]">%</span>
-          </div>
-          <p className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] mt-1">Conv.</p>
-        </div>
-      </div>
+          <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+            {filteredAgents.map((agent) => (
+              <ConsoleCard key={agent.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="grid h-10 w-10 place-items-center rounded-[8px] bg-blue-500/10 text-blue-300">
+                    <Wrench size={16} />
+                  </div>
+                  <ConsoleStatus tone={agent.enabled ? "green" : "slate"}>{agent.enabled ? "Habilitado" : "Pausado"}</ConsoleStatus>
+                </div>
+                <h2 className="mt-4 text-[14px] font-bold text-[var(--text-primary)]">{agent.name}</h2>
+                <p className="mt-1 text-[11px] text-[var(--text-muted)]">{agent.segment.join(", ") || "Sem segmento"}</p>
+                <p className="mt-3 font-data text-[12px] text-[var(--text-secondary)]">{agent.waPhone ?? "-"}</p>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <Mini label="Leads" value={agent.totalLeads} />
+                  <Mini label="Ativos" value={agent.activeLeads} />
+                  <Mini label="Conv." value={agent.conversations} />
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <ConsoleButton
+                    className="flex-1"
+                    icon={MessageSquare}
+                    onClick={() => setSelectedAgent({ id: agent.id, name: agent.name })}
+                  >
+                    Conversas
+                  </ConsoleButton>
+                </div>
+              </ConsoleCard>
+            ))}
+          </section>
 
-      {/* Active progress bar */}
-      <div className="mt-4">
-        <div className="h-1 rounded-full bg-[var(--bg-subtle)] overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-700"
-            style={{ width: `${activeRate}%`, background: cfg.accent, opacity: 0.6 }}
-          />
-        </div>
-        <p className="text-[10px] text-[var(--text-muted)] mt-1">{activeRate}% do total ativos</p>
-      </div>
-    </motion.div>
+          <ConsoleCard pad={false}>
+            <div className="border-b border-[var(--border)] px-4 py-3">
+              <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Metricas de Performance</h2>
+              <p className="text-[11px] text-[var(--text-muted)]">Baseadas nos dados operacionais disponiveis</p>
+            </div>
+            <ConsoleTable headers={["Indicador", "Valor atual", "Status"]}>
+              <MetricRow icon={MessageSquare} label="Conversas iniciadas" value={data.agents.reduce((s, a) => s + a.conversations, 0)} status="Mapeado" />
+              <MetricRow icon={CheckCircle2} label="Leads ativos" value={data.agents.reduce((s, a) => s + a.activeLeads, 0)} status="Bom" />
+              <MetricRow icon={Pause} label="Agentes pausados" value={data.agents.filter((a) => !a.enabled).length} status="Atencao" tone="amber" />
+              <MetricRow icon={Clock} label="Ultima atividade" value={formatDateTime(data.agents.find((a) => a.lastActivityAt)?.lastActivityAt)} status="Monitorado" />
+            </ConsoleTable>
+          </ConsoleCard>
+        </>
+      )}
+
+      <AgentConversationsDrawer
+        agentId={selectedAgent?.id ?? null}
+        agentName={selectedAgent?.name ?? null}
+        onClose={() => setSelectedAgent(null)}
+      />
+    </ConsolePage>
   );
 }
 
-export default function AgentesPage() {
-  const { data: stats, loading, error, refetch } = useSupabase(() => getAgentStats(), []);
-
-  const totalLeads  = stats?.reduce((s, r) => s + r.total,  0) ?? 0;
-  const totalActive = stats?.reduce((s, r) => s + r.active, 0) ?? 0;
-
+function Mini({ label, value }: { label: string; value: number }) {
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
-      <Header title="Agentes IA" subtitle="Clique em um agente para ver os detalhes" />
-
-      <main className="flex-1 overflow-y-auto px-6 py-6 max-w-[1440px] mx-auto w-full space-y-8">
-        {/* Summary */}
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {loading ? (
-            Array.from({ length: 3 }).map((_, i) => <MetricCardSkeleton key={i} />)
-          ) : error ? (
-            <div className="col-span-3"><ErrorState message={error} onRetry={refetch} /></div>
-          ) : (
-            <>
-              <MetricCard label="Agentes Ativos"  value="5"              icon={Bot}       accent="blue"    />
-              <MetricCard label="Leads Totais"    value={String(totalLeads)}  icon={Users}     accent="emerald" />
-              <MetricCard label="Leads Ativos"    value={String(totalActive)} icon={UserCheck} accent="violet"  />
-            </>
-          )}
-        </section>
-
-        {/* Agent cards */}
-        <section>
-          <div className="flex items-center gap-3 mb-5">
-            <TrendingUp size={14} className="text-[var(--text-muted)]" />
-            <h2 className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-muted)]">Agentes por segmento</h2>
-          </div>
-
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              {Array.from({ length: 5 }).map((_, i) => <MetricCardSkeleton key={i} />)}
-            </div>
-          ) : error ? (
-            <ErrorState message={error} onRetry={refetch} />
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              {stats?.map((s, i) => <AgentCard key={s.segment} {...s} index={i} />)}
-            </div>
-          )}
-        </section>
-      </main>
+    <div className="rounded-[6px] bg-[var(--bg-inset)] p-2">
+      <p className="text-[10px] font-bold uppercase text-[var(--text-muted)]">{label}</p>
+      <p className="font-data text-[16px] font-bold text-[var(--text-primary)]">{value}</p>
     </div>
+  );
+}
+
+function MetricRow({
+  icon: Icon,
+  label,
+  value,
+  status,
+  tone = "green",
+}: {
+  icon: typeof Bot;
+  label: string;
+  value: React.ReactNode;
+  status: string;
+  tone?: "green" | "amber";
+}) {
+  return (
+    <tr className="border-b border-[var(--border)] last:border-0">
+      <td className="px-3 py-3">
+        <div className="flex items-center gap-2 font-semibold text-[var(--text-primary)]">
+          <Icon size={14} className="text-[var(--text-muted)]" />
+          {label}
+        </div>
+      </td>
+      <td className="px-3 py-3 font-data font-bold text-[var(--text-primary)]">{value}</td>
+      <td className="px-3 py-3"><ConsoleStatus tone={tone}>{status}</ConsoleStatus></td>
+    </tr>
   );
 }

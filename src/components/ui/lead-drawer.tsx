@@ -43,17 +43,20 @@ export function LeadDrawer({ lead, onClose, onUpdate }: LeadDrawerProps) {
 
   useEffect(() => {
     if (lead) {
-      setForm({
-        name:     lead.name     ?? "",
-        company:  lead.company  ?? "",
+      const nextForm = {
+        name: lead.name ?? "",
+        company: lead.company ?? "",
         wa_phone: lead.wa_phone ?? "",
-        city:     lead.city     ?? "",
-        region:   lead.region   ?? "",
-        status:   lead.status   ?? "",
-        segment:  lead.segment  ?? "",
+        city: lead.city ?? "",
+        region: lead.region ?? "",
+        status: lead.status ?? "",
+        segment: lead.segment ?? "",
+      };
+      queueMicrotask(() => {
+        setForm(nextForm);
+        setEditing(false);
+        setSaveError(null);
       });
-      setEditing(false);
-      setSaveError(null);
     }
   }, [lead]);
 
@@ -121,7 +124,7 @@ export function LeadDrawer({ lead, onClose, onUpdate }: LeadDrawerProps) {
                 <div className="flex items-center gap-4">
                   <div
                     className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: "linear-gradient(135deg, #2563eb, #1d4ed8)", boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}
+                    style={{ background: "linear-gradient(135deg, #4c93ff, #2f6fe0)", boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}
                   >
                     <span className="text-white text-sm font-bold">
                       {getInitials((editing ? form.name : lead.name) ?? "?")}
@@ -166,9 +169,13 @@ export function LeadDrawer({ lead, onClose, onUpdate }: LeadDrawerProps) {
                         </Button>
                       </a>
                     )}
-                    <Button size="sm" variant="secondary" className="flex-1">
-                      <Phone size={15} />Ligar
-                    </Button>
+                    {lead.wa_phone && (
+                      <a href={`tel:${lead.wa_phone.replace(/\D/g, "")}`} className="flex-1">
+                        <Button size="sm" variant="secondary" className="w-full">
+                          <Phone size={15} />Ligar
+                        </Button>
+                      </a>
+                    )}
                   </div>
 
                   <div className="px-7 py-6 border-b border-[var(--border)]">
@@ -205,7 +212,7 @@ export function LeadDrawer({ lead, onClose, onUpdate }: LeadDrawerProps) {
                             animate={{ width: `${Math.min(lead.lead_score ?? 0, 100)}%` }}
                             transition={{ duration: 0.8, delay: 0.3 }}
                             className="h-full rounded-full"
-                            style={{ background: "linear-gradient(90deg, #2563eb, #1d4ed8)" }}
+                            style={{ background: "linear-gradient(90deg, #4c93ff, #2f6fe0)" }}
                           />
                         </div>
                       </div>

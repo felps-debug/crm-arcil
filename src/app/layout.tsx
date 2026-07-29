@@ -29,7 +29,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR" className={`h-full ${montserrat.variable} ${ibmPlexMono.variable}`}>
+    <html lang="pt-BR" className={`dark h-full ${montserrat.variable} ${ibmPlexMono.variable}`}>
       <body className="h-full flex overflow-hidden" style={{ background: "var(--bg-base)" }}>
         <Providers>
           <Suspense>
