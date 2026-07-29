@@ -2,9 +2,9 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-const ROLE_PERMISSIONS: Record<string, object> = {
-  superadmin: { view_all: true, manage_users: true, manage_roles: true, manage_cobranca: true },
-  owner:      { view_all: true, manage_cobranca: true },
+const ROLE_PERMISSIONS: Record<string, Record<string, boolean>> = {
+  superadmin: { view_all: true, manage_users: true, manage_roles: true, manage_cobranca: true, manage_estoque: true, manage_gerador_imagem: true },
+  owner:      { view_all: true, manage_cobranca: true, manage_estoque: true, manage_gerador_imagem: true },
   manager:    { view_all: true, manage_cobranca: true },
   vendor:     { view_leads: true },
   employee:   { view_leads: true },

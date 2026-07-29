@@ -12,6 +12,7 @@ import {
   ConsoleStatus,
   ConsoleTable,
 } from "@/components/console/console-shell";
+import { AccessGuard } from "@/components/layout/access-guard";
 import { formatDateTime, useApi } from "@/lib/client-api";
 import { useToast } from "@/components/ui/toast";
 import type { ActivityLogResponse } from "@/types/api";
@@ -22,7 +23,14 @@ type AdminUser = {
   full_name?: string | null;
   role?: string | null;
   created_at?: string | null;
+  permissions?: Record<string, boolean> | null;
 };
+
+const MODULE_PERMISSIONS: { key: string; label: string }[] = [
+  { key: "manage_cobranca", label: "Campanhas & Cobrancas" },
+  { key: "manage_estoque", label: "Demanda & Estoque" },
+  { key: "manage_gerador_imagem", label: "Gerador de Imagem" },
+];
 
 type UsersResponse = {
   users: AdminUser[];
@@ -49,6 +57,14 @@ const permissions = [
 ];
 
 export default function AdminPage() {
+  return (
+    <AccessGuard superAdminOnly>
+      <AdminPageInner />
+    </AccessGuard>
+  );
+}
+
+function AdminPageInner() {
   const { toast } = useToast();
   const [reloadToken, setReloadToken] = useState(0);
   const { data, loading, error } = useApi<UsersResponse>(`/api/admin/users?t=${reloadToken}`);
@@ -77,6 +93,20 @@ export default function AdminPage() {
     }
     toast("Papel atualizado.", "success");
     setMenuOpenFor(null);
+    setReloadToken((t) => t + 1);
+  }
+
+  async function handleTogglePermission(user: AdminUser, key: string, value: boolean) {
+    const res = await fetch(`/api/admin/users/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permissions: { [key]: value } }),
+    });
+    const body = await res.json();
+    if (!res.ok || body.error) {
+      toast(body.error ?? "Erro ao alterar permissao.", "error");
+      return;
+    }
     setReloadToken((t) => t + 1);
   }
 
@@ -151,6 +181,25 @@ export default function AdminPage() {
                             {role}
                           </button>
                         ))}
+                        <div className="my-1 h-px bg-[var(--border)]" />
+                        <p className="px-2 pb-1 text-[10px] font-bold uppercase text-[var(--text-muted)]">Acesso a modulos</p>
+                        {MODULE_PERMISSIONS.map((mod) => {
+                          const checked = user.permissions?.[mod.key] === true;
+                          return (
+                            <label
+                              key={mod.key}
+                              className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
+                            >
+                              <input
+                                type="checkbox"
+                                className="accent-blue-500"
+                                checked={checked}
+                                onChange={(e) => handleTogglePermission(user, mod.key, e.target.checked)}
+                              />
+                              {mod.label}
+                            </label>
+                          );
+                        })}
                         <div className="my-1 h-px bg-[var(--border)]" />
                         <button
                           onClick={() => handleDeleteUser(user.id)}

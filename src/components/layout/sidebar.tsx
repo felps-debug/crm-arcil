@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Bot,
   Boxes,
+  Brain,
   CreditCard,
   Gauge,
   Image as ImageIcon,
@@ -27,16 +28,17 @@ const NAV = [
   { href: "/", label: "Dashboard", icon: Gauge },
   { href: "/leads", label: "Leads", icon: Users, badge: true },
   { href: "/agentes", label: "Agentes IA", icon: Bot },
-  { href: "/demanda-estoque", label: "Demanda & Estoque", icon: Boxes },
-  { href: "/cobranca", label: "Campanhas & Cobrancas", icon: CreditCard },
-  { href: "/chatbot", label: "Gerador de Imagem", icon: ImageIcon },
-  { href: "/admin", label: "Admin", icon: ShieldCheck },
+  { href: "/demanda-estoque", label: "Demanda & Estoque", icon: Boxes, perm: "manage_estoque" },
+  { href: "/cobranca", label: "Campanhas & Cobrancas", icon: CreditCard, perm: "manage_cobranca" },
+  { href: "/chatbot", label: "Gerador de Imagem", icon: ImageIcon, perm: "manage_gerador_imagem" },
+  { href: "/cerebro", label: "Cerebro Arcil", icon: Brain },
+  { href: "/admin", label: "Admin", icon: ShieldCheck, superAdminOnly: true },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile } = useCurrentUser();
+  const { profile, isSuperAdmin, isOwnerOrAbove, can } = useCurrentUser();
   const { theme, toggle: toggleTheme } = useTheme();
   const [urgentCount, setUrgentCount] = useState(0);
 
@@ -67,7 +69,11 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-2 px-3">
-        {NAV.map(({ href, label, icon: Icon, badge }) => {
+        {NAV.filter((item) => {
+          if (item.superAdminOnly) return isSuperAdmin;
+          if (item.perm) return isOwnerOrAbove || can(item.perm);
+          return true;
+        }).map(({ href, label, icon: Icon, badge }) => {
           const active = pathname === href || (href !== "/" && pathname.startsWith(href));
           const showBadge = badge && urgentCount > 0;
           return (
@@ -96,10 +102,12 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-[#1f2b3d] px-3 py-5">
-        <Link href="/admin" className="mb-2 flex items-center gap-3 rounded-[12px] px-4 py-2.5 text-[13px] font-semibold text-[#c8d1df] hover:bg-white/[0.06]">
-          <Settings size={17} />
-          Configuracoes
-        </Link>
+        {isSuperAdmin && (
+          <Link href="/admin" className="mb-2 flex items-center gap-3 rounded-[12px] px-4 py-2.5 text-[13px] font-semibold text-[#c8d1df] hover:bg-white/[0.06]">
+            <Settings size={17} />
+            Configuracoes
+          </Link>
+        )}
 
         <button
           onClick={toggleTheme}

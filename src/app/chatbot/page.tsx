@@ -20,6 +20,7 @@ import {
   ConsoleLoading,
   ConsolePage,
 } from "@/components/console/console-shell";
+import { AccessGuard } from "@/components/layout/access-guard";
 import { createClient } from "@/lib/supabase/client";
 import { getImageGenerationHistory, type ImageGeneration } from "@/lib/supabase/queries";
 import { formatDateTime } from "@/lib/utils";
@@ -49,6 +50,14 @@ const STEPS: Step[] = [
 type Tab = "chat" | "historico";
 
 export default function ChatbotPage() {
+  return (
+    <AccessGuard perm="manage_gerador_imagem">
+      <ChatbotPageInner />
+    </AccessGuard>
+  );
+}
+
+function ChatbotPageInner() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const compareRef = useRef<HTMLDivElement>(null);

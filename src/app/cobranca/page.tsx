@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ConsoleButton, ConsoleCard, ConsoleError, ConsoleLoading, ConsoleMetric, ConsolePage, ConsoleStatus } from "@/components/console/console-shell";
+import { AccessGuard } from "@/components/layout/access-guard";
 import { CobrancaLogDrawer } from "@/components/ui/cobranca-log-drawer";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useSupabase } from "@/hooks/use-supabase";
@@ -31,6 +32,14 @@ import { parseMoneyToNumber } from "./cobranca-helpers";
 type Tab = "disparar" | "logs" | "followups" | "tecnico";
 
 export default function CobrancaPage() {
+  return (
+    <AccessGuard perm="manage_cobranca">
+      <CobrancaPageInner />
+    </AccessGuard>
+  );
+}
+
+function CobrancaPageInner() {
   const [tab, setTab] = useState<Tab>("disparar");
   const { isSuperAdmin, isManagerOrAbove } = useCurrentUser();
   const [selectedLog, setSelectedLog] = useState<CobrancaLog | null>(null);

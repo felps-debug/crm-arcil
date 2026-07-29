@@ -2,9 +2,9 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-const ROLE_PERMISSIONS: Record<string, object> = {
-  superadmin: { view_all: true, manage_users: true, manage_roles: true, manage_cobranca: true },
-  owner:      { view_all: true, manage_cobranca: true },
+const ROLE_PERMISSIONS: Record<string, Record<string, boolean>> = {
+  superadmin: { view_all: true, manage_users: true, manage_roles: true, manage_cobranca: true, manage_estoque: true, manage_gerador_imagem: true },
+  owner:      { view_all: true, manage_cobranca: true, manage_estoque: true, manage_gerador_imagem: true },
   manager:    { view_all: true, manage_cobranca: true },
   vendor:     { view_leads: true },
   employee:   { view_leads: true },
@@ -31,11 +31,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!caller) return Response.json({ error: "Unauthorized" }, { status: 403 });
 
     const { id } = await params;
-    const { role, full_name } = await req.json();
+    const { role, full_name, permissions } = await req.json();
 
     const admin = createAdminClient();
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (role) { updates.role = role; updates.permissions = ROLE_PERMISSIONS[role] ?? {}; }
+
+    if (role || permissions) {
+      const { data: current } = await admin.from("user_profiles").select("permissions").eq("id", id).single();
+      const base = role ? ROLE_PERMISSIONS[role] ?? {} : (current?.permissions as Record<string, boolean>) ?? {};
+      updates.permissions = permissions ? { ...base, ...permissions } : base;
+    }
+    if (role) updates.role = role;
     if (full_name !== undefined) updates.full_name = full_name;
 
     const { error } = await admin.from("user_profiles").update(updates).eq("id", id);

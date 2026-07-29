@@ -12,6 +12,7 @@ import {
   ConsoleStatus,
   ConsoleTable,
 } from "@/components/console/console-shell";
+import { AccessGuard } from "@/components/layout/access-guard";
 import { formatDateTime, formatMoney, formatNumber, useApi } from "@/lib/client-api";
 import type { InventoryProduct, InventorySummaryResponse } from "@/types/api";
 import { useMemo, useState } from "react";
@@ -33,6 +34,14 @@ function sourceLabel(source: InventoryProduct["source"]) {
 }
 
 export default function DemandaEstoquePage() {
+  return (
+    <AccessGuard perm="manage_estoque">
+      <DemandaEstoquePageInner />
+    </AccessGuard>
+  );
+}
+
+function DemandaEstoquePageInner() {
   const [search, setSearch] = useState("");
   const { data, loading, error } = useApi<InventorySummaryResponse>(`/api/inventory/summary?limit=600&search=${encodeURIComponent(search)}`);
   const products = useMemo(() => data?.products ?? [], [data]);
