@@ -367,6 +367,29 @@ export async function getConversationMessages(conversationId: string) {
   return data ?? [];
 }
 
+/* ── GERADOR DE IMAGEM ─────────────────────────────────────────── */
+
+export type ImageGeneration = {
+  id: string;
+  lead_id: string | null;
+  user_id: string | null;
+  user_name: string | null;
+  wall_image_url: string | null;
+  generated_image_url: string;
+  answers: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export async function getImageGenerationHistory(limit = 30) {
+  const { data, error } = await supabase
+    .from("image_generations")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data as ImageGeneration[];
+}
+
 /* ── REALTIME ───────────────────────────────────────────────────── */
 
 export function subscribeToLeads(callback: (payload: unknown) => void) {

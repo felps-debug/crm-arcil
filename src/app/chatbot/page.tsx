@@ -2,26 +2,31 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AirVent,
   ArrowLeftRight,
-  ArrowLeft,
+  Clock,
+  History,
   ImagePlus,
   Loader2,
   MessageSquare,
   RefreshCcw,
   Sparkles,
+  User,
 } from "lucide-react";
 import {
   ConsoleButton,
   ConsoleCard,
+  ConsoleError,
+  ConsoleLoading,
   ConsolePage,
-  ConsoleStatus,
 } from "@/components/console/console-shell";
 import { createClient } from "@/lib/supabase/client";
+import { useSupabase } from "@/hooks/use-supabase";
+import { getImageGenerationHistory } from "@/lib/supabase/queries";
+import { formatDateTime } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 
 interface ChatMessage {
-  role: "user" | "assistant";
+  role: "assistant" | "user";
   content: string;
   imageUrl?: string;
 }
@@ -41,13 +46,19 @@ const STEPS: Step[] = [
   { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente"] },
 ];
 
+type Tab = "chat" | "historico";
+
 export default function ChatbotPage() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const compareRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
+  const [tab, setTab] = useState<Tab>("chat");
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [transcript, setTranscript] = useState<ChatMessage[]>([{ role: "assistant", content: STEPS[0].question }]);
+  const [typing, setTyping] = useState(false);
   const [textValue, setTextValue] = useState("");
   const [wallImageUrl, setWallImageUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -55,24 +66,28 @@ export default function ChatbotPage() {
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [dividerPct, setDividerPct] = useState(50);
   const [dragging, setDragging] = useState(false);
+  const [previewItem, setPreviewItem] = useState<{ wallImageUrl: string | null; generatedImageUrl: string } | null>(null);
+
+  const history = useSupabase(() => getImageGenerationHistory(), []);
 
   const current = STEPS[step];
   const isLastStep = step === STEPS.length - 1;
+  const done = Boolean(generatedImageUrl);
 
   useEffect(() => {
-    if (current?.type === "text") setTextValue(answers[current.key] ?? "");
-  }, [step, current, answers]);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [transcript, typing, generating, done]);
 
   const answered = current
     ? current.type === "file"
       ? Boolean(wallImageUrl)
       : current.type === "text"
         ? Boolean(textValue.trim())
-        : Boolean(answers[current.key])
+        : false
     : false;
 
-  const buildMessages = useCallback((finalAnswers: Record<string, string>): ChatMessage[] => {
-    const messages: ChatMessage[] = [];
+  const buildAnswersForApi = useCallback((finalAnswers: Record<string, string>): { role: "user" | "assistant"; content: string; imageUrl?: string }[] => {
+    const messages: { role: "user" | "assistant"; content: string; imageUrl?: string }[] = [];
     for (const s of STEPS) {
       messages.push({ role: "assistant", content: s.question });
       if (s.type === "file") {
@@ -91,7 +106,7 @@ export default function ChatbotPage() {
         const res = await fetch("/api/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: buildMessages(finalAnswers), imageUrl: wallImageUrl }),
+          body: JSON.stringify({ messages: buildAnswersForApi(finalAnswers), imageUrl: wallImageUrl }),
         });
         const data = await res.json();
         if (!res.ok || data.error) {
@@ -100,38 +115,56 @@ export default function ChatbotPage() {
         }
         setGeneratedImageUrl(data.imageUrl);
         setDividerPct(50);
+        history.refetch();
       } catch {
         toast("Erro de conexao ao gerar a imagem.", "error");
       } finally {
         setGenerating(false);
       }
     },
-    [buildMessages, wallImageUrl, toast]
+    [buildAnswersForApi, wallImageUrl, toast, history]
   );
 
-  const handleNext = useCallback(() => {
-    if (!current || !answered) return;
-    const nextAnswers = current.type === "file" ? answers : { ...answers, [current.key]: textValue.trim() };
-    setAnswers(nextAnswers);
-    setTextValue("");
+  const advance = useCallback(
+    (nextAnswers: Record<string, string>, userBubble: ChatMessage) => {
+      setTranscript((t) => [...t, userBubble]);
+      setAnswers(nextAnswers);
+      setTextValue("");
 
-    if (isLastStep) {
-      void requestGeneration(nextAnswers);
-      return;
-    }
-    setStep((s) => s + 1);
-  }, [current, answered, answers, textValue, isLastStep, requestGeneration]);
+      if (isLastStep) {
+        void requestGeneration(nextAnswers);
+        return;
+      }
 
-  const handleBack = useCallback(() => {
-    if (step === 0) return;
-    setStep((s) => s - 1);
-  }, [step]);
+      setTyping(true);
+      const nextStep = STEPS[step + 1];
+      setTimeout(() => {
+        setTyping(false);
+        setTranscript((t) => [...t, { role: "assistant", content: nextStep.question }]);
+        setStep((s) => s + 1);
+      }, 550);
+    },
+    [isLastStep, requestGeneration, step]
+  );
+
+  const handleSendText = useCallback(() => {
+    if (!current || current.type !== "text" || !textValue.trim()) return;
+    advance({ ...answers, [current.key]: textValue.trim() }, { role: "user", content: textValue.trim() });
+  }, [current, textValue, answers, advance]);
+
+  const handleChoice = useCallback(
+    (opt: string) => {
+      if (!current || current.type !== "choice") return;
+      advance({ ...answers, [current.key]: opt }, { role: "user", content: opt });
+    },
+    [current, answers, advance]
+  );
 
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       e.target.value = "";
-      if (!file) return;
+      if (!file || !current || current.type !== "file") return;
       setUploading(true);
       try {
         const supabase = createClient();
@@ -143,11 +176,12 @@ export default function ChatbotPage() {
         }
         const { data } = supabase.storage.from("chatbot-images").getPublicUrl(path);
         setWallImageUrl(data.publicUrl);
+        advance(answers, { role: "user", content: "Foto da parede enviada.", imageUrl: data.publicUrl });
       } finally {
         setUploading(false);
       }
     },
-    [toast]
+    [current, answers, advance, toast]
   );
 
   const handleRestart = useCallback(() => {
@@ -156,6 +190,7 @@ export default function ChatbotPage() {
     setTextValue("");
     setWallImageUrl(null);
     setGeneratedImageUrl(null);
+    setTranscript([{ role: "assistant", content: STEPS[0].question }]);
   }, []);
 
   const handleDrag = useCallback((clientX: number) => {
@@ -189,167 +224,287 @@ export default function ChatbotPage() {
 
   return (
     <ConsolePage title="Gerador de Imagem" subtitle="Simulacao de instalacao com IA">
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-        <ConsoleCard className="flex min-h-[520px] flex-col">
-          <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="grid h-8 w-8 place-items-center rounded-full bg-violet-500/10 text-violet-300">
-                <AirVent size={15} />
+      <div className="flex flex-wrap gap-2">
+        <ConsoleButton icon={MessageSquare} active={tab === "chat"} onClick={() => setTab("chat")}>
+          Nova simulacao
+        </ConsoleButton>
+        <ConsoleButton icon={History} active={tab === "historico"} onClick={() => setTab("historico")}>
+          Historico
+          {history.data && history.data.length > 0 && <span className="font-data opacity-80">{history.data.length}</span>}
+        </ConsoleButton>
+      </div>
+
+      {tab === "chat" ? (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+          <ConsoleCard className="flex h-[600px] flex-col" pad={false}>
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="grid h-8 w-8 place-items-center rounded-full bg-violet-500/10 text-violet-300">
+                  <Sparkles size={15} />
+                </div>
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Assistente de Instalacao</h2>
               </div>
-              <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Assistente de Instalacao</h2>
+              {!done && (
+                <span className="font-data text-[11px] text-[var(--text-muted)]">{answeredSteps}/{STEPS.length}</span>
+              )}
             </div>
-            <ConsoleStatus tone="slate">Pergunta {step + 1} de {STEPS.length}</ConsoleStatus>
-          </div>
 
-          {generatedImageUrl ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-[var(--text-muted)]">
-              <Sparkles size={22} />
-              <p className="text-[12px] font-medium">Simulacao gerada. Veja o resultado ao lado.</p>
-              <ConsoleButton icon={RefreshCcw} onClick={handleRestart}>Comecar nova simulacao</ConsoleButton>
+            <div className="h-1 w-full overflow-hidden bg-[var(--bg-subtle)]">
+              <div
+                className="h-full bg-blue-400 transition-all"
+                style={{ width: `${done ? 100 : (answeredSteps / STEPS.length) * 100}%` }}
+              />
             </div>
-          ) : (
-            <div className="flex flex-1 flex-col">
-              <div className="mb-2 h-1 w-full overflow-hidden rounded-full bg-[var(--bg-subtle)]">
-                <div
-                  className="h-full rounded-full bg-blue-400 transition-all"
-                  style={{ width: `${(answeredSteps / STEPS.length) * 100}%` }}
-                />
-              </div>
 
-              <p className="mt-6 text-[16px] font-bold text-[var(--text-primary)]">{current.question}</p>
+            <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+              {transcript.map((m, i) => (
+                <ChatBubble key={i} message={m} />
+              ))}
+              {typing && <TypingBubble />}
+              {generating && <TypingBubble label="Gerando a simulacao..." />}
+              {done && (
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] rounded-[12px] rounded-tl-none border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-[13px] font-semibold text-emerald-300">
+                    Simulacao pronta! Veja o resultado ao lado.
+                  </div>
+                </div>
+              )}
+            </div>
 
-              <div className="mt-5 flex-1">
-                {current.type === "text" && (
+            <div className="border-t border-[var(--border)] p-3">
+              {done ? (
+                <ConsoleButton icon={RefreshCcw} onClick={handleRestart} className="w-full justify-center">
+                  Comecar nova simulacao
+                </ConsoleButton>
+              ) : typing || generating ? (
+                <div className="flex h-10 items-center justify-center text-[12px] text-[var(--text-muted)]">Aguarde...</div>
+              ) : current.type === "text" ? (
+                <div className="flex items-center gap-2">
                   <input
                     autoFocus
                     value={textValue}
                     onChange={(e) => setTextValue(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") handleNext();
+                      if (e.key === "Enter") handleSendText();
                     }}
                     placeholder="Digite sua resposta..."
-                    className="w-full rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2.5 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-blue-500/60"
+                    className="flex-1 rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2.5 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-blue-500/60"
                   />
-                )}
+                  <ConsoleButton active onClick={handleSendText} disabled={!answered}>
+                    Enviar
+                  </ConsoleButton>
+                </div>
+              ) : current.type === "file" ? (
+                <div>
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+                  <ConsoleButton
+                    icon={uploading ? Loader2 : ImagePlus}
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    active
+                    className="w-full justify-center"
+                  >
+                    {uploading ? "Enviando..." : "Selecionar foto"}
+                  </ConsoleButton>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {current.options.map((opt) => (
+                    <ConsoleButton key={opt} onClick={() => handleChoice(opt)} className="flex-1 justify-center">
+                      {opt}
+                    </ConsoleButton>
+                  ))}
+                </div>
+              )}
+            </div>
+          </ConsoleCard>
 
-                {current.type === "file" && (
-                  <div className="flex flex-col gap-3">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleFileChange}
-                    />
-                    {wallImageUrl ? (
-                      <div className="flex items-center gap-3 rounded-[8px] border border-emerald-500/30 bg-emerald-500/10 p-3">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={wallImageUrl} alt="Foto enviada" className="h-14 w-14 rounded-[6px] object-cover" />
-                        <p className="text-[12px] font-semibold text-emerald-300">Foto enviada com sucesso.</p>
-                      </div>
-                    ) : (
-                      <ConsoleButton
-                        icon={uploading ? Loader2 : ImagePlus}
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploading}
-                        className="w-full justify-center"
+          <div className="space-y-4">
+            <ConsoleCard>
+              {generating ? (
+                <div className="flex h-[420px] flex-col items-center justify-center gap-3 rounded-[8px] border border-dashed border-[var(--border-strong)] text-[var(--text-muted)]">
+                  <Loader2 size={22} className="animate-spin" />
+                  <p className="text-[12px] font-medium">Gerando visualizacao...</p>
+                </div>
+              ) : generatedImageUrl && wallImageUrl ? (
+                <>
+                  <div ref={compareRef} className="relative h-[420px] select-none overflow-hidden rounded-[8px] border border-[var(--border)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={wallImageUrl} alt="Antes" className="absolute inset-0 h-full w-full object-cover" />
+                    <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 0 0 ${dividerPct}%)` }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={generatedImageUrl} alt="Depois" className="h-full w-full object-cover" />
+                    </div>
+
+                    <div className="absolute inset-y-0 z-10 flex w-0 items-center justify-center" style={{ left: `${dividerPct}%` }}>
+                      <div className="absolute inset-y-0 w-[2px] bg-blue-400/90" />
+                      <button
+                        onPointerDown={startDrag}
+                        aria-label="Arrastar para comparar antes e depois"
+                        className={`relative z-10 grid h-9 w-9 touch-none place-items-center rounded-full border border-white/40 bg-blue-500 text-white shadow-lg ${
+                          dragging ? "cursor-grabbing" : "cursor-grab"
+                        }`}
                       >
-                        {uploading ? "Enviando..." : "Selecionar foto"}
-                      </ConsoleButton>
-                    )}
-                  </div>
-                )}
+                        <ArrowLeftRight size={14} />
+                      </button>
+                    </div>
 
-                {current.type === "choice" && (
-                  <div className="flex flex-wrap gap-2">
-                    {current.options.map((opt) => (
-                      <ConsoleButton
-                        key={opt}
-                        active={answers[current.key] === opt}
-                        onClick={() => setAnswers((prev) => ({ ...prev, [current.key]: opt }))}
-                      >
-                        {opt}
-                      </ConsoleButton>
-                    ))}
+                    <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[11px] font-bold text-white">Antes</span>
+                    <span className="absolute right-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[11px] font-bold text-white">Depois</span>
                   </div>
-                )}
-              </div>
 
-              <div className="mt-6 flex items-center justify-between gap-2">
-                <ConsoleButton icon={ArrowLeft} onClick={handleBack} disabled={step === 0}>
-                  Voltar
-                </ConsoleButton>
-                <ConsoleButton active onClick={handleNext} disabled={!answered || generating}>
-                  {isLastStep ? "Gerar imagem" : "Proximo"}
-                </ConsoleButton>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <ConsoleButton icon={RefreshCcw} onClick={() => requestGeneration(answers)}>
+                      Gerar outra versao
+                    </ConsoleButton>
+                    <ConsoleButton icon={MessageSquare} active>
+                      Criar orcamento
+                    </ConsoleButton>
+                  </div>
+                </>
+              ) : (
+                <div className="flex h-[420px] flex-col items-center justify-center gap-2 rounded-[8px] border border-dashed border-[var(--border-strong)] text-center text-[var(--text-muted)]">
+                  <Sparkles size={22} />
+                  <p className="max-w-[220px] text-[12px] font-medium">Converse com o assistente pra gerar a visualizacao da instalacao.</p>
+                </div>
+              )}
+            </ConsoleCard>
+          </div>
+        </div>
+      ) : (
+        <HistoricoTab loading={history.loading} error={history.error} items={history.data ?? []} onSelect={setPreviewItem} />
+      )}
+
+      {previewItem && <PreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />}
+    </ConsolePage>
+  );
+}
+
+function ChatBubble({ message }: { message: ChatMessage }) {
+  const isAssistant = message.role === "assistant";
+  return (
+    <div className={`flex ${isAssistant ? "justify-start" : "justify-end"}`}>
+      <div
+        className={`max-w-[85%] rounded-[12px] px-3 py-2 text-[13px] ${
+          isAssistant
+            ? "rounded-tl-none border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)]"
+            : "rounded-tr-none bg-blue-500 text-white"
+        }`}
+      >
+        {message.content}
+        {message.imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={message.imageUrl} alt="Enviada" className="mt-2 h-24 w-24 rounded-[6px] object-cover" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TypingBubble({ label }: { label?: string }) {
+  return (
+    <div className="flex justify-start">
+      <div className="flex items-center gap-2 rounded-[12px] rounded-tl-none border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2.5">
+        {label ? (
+          <>
+            <Loader2 size={13} className="animate-spin text-[var(--text-muted)]" />
+            <span className="text-[12px] text-[var(--text-muted)]">{label}</span>
+          </>
+        ) : (
+          <span className="flex gap-1">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--text-muted)]"
+                style={{ animationDelay: `${i * 0.12}s` }}
+              />
+            ))}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HistoricoTab({
+  loading,
+  error,
+  items,
+  onSelect,
+}: {
+  loading: boolean;
+  error: string | null;
+  items: { id: string; user_name: string | null; wall_image_url: string | null; generated_image_url: string; created_at: string }[];
+  onSelect: (item: { wallImageUrl: string | null; generatedImageUrl: string }) => void;
+}) {
+  if (loading) return <ConsoleLoading />;
+  if (error) return <ConsoleError message={error} />;
+  if (!items.length) {
+    return (
+      <ConsoleCard className="flex h-40 flex-col items-center justify-center gap-2 text-center text-[var(--text-muted)]">
+        <Clock size={20} />
+        <p className="text-[12px] font-medium">Nenhuma simulacao gerada ainda.</p>
+      </ConsoleCard>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          onClick={() => onSelect({ wallImageUrl: item.wall_image_url, generatedImageUrl: item.generated_image_url })}
+          className="text-left"
+        >
+          <ConsoleCard pad={false} className="overflow-hidden transition-colors hover:border-blue-500/50">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={item.generated_image_url} alt="Simulacao gerada" className="h-36 w-full object-cover" />
+            <div className="p-3">
+              <div className="flex items-center gap-2">
+                <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-blue-500/10 text-[9px] font-bold text-blue-300">
+                  <User size={11} />
+                </div>
+                <p className="truncate text-[12px] font-semibold text-[var(--text-primary)]">{item.user_name ?? "Desconhecido"}</p>
               </div>
+              <p className="mt-1.5 font-data text-[11px] text-[var(--text-muted)]">{formatDateTime(item.created_at)}</p>
+            </div>
+          </ConsoleCard>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PreviewModal({
+  item,
+  onClose,
+}: {
+  item: { wallImageUrl: string | null; generatedImageUrl: string };
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className={`grid grid-cols-1 ${item.wallImageUrl ? "sm:grid-cols-2" : ""}`}>
+          {item.wallImageUrl && (
+            <div>
+              <span className="block px-3 pt-3 text-[10px] font-bold uppercase text-[var(--text-muted)]">Antes</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={item.wallImageUrl} alt="Antes" className="h-[420px] w-full object-cover p-3 pt-1" />
             </div>
           )}
-        </ConsoleCard>
-
-        <div className="space-y-4">
-          <ConsoleCard>
-            {generating ? (
-              <div className="flex h-[420px] flex-col items-center justify-center gap-3 rounded-[8px] border border-dashed border-[var(--border-strong)] text-[var(--text-muted)]">
-                <Loader2 size={22} className="animate-spin" />
-                <p className="text-[12px] font-medium">Gerando visualizacao...</p>
-              </div>
-            ) : generatedImageUrl && wallImageUrl ? (
-              <>
-                <div
-                  ref={compareRef}
-                  className="relative h-[420px] select-none overflow-hidden rounded-[8px] border border-[var(--border)]"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={wallImageUrl} alt="Antes" className="absolute inset-0 h-full w-full object-cover" />
-                  <div
-                    className="absolute inset-0 overflow-hidden"
-                    style={{ clipPath: `inset(0 0 0 ${dividerPct}%)` }}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={generatedImageUrl} alt="Depois" className="h-full w-full object-cover" />
-                  </div>
-
-                  <div
-                    className="absolute inset-y-0 z-10 flex w-0 items-center justify-center"
-                    style={{ left: `${dividerPct}%` }}
-                  >
-                    <div className="absolute inset-y-0 w-[2px] bg-blue-400/90" />
-                    <button
-                      onPointerDown={startDrag}
-                      aria-label="Arrastar para comparar antes e depois"
-                      className={`relative z-10 grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-blue-500 text-white shadow-lg touch-none ${
-                        dragging ? "cursor-grabbing" : "cursor-grab"
-                      }`}
-                    >
-                      <ArrowLeftRight size={14} />
-                    </button>
-                  </div>
-
-                  <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[11px] font-bold text-white">Antes</span>
-                  <span className="absolute right-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[11px] font-bold text-white">Depois</span>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <ConsoleButton icon={RefreshCcw} onClick={() => requestGeneration(answers)}>
-                    Gerar outra versao
-                  </ConsoleButton>
-                  <ConsoleButton icon={MessageSquare} active>
-                    Criar orcamento
-                  </ConsoleButton>
-                </div>
-              </>
-            ) : (
-              <div className="flex h-[420px] flex-col items-center justify-center gap-2 rounded-[8px] border border-dashed border-[var(--border-strong)] text-center text-[var(--text-muted)]">
-                <Sparkles size={22} />
-                <p className="max-w-[220px] text-[12px] font-medium">
-                  Responda as perguntas ao lado pra gerar a visualizacao da instalacao.
-                </p>
-              </div>
-            )}
-          </ConsoleCard>
+          <div>
+            <span className="block px-3 pt-3 text-[10px] font-bold uppercase text-[var(--text-muted)]">Depois</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={item.generatedImageUrl} alt="Depois" className="h-[420px] w-full object-cover p-3 pt-1" />
+          </div>
+        </div>
+        <div className="border-t border-[var(--border)] p-3 text-right">
+          <ConsoleButton onClick={onClose}>Fechar</ConsoleButton>
         </div>
       </div>
-    </ConsolePage>
+    </div>
   );
 }

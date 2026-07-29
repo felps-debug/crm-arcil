@@ -144,5 +144,15 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
   }
 
+  const { data: profile } = await supabase.from("user_profiles").select("full_name").eq("id", user.id).single();
+  await supabase.from("image_generations").insert({
+    lead_id: leadId,
+    user_id: user.id,
+    user_name: profile?.full_name ?? user.email ?? null,
+    wall_image_url: imageUrl ?? null,
+    generated_image_url: generatedImageUrl,
+    answers: collectedData,
+  });
+
   return Response.json({ imageUrl: generatedImageUrl });
 }
