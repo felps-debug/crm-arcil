@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftRight,
   Clock,
+  Download,
   History,
   ImagePlus,
   Loader2,
@@ -20,8 +21,7 @@ import {
   ConsolePage,
 } from "@/components/console/console-shell";
 import { createClient } from "@/lib/supabase/client";
-import { useSupabase } from "@/hooks/use-supabase";
-import { getImageGenerationHistory } from "@/lib/supabase/queries";
+import { getImageGenerationHistory, type ImageGeneration } from "@/lib/supabase/queries";
 import { formatDateTime } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 
@@ -67,8 +67,30 @@ export default function ChatbotPage() {
   const [dividerPct, setDividerPct] = useState(50);
   const [dragging, setDragging] = useState(false);
   const [previewItem, setPreviewItem] = useState<{ wallImageUrl: string | null; generatedImageUrl: string } | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
-  const history = useSupabase(() => getImageGenerationHistory(), []);
+  const [historyItems, setHistoryItems] = useState<ImageGeneration[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      setHistoryItems(await getImageGenerationHistory());
+      setHistoryLoaded(true);
+    } catch (e) {
+      const message = e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : "Erro ao carregar dados";
+      setHistoryError(message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "historico" && !historyLoaded) void fetchHistory();
+  }, [tab, historyLoaded, fetchHistory]);
 
   const current = STEPS[step];
   const isLastStep = step === STEPS.length - 1;
@@ -115,15 +137,34 @@ export default function ChatbotPage() {
         }
         setGeneratedImageUrl(data.imageUrl);
         setDividerPct(50);
-        history.refetch();
+        setHistoryLoaded(false);
       } catch {
         toast("Erro de conexao ao gerar a imagem.", "error");
       } finally {
         setGenerating(false);
       }
     },
-    [buildAnswersForApi, wallImageUrl, toast, history]
+    [buildAnswersForApi, wallImageUrl, toast]
   );
+
+  const handleDownload = useCallback(async () => {
+    if (!generatedImageUrl) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(generatedImageUrl);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `simulacao-${Date.now()}.jpg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast("Erro ao baixar a imagem.", "error");
+    } finally {
+      setDownloading(false);
+    }
+  }, [generatedImageUrl, toast]);
 
   const advance = useCallback(
     (nextAnswers: Record<string, string>, userBubble: ChatMessage) => {
@@ -230,7 +271,7 @@ export default function ChatbotPage() {
         </ConsoleButton>
         <ConsoleButton icon={History} active={tab === "historico"} onClick={() => setTab("historico")}>
           Historico
-          {history.data && history.data.length > 0 && <span className="font-data opacity-80">{history.data.length}</span>}
+          {historyItems.length > 0 && <span className="font-data opacity-80">{historyItems.length}</span>}
         </ConsoleButton>
       </div>
 
@@ -357,8 +398,8 @@ export default function ChatbotPage() {
                     <ConsoleButton icon={RefreshCcw} onClick={() => requestGeneration(answers)}>
                       Gerar outra versao
                     </ConsoleButton>
-                    <ConsoleButton icon={MessageSquare} active>
-                      Criar orcamento
+                    <ConsoleButton icon={downloading ? Loader2 : Download} active onClick={handleDownload} disabled={downloading}>
+                      {downloading ? "Baixando..." : "Baixar imagem"}
                     </ConsoleButton>
                   </div>
                 </>
@@ -372,7 +413,7 @@ export default function ChatbotPage() {
           </div>
         </div>
       ) : (
-        <HistoricoTab loading={history.loading} error={history.error} items={history.data ?? []} onSelect={setPreviewItem} />
+        <HistoricoTab loading={historyLoading} error={historyError} items={historyItems} onSelect={setPreviewItem} />
       )}
 
       {previewItem && <PreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />}
