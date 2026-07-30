@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireApiPermission } from "@/lib/server/api-auth";
 import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK } from "@/lib/env";
+import { ARCIL_LOGO_BASE64 } from "@/lib/logo-base64";
 
 interface ApiMessage {
   role: "user" | "assistant";
@@ -208,15 +209,25 @@ async function getProductImageUrl(supabase: SupabaseClient, modelo: string): Pro
  * failure — a missing watermark should never block delivering the image.
  */
 async function watermarkImage(supabase: SupabaseClient, imageUrl: string, leadId: string): Promise<string> {
+  let stage = "start";
   try {
-    // Read from public/ via HTTP, not the filesystem — the file isn't
-    // guaranteed to be co-located with the serverless function on Vercel.
-    const siteUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
-    const [imgRes, logoRes] = await Promise.all([fetch(imageUrl), fetch(`${siteUrl}/logo-icon.png`)]);
-    const logoBuffer = await sharp(Buffer.from(await logoRes.arrayBuffer())).resize(28, 28).png().toBuffer();
-    const base = sharp(Buffer.from(await imgRes.arrayBuffer()));
+    stage = "fetch generated image";
+    const imgRes = await fetch(imageUrl);
+    if (!imgRes.ok) throw new Error(`fetch imageUrl -> HTTP ${imgRes.status}`);
+    const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
+
+    stage = "resize logo";
+    // Logo is embedded as base64 in source — no filesystem or network
+    // dependency, since public/ assets aren't guaranteed to be reachable
+    // (filesystem) or unauthenticated (Vercel deployment protection) from
+    // inside the serverless function.
+    const logoBuffer = await sharp(Buffer.from(ARCIL_LOGO_BASE64, "base64")).resize(28, 28).png().toBuffer();
+
+    stage = "read image metadata";
+    const base = sharp(imgBuffer);
     const { width = 1536 } = await base.metadata();
 
+    stage = "composite watermark";
     const badgeWidth = 260;
     const badgeHeight = 44;
     const left = Math.max(0, width - badgeWidth - 16);
@@ -232,9 +243,10 @@ async function watermarkImage(supabase: SupabaseClient, imageUrl: string, leadId
         { input: badgeSvg, top: 16, left },
         { input: logoBuffer, top: 16 + (badgeHeight - 28) / 2, left: left + 8 },
       ])
-      .jpeg({ quality: 92 })
+      .jpeg({ quality: 95 })
       .toBuffer();
 
+    stage = "upload to storage";
     const storagePath = `watermarked/${leadId}.jpg`;
     const { error: uploadError } = await supabase.storage
       .from("PDF")
@@ -247,7 +259,7 @@ async function watermarkImage(supabase: SupabaseClient, imageUrl: string, leadId
     const { data } = supabase.storage.from("PDF").getPublicUrl(storagePath);
     return data.publicUrl;
   } catch (err) {
-    console.error("[watermarkImage] failed:", err instanceof Error ? err.message : err);
+    console.error(`[watermarkImage] failed at "${stage}":`, err instanceof Error ? err.message : err);
     return imageUrl;
   }
 }
