@@ -27,8 +27,11 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { messages, imageUrl }: { messages: ApiMessage[]; imageUrl?: string } =
-    await request.json();
+  const {
+    messages,
+    imageUrl,
+    answers,
+  }: { messages: ApiMessage[]; imageUrl?: string; answers?: Record<string, string> } = await request.json();
 
   if (imageUrl) {
     const allowedHost = new URL(SUPABASE_URL).hostname;
@@ -61,6 +64,12 @@ export async function POST(request: NextRequest) {
     });
     collectedData = JSON.parse(raw);
   } catch {}
+
+  // Campos de escolha fixa (sem ambiguidade) sobrescrevem o que a IA extraiu do
+  // texto — reextração por IA já causou troca de valor (ex: "embutida" virou
+  // "canaleta" na imagem final mesmo o usuário tendo escolhido a opção certa).
+  if (answers?.tubulacao) collectedData.tubulacao = answers.tubulacao;
+  if (answers?.ponto_eletrico) collectedData.ponto_eletrico = answers.ponto_eletrico === "Sim";
 
   // Analyze image with Vision
   let imageDescription = "";

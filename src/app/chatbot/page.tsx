@@ -145,7 +145,7 @@ function ChatbotPageInner() {
         const res = await fetch("/api/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: buildAnswersForApi(finalAnswers), imageUrl: wallImageUrl }),
+          body: JSON.stringify({ messages: buildAnswersForApi(finalAnswers), imageUrl: wallImageUrl, answers: finalAnswers }),
         });
         const data = await res.json();
         if (!res.ok || data.error) {
