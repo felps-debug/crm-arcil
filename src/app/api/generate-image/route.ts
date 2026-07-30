@@ -1,4 +1,3 @@
-import path from "node:path";
 import sharp from "sharp";
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -208,10 +207,11 @@ async function getProductImageUrl(supabase: SupabaseClient, modelo: string): Pro
  */
 async function watermarkImage(supabase: SupabaseClient, imageUrl: string, leadId: string): Promise<string> {
   try {
-    const [imgRes, logoBuffer] = await Promise.all([
-      fetch(imageUrl),
-      sharp(path.join(process.cwd(), "public", "logo-icon.png")).resize(28, 28).png().toBuffer(),
-    ]);
+    // Read from public/ via HTTP, not the filesystem — the file isn't
+    // guaranteed to be co-located with the serverless function on Vercel.
+    const siteUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
+    const [imgRes, logoRes] = await Promise.all([fetch(imageUrl), fetch(`${siteUrl}/logo-icon.png`)]);
+    const logoBuffer = await sharp(Buffer.from(await logoRes.arrayBuffer())).resize(28, 28).png().toBuffer();
     const base = sharp(Buffer.from(await imgRes.arrayBuffer()));
     const { width = 1536 } = await base.metadata();
 
@@ -237,11 +237,15 @@ async function watermarkImage(supabase: SupabaseClient, imageUrl: string, leadId
     const { error: uploadError } = await supabase.storage
       .from("PDF")
       .upload(storagePath, watermarked, { contentType: "image/jpeg", upsert: true });
-    if (uploadError) return imageUrl;
+    if (uploadError) {
+      console.error("[watermarkImage] upload failed:", uploadError.message);
+      return imageUrl;
+    }
 
     const { data } = supabase.storage.from("PDF").getPublicUrl(storagePath);
     return data.publicUrl;
-  } catch {
+  } catch (err) {
+    console.error("[watermarkImage] failed:", err instanceof Error ? err.message : err);
     return imageUrl;
   }
 }
