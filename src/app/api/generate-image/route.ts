@@ -1,3 +1,5 @@
+import path from "node:path";
+import sharp from "sharp";
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireApiPermission } from "@/lib/server/api-auth";
@@ -124,6 +126,8 @@ export async function POST(request: NextRequest) {
     } catch {}
   }
 
+  const productImageUrl = await getProductImageUrl(supabase, String(collectedData.modelo ?? ""));
+
   // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node
   const n8nRes = await fetch(N8N_CHATBOT_WEBHOOK, {
     method: "POST",
@@ -133,6 +137,7 @@ export async function POST(request: NextRequest) {
       image_url: imageUrl,
       image_base64: imageBase64,
       image_description: imageDescription,
+      product_image_url: productImageUrl,
       prompt,
       ...collectedData,
     }),
@@ -159,6 +164,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
   }
 
+  const finalImageUrl = await watermarkImage(supabase, generatedImageUrl, leadId);
+
   const { installationNotes, notesSource } = await getInstallationNotes(supabase, String(collectedData.modelo ?? ""));
 
   const { data: profile } = await supabase.from("user_profiles").select("full_name").eq("id", user.id).single();
@@ -167,13 +174,76 @@ export async function POST(request: NextRequest) {
     user_id: user.id,
     user_name: profile?.full_name ?? user.email ?? null,
     wall_image_url: imageUrl ?? null,
-    generated_image_url: generatedImageUrl,
+    generated_image_url: finalImageUrl,
     answers: collectedData,
     installation_notes: installationNotes,
     installation_notes_source: notesSource,
   });
 
-  return Response.json({ imageUrl: generatedImageUrl, installationNotes, installationNotesSource: notesSource });
+  return Response.json({ imageUrl: finalImageUrl, installationNotes, installationNotesSource: notesSource });
+}
+
+/**
+ * Looks up a curated reference photo for the selected model/brand
+ * (product_reference_images, populated manually — empty until real product
+ * photos are uploaded). Passed to n8n as `product_image_url` so the image
+ * generation prompt can use it as a real visual reference instead of
+ * inventing a generic unit.
+ */
+async function getProductImageUrl(supabase: SupabaseClient, modelo: string): Promise<string | null> {
+  if (!modelo.trim()) return null;
+  const { data: refs } = await supabase.from("product_reference_images").select("brand,model_pattern,image_url");
+  const modeloLower = modelo.toLowerCase();
+  const match = (refs ?? []).find(
+    (r) => modeloLower.includes(r.brand.toLowerCase()) && modeloLower.includes(r.model_pattern.toLowerCase())
+  );
+  return match?.image_url ?? null;
+}
+
+/**
+ * Stamps the ARCIL logo + "Design created by ARCIL AI" onto the generated
+ * image and re-uploads it, so branding doesn't depend on the image model
+ * reliably rendering text. Falls back to the unmodified n8n URL on any
+ * failure — a missing watermark should never block delivering the image.
+ */
+async function watermarkImage(supabase: SupabaseClient, imageUrl: string, leadId: string): Promise<string> {
+  try {
+    const [imgRes, logoBuffer] = await Promise.all([
+      fetch(imageUrl),
+      sharp(path.join(process.cwd(), "public", "logo-icon.png")).resize(28, 28).png().toBuffer(),
+    ]);
+    const base = sharp(Buffer.from(await imgRes.arrayBuffer()));
+    const { width = 1536 } = await base.metadata();
+
+    const badgeWidth = 260;
+    const badgeHeight = 44;
+    const left = Math.max(0, width - badgeWidth - 16);
+    const badgeSvg = Buffer.from(
+      `<svg width="${badgeWidth}" height="${badgeHeight}" xmlns="http://www.w3.org/2000/svg">
+        <rect width="${badgeWidth}" height="${badgeHeight}" rx="8" fill="rgba(5,11,20,0.72)"/>
+        <text x="44" y="27" font-family="sans-serif" font-size="14" font-weight="700" fill="#ffffff">Design created by ARCIL AI</text>
+      </svg>`
+    );
+
+    const watermarked = await base
+      .composite([
+        { input: badgeSvg, top: 16, left },
+        { input: logoBuffer, top: 16 + (badgeHeight - 28) / 2, left: left + 8 },
+      ])
+      .jpeg({ quality: 92 })
+      .toBuffer();
+
+    const storagePath = `watermarked/${leadId}.jpg`;
+    const { error: uploadError } = await supabase.storage
+      .from("PDF")
+      .upload(storagePath, watermarked, { contentType: "image/jpeg", upsert: true });
+    if (uploadError) return imageUrl;
+
+    const { data } = supabase.storage.from("PDF").getPublicUrl(storagePath);
+    return data.publicUrl;
+  } catch {
+    return imageUrl;
+  }
 }
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
