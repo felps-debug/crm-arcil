@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export type UserRole = "superadmin" | "owner" | "manager" | "vendor" | "employee" | "client";
@@ -13,7 +13,12 @@ export interface UserProfile {
   permissions: Record<string, boolean>;
 }
 
-export function useCurrentUser() {
+const CurrentUserContext = createContext<{ profile: UserProfile | null; loading: boolean }>({
+  profile: null,
+  loading: true,
+});
+
+export function CurrentUserProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,7 +27,7 @@ export function useCurrentUser() {
 
     async function load() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
+      if (!user) { setProfile(null); setLoading(false); return; }
 
       const { data } = await supabase
         .from("user_profiles")
@@ -43,6 +48,12 @@ export function useCurrentUser() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  return <CurrentUserContext.Provider value={{ profile, loading }}>{children}</CurrentUserContext.Provider>;
+}
+
+export function useCurrentUser() {
+  const { profile, loading } = useContext(CurrentUserContext);
 
   return {
     profile,
