@@ -377,6 +377,8 @@ export type ImageGeneration = {
   wall_image_url: string | null;
   generated_image_url: string;
   answers: Record<string, unknown> | null;
+  installation_notes: string | null;
+  installation_notes_source: "manual" | "ia" | null;
   created_at: string;
 };
 

@@ -10,6 +10,7 @@ import {
   Loader2,
   MessageSquare,
   RefreshCcw,
+  ShieldAlert,
   Sparkles,
   User,
 } from "lucide-react";
@@ -73,9 +74,16 @@ function ChatbotPageInner() {
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+  const [installationNotes, setInstallationNotes] = useState<string | null>(null);
+  const [installationNotesSource, setInstallationNotesSource] = useState<"manual" | "ia" | null>(null);
   const [dividerPct, setDividerPct] = useState(50);
   const [dragging, setDragging] = useState(false);
-  const [previewItem, setPreviewItem] = useState<{ wallImageUrl: string | null; generatedImageUrl: string } | null>(null);
+  const [previewItem, setPreviewItem] = useState<{
+    wallImageUrl: string | null;
+    generatedImageUrl: string;
+    installationNotes: string | null;
+    installationNotesSource: "manual" | "ia" | null;
+  } | null>(null);
   const [downloading, setDownloading] = useState(false);
 
   const [historyItems, setHistoryItems] = useState<ImageGeneration[]>([]);
@@ -145,6 +153,8 @@ function ChatbotPageInner() {
           return;
         }
         setGeneratedImageUrl(data.imageUrl);
+        setInstallationNotes(data.installationNotes ?? null);
+        setInstallationNotesSource(data.installationNotesSource ?? null);
         setDividerPct(50);
         setHistoryLoaded(false);
       } catch {
@@ -240,6 +250,8 @@ function ChatbotPageInner() {
     setTextValue("");
     setWallImageUrl(null);
     setGeneratedImageUrl(null);
+    setInstallationNotes(null);
+    setInstallationNotesSource(null);
     setTranscript([{ role: "assistant", content: STEPS[0].question }]);
   }, []);
 
@@ -411,6 +423,8 @@ function ChatbotPageInner() {
                       {downloading ? "Baixando..." : "Baixar imagem"}
                     </ConsoleButton>
                   </div>
+
+                  {installationNotes && <InstallationNotesCard notes={installationNotes} source={installationNotesSource} />}
                 </>
               ) : (
                 <div className="flex h-[420px] flex-col items-center justify-center gap-2 rounded-[8px] border border-dashed border-[var(--border-strong)] text-center text-[var(--text-muted)]">
@@ -427,6 +441,23 @@ function ChatbotPageInner() {
 
       {previewItem && <PreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />}
     </ConsolePage>
+  );
+}
+
+function InstallationNotesCard({ notes, source }: { notes: string; source: "manual" | "ia" | null }) {
+  return (
+    <div className="mt-4 rounded-[10px] border border-amber-500/25 bg-amber-500/8 p-3">
+      <div className="mb-1.5 flex items-center gap-2">
+        <ShieldAlert size={14} className="text-amber-400" />
+        <p className="text-[11px] font-bold uppercase tracking-wide text-amber-300">
+          Nota de instalacao {source === "manual" ? "(manual do fabricante)" : "(gerada por IA)"}
+        </p>
+      </div>
+      <p className="text-[12px] leading-relaxed text-[var(--text-secondary)]">{notes}</p>
+      {source === "ia" && (
+        <p className="mt-2 text-[10px] text-amber-400/80">Orientacao geral gerada por IA — confirme sempre no manual oficial do fabricante antes de instalar.</p>
+      )}
+    </div>
   );
 }
 
@@ -484,8 +515,13 @@ function HistoricoTab({
 }: {
   loading: boolean;
   error: string | null;
-  items: { id: string; user_name: string | null; wall_image_url: string | null; generated_image_url: string; created_at: string }[];
-  onSelect: (item: { wallImageUrl: string | null; generatedImageUrl: string }) => void;
+  items: ImageGeneration[];
+  onSelect: (item: {
+    wallImageUrl: string | null;
+    generatedImageUrl: string;
+    installationNotes: string | null;
+    installationNotesSource: "manual" | "ia" | null;
+  }) => void;
 }) {
   if (loading) return <ConsoleLoading />;
   if (error) return <ConsoleError message={error} />;
@@ -502,7 +538,14 @@ function HistoricoTab({
       {items.map((item) => (
         <button
           key={item.id}
-          onClick={() => onSelect({ wallImageUrl: item.wall_image_url, generatedImageUrl: item.generated_image_url })}
+          onClick={() =>
+            onSelect({
+              wallImageUrl: item.wall_image_url,
+              generatedImageUrl: item.generated_image_url,
+              installationNotes: item.installation_notes,
+              installationNotesSource: item.installation_notes_source,
+            })
+          }
           className="text-left"
         >
           <ConsoleCard pad={false} className="overflow-hidden transition-colors hover:border-blue-500/50">
@@ -528,13 +571,18 @@ function PreviewModal({
   item,
   onClose,
 }: {
-  item: { wallImageUrl: string | null; generatedImageUrl: string };
+  item: {
+    wallImageUrl: string | null;
+    generatedImageUrl: string;
+    installationNotes: string | null;
+    installationNotesSource: "manual" | "ia" | null;
+  };
   onClose: () => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)]"
+        className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className={`grid grid-cols-1 ${item.wallImageUrl ? "sm:grid-cols-2" : ""}`}>
@@ -551,6 +599,11 @@ function PreviewModal({
             <img src={item.generatedImageUrl} alt="Depois" className="h-[420px] w-full object-cover p-3 pt-1" />
           </div>
         </div>
+        {item.installationNotes && (
+          <div className="px-3 pb-3">
+            <InstallationNotesCard notes={item.installationNotes} source={item.installationNotesSource} />
+          </div>
+        )}
         <div className="border-t border-[var(--border)] p-3 text-right">
           <ConsoleButton onClick={onClose}>Fechar</ConsoleButton>
         </div>

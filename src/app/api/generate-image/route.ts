@@ -144,6 +144,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
   }
 
+  const { installationNotes, notesSource } = await getInstallationNotes(supabase, String(collectedData.modelo ?? ""));
+
   const { data: profile } = await supabase.from("user_profiles").select("full_name").eq("id", user.id).single();
   await supabase.from("image_generations").insert({
     lead_id: leadId,
@@ -152,7 +154,47 @@ export async function POST(request: NextRequest) {
     wall_image_url: imageUrl ?? null,
     generated_image_url: generatedImageUrl,
     answers: collectedData,
+    installation_notes: installationNotes,
+    installation_notes_source: notesSource,
   });
 
-  return Response.json({ imageUrl: generatedImageUrl });
+  return Response.json({ imageUrl: generatedImageUrl, installationNotes, installationNotesSource: notesSource });
+}
+
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+
+async function getInstallationNotes(
+  supabase: SupabaseClient,
+  modelo: string
+): Promise<{ installationNotes: string | null; notesSource: "manual" | "ia" | null }> {
+  if (!modelo.trim()) return { installationNotes: null, notesSource: null };
+
+  const { data: notes } = await supabase.from("brand_warranty_notes").select("brand,content");
+  const modeloLower = modelo.toLowerCase();
+  const match = (notes ?? []).find((n) => modeloLower.includes(n.brand.toLowerCase()));
+  if (match) return { installationNotes: match.content, notesSource: "manual" };
+
+  try {
+    const content = await openAI({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Você orienta instaladores de ar-condicionado sobre como instalar preservando a garantia de fábrica. " +
+            "Dado o modelo/marca informado, escreva um parágrafo curto (máx. 5 frases) com as boas práticas gerais " +
+            "de instalação que costumam ser exigidas pela maioria dos fabricantes para não perder garantia " +
+            "(ex: distância mínima de paredes/teto, tubulação isolada, dreno com caimento correto, ponto elétrico " +
+            "dedicado, teste de vácuo). NÃO invente números ou regras específicas dessa marca que você não tenha " +
+            "certeza — se não souber um detalhe exato da marca, fale em termos gerais e termine recomendando " +
+            "expressamente consultar o manual oficial do fabricante antes de instalar.",
+        },
+        { role: "user", content: `Modelo/marca: ${modelo}` },
+      ],
+      max_tokens: 300,
+    });
+    return { installationNotes: content, notesSource: "ia" };
+  } catch {
+    return { installationNotes: null, notesSource: null };
+  }
 }
