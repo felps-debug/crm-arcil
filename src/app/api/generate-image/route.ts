@@ -67,10 +67,14 @@ export async function POST(request: NextRequest) {
     collectedData = JSON.parse(raw);
   } catch {}
 
-  // Campos de escolha fixa (sem ambiguidade) sobrescrevem o que a IA extraiu do
-  // texto — reextração por IA já causou troca de valor (ex: "embutida" virou
-  // "canaleta" na imagem final mesmo o usuário tendo escolhido a opção certa).
+  // Respostas do usuário sobrescrevem o que a IA extraiu do texto — a
+  // reextração por IA já causou perda/troca de valor (ex: "embutida" virou
+  // "canaleta", "pé direito 2.50" virou o padrão genérico "aprox. 2,20m").
+  // Já temos a resposta exata de cada pergunta fixa, não precisa reextrair.
+  if (answers?.modelo) collectedData.modelo = answers.modelo;
+  if (answers?.pe_direito) collectedData.pe_direito = answers.pe_direito;
   if (answers?.tubulacao) collectedData.tubulacao = answers.tubulacao;
+  if (answers?.unidade_externa) collectedData.unidade_externa = answers.unidade_externa;
   if (answers?.ponto_eletrico) collectedData.ponto_eletrico = answers.ponto_eletrico === "Sim";
 
   // Analyze image with Vision
