@@ -41,8 +41,17 @@ export function CurrentUserProvider({ children }: { children: React.ReactNode })
 
     load();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      setLoading(true);
+    // Do NOT setLoading(true) here — Supabase fires auth events (e.g. token
+    // refresh) whenever the tab regains focus, and AccessGuard unmounts its
+    // children while loading, which was wiping in-progress page state (like
+    // the Gerador de Imagem chat) just from switching browser tabs. Refresh
+    // the profile in the background instead.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
       load();
     });
 
