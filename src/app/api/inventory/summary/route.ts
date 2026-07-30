@@ -1,8 +1,8 @@
-import { requireApiUser, handleApiError } from "@/lib/server/api-auth";
+import { requireApiPermission, handleApiError } from "@/lib/server/api-auth";
 import { getInventorySummary } from "@/lib/server/crm-data";
 
 export async function GET(request: Request) {
-  const { response } = await requireApiUser();
+  const { response } = await requireApiPermission("manage_estoque");
   if (response) return response;
 
   try {

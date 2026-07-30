@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireApiPermission } from "@/lib/server/api-auth";
 import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK } from "@/lib/env";
 
 interface ApiMessage {
@@ -23,9 +24,10 @@ async function openAI(body: object) {
 }
 
 export async function POST(request: NextRequest) {
+  const { user, response } = await requireApiPermission("manage_gerador_imagem");
+  if (response) return response;
+
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const {
     messages,
