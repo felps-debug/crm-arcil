@@ -43,15 +43,21 @@ export default function DemandaEstoquePage() {
 
 function DemandaEstoquePageInner() {
   const [search, setSearch] = useState("");
+  const [tableFilter, setTableFilter] = useState("");
   const { data, loading, error } = useApi<InventorySummaryResponse>(`/api/inventory/summary?limit=600&search=${encodeURIComponent(search)}`);
   const products = useMemo(() => data?.products ?? [], [data]);
+  const filteredProducts = useMemo(() => {
+    const q = tableFilter.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter((p) => p.name?.toLowerCase().includes(q) || p.btu?.toLowerCase().includes(q) || p.brand?.toLowerCase().includes(q));
+  }, [products, tableFilter]);
 
   const mostRequested = useMemo(() => products.slice(0, 4), [products]);
   const outOfStockRequests = data?.outOfStockRequests ?? [];
 
   const handleExportCsv = () => {
     const headers = ["Produto", "Marca", "BTU", "Categoria", "Preco", "Estoque", "Disponivel"];
-    const rows = products.map((p) => [p.name, p.brand, p.btu, p.category, p.price, p.stock, p.available]);
+    const rows = filteredProducts.map((p) => [p.name, p.brand, p.btu, p.category, p.price, p.stock, p.available]);
     const csv = [headers, ...rows]
       .map((row) => row.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
       .join("\n");
@@ -121,11 +127,19 @@ function DemandaEstoquePageInner() {
 
           <ConsoleCard pad={false}>
             <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-3">
-              <Search size={14} className="text-[var(--text-muted)]" />
-              <span className="text-[12px] font-semibold text-[var(--text-secondary)]">Filtrar por modelo, BTU ou marca...</span>
+              <Search size={14} className="shrink-0 text-[var(--text-muted)]" />
+              <input
+                value={tableFilter}
+                onChange={(e) => setTableFilter(e.target.value)}
+                placeholder="Filtrar por modelo, BTU ou marca..."
+                className="w-full bg-transparent text-[12px] font-semibold text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]"
+              />
+              {tableFilter && (
+                <span className="shrink-0 font-data text-[11px] text-[var(--text-muted)]">{filteredProducts.length} resultado{filteredProducts.length !== 1 ? "s" : ""}</span>
+              )}
             </div>
             <ConsoleTable headers={["Produto", "Marca", "BTU", "Categoria", "Preco", "Estoque", "Disponivel", "Status"]}>
-              {products.map((p) => (
+              {filteredProducts.map((p) => (
                 <tr key={`${p.source}-${p.id}`} className="border-b border-[var(--border)] last:border-0">
                   <td className="px-3 py-3">
                     <p className="font-semibold text-[var(--text-primary)]">{p.name ?? "-"}</p>
