@@ -40,11 +40,12 @@ type Step =
 
 const STEPS: Step[] = [
   { key: "ambiente", question: "Qual o ambiente da instalacao?", type: "text" },
+  { key: "tipo_parede", question: "Qual o tipo da parede?", type: "choice", options: ["Alvenaria", "Drywall", "Outro"] },
   { key: "foto", question: "Envie uma foto da parede", type: "file" },
   { key: "modelo", question: "Qual o modelo do ar-condicionado?", type: "text" },
   { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
   { key: "ponto_eletrico", question: "Ja existe ponto eletrico na parede?", type: "choice", options: ["Sim", "Nao"] },
-  { key: "unidade_externa", question: "Onde ficara a unidade externa (condensadora)?", type: "text" },
+  { key: "unidade_externa", question: "Onde ficara a unidade externa (condensadora) e a que distancia aproximada?", type: "text" },
   { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente"] },
 ];
 

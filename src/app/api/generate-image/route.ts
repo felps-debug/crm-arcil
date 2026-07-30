@@ -77,6 +77,7 @@ export async function POST(request: NextRequest) {
   if (answers?.tubulacao) collectedData.tubulacao = answers.tubulacao;
   if (answers?.unidade_externa) collectedData.unidade_externa = answers.unidade_externa;
   if (answers?.ponto_eletrico) collectedData.ponto_eletrico = answers.ponto_eletrico === "Sim";
+  if (answers?.tipo_parede) collectedData.tipo_parede = answers.tipo_parede;
 
   // Analyze image with Vision
   let imageDescription = "";
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
 
   const prompt = [
     collectedData.modelo ? `Modelo: ${collectedData.modelo}` : null,
+    collectedData.tipo_parede ? `Tipo de parede: ${collectedData.tipo_parede}` : null,
     collectedData.pe_direito ? `Pé direito: ${collectedData.pe_direito}` : null,
     typeof collectedData.ponto_eletrico === "boolean"
       ? `Ponto elétrico: ${collectedData.ponto_eletrico ? "já existe" : "não existe"}`
