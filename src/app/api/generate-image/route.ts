@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireApiPermission } from "@/lib/server/api-auth";
 import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK } from "@/lib/env";
-import { ARCIL_LOGO_BASE64 } from "@/lib/logo-base64";
+import { ARCIL_WATERMARK_BADGE_BASE64, ARCIL_WATERMARK_BADGE_WIDTH } from "@/lib/watermark-badge";
 
 interface ApiMessage {
   role: "user" | "assistant";
@@ -222,33 +222,19 @@ async function watermarkImage(imageUrl: string, leadId: string): Promise<string>
     if (!imgRes.ok) throw new Error(`fetch imageUrl -> HTTP ${imgRes.status}`);
     const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
 
-    stage = "resize logo";
-    // Logo is embedded as base64 in source — no filesystem or network
-    // dependency, since public/ assets aren't guaranteed to be reachable
-    // (filesystem) or unauthenticated (Vercel deployment protection) from
-    // inside the serverless function.
-    const logoBuffer = await sharp(Buffer.from(ARCIL_LOGO_BASE64, "base64")).resize(28, 28).png().toBuffer();
-
     stage = "read image metadata";
     const base = sharp(imgBuffer);
     const { width = 1536 } = await base.metadata();
 
     stage = "composite watermark";
-    const badgeWidth = 260;
-    const badgeHeight = 44;
-    const left = Math.max(0, width - badgeWidth - 16);
-    const badgeSvg = Buffer.from(
-      `<svg width="${badgeWidth}" height="${badgeHeight}" xmlns="http://www.w3.org/2000/svg">
-        <rect width="${badgeWidth}" height="${badgeHeight}" rx="8" fill="rgba(5,11,20,0.72)"/>
-        <text x="44" y="27" font-family="sans-serif" font-size="14" font-weight="700" fill="#ffffff">Design created by ARCIL AI</text>
-      </svg>`
-    );
-
+    // The badge (logo + "Design created by ARCIL AI" text) is a pre-rendered
+    // PNG embedded as base64 — rendering <text> via SVG at request time
+    // silently produced blank text, because the serverless runtime has no
+    // system font for libvips/librsvg to draw with. Pre-rendering once,
+    // where a font is available, sidesteps that entirely.
+    const left = Math.max(0, width - ARCIL_WATERMARK_BADGE_WIDTH - 16);
     const watermarked = await base
-      .composite([
-        { input: badgeSvg, top: 16, left },
-        { input: logoBuffer, top: 16 + (badgeHeight - 28) / 2, left: left + 8 },
-      ])
+      .composite([{ input: Buffer.from(ARCIL_WATERMARK_BADGE_BASE64, "base64"), top: 16, left }])
       .jpeg({ quality: 95 })
       .toBuffer();
 
