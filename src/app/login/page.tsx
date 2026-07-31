@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { Eye, EyeOff, Loader2, ArrowRight, CheckCircle2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { motion, AnimatePresence } from "framer-motion";
+import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/ui/turnstile-widget";
 
 type Tab = "login" | "signup";
+
+// Only set once a Turnstile site key exists (team hasn't created one yet) —
+// when unset, the widget is skipped entirely and signup behaves as before.
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
 /* ─── Focused Input ───────────────────────────────────────────────── */
 interface FieldProps {
@@ -83,10 +88,12 @@ export default function LoginPage() {
   const [confirmPw, setConfirmPw] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
 
   function reset() {
     setEmail(""); setPw(""); setConfirmPw("");
-    setError(""); setDone(false);
+    setError(""); setDone(false); setCaptchaToken(null);
   }
 
   function switchTab(t: Tab) { setTab(t); reset(); }
@@ -103,9 +110,25 @@ export default function LoginPage() {
     e.preventDefault();
     if (pw !== confirmPw) { setError("As senhas não coincidem."); return; }
     if (pw.length < 6) { setError("Mínimo 6 caracteres."); return; }
+    if (TURNSTILE_SITE_KEY && !captchaToken) {
+      setError("Complete a verificação de segurança.");
+      return;
+    }
     setLoading(true); setError("");
-    const { error: err } = await createClient().auth.signUp({ email, password: pw });
-    if (err) { setError(err.message); setLoading(false); }
+    const { error: err } = await createClient().auth.signUp({
+      email,
+      password: pw,
+      ...(TURNSTILE_SITE_KEY && captchaToken
+        ? { options: { captchaToken } }
+        : {}),
+    });
+    if (err) {
+      setError(err.message);
+      setLoading(false);
+      // Turnstile tokens are single-use — reset so the user can retry.
+      setCaptchaToken(null);
+      turnstileRef.current?.reset();
+    }
     else { setDone(true); setLoading(false); }
   }
 
@@ -355,6 +378,15 @@ export default function LoginPage() {
                           right={<EyeBtn show={showConfirm} toggle={() => setShowConfirm(!showConfirm)} />}
                         />
 
+                        {TURNSTILE_SITE_KEY && (
+                          <TurnstileWidget
+                            ref={turnstileRef}
+                            siteKey={TURNSTILE_SITE_KEY}
+                            onVerify={(token) => { setCaptchaToken(token); setError(""); }}
+                            onExpire={() => setCaptchaToken(null)}
+                          />
+                        )}
+
                         <AnimatePresence>
                           {error && (
                             <motion.p
@@ -371,7 +403,7 @@ export default function LoginPage() {
 
                         <motion.button
                           type="submit"
-                          disabled={loading}
+                          disabled={loading || (!!TURNSTILE_SITE_KEY && !captchaToken)}
                           whileTap={{ scale: 0.987 }}
                           className="w-full py-3 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-opacity"
                           style={{
