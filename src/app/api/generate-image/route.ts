@@ -254,9 +254,15 @@ async function watermarkImage(imageUrl: string, leadId: string): Promise<string>
 
     stage = "upload to storage";
     const storagePath = `watermarked/${leadId}.jpg`;
+    // Upload a Blob, not the raw Buffer — the Supabase storage SDK's binary
+    // handling on the Vercel bundle was mangling the Buffer into repeated
+    // UTF-8 replacement bytes (ef bf bd) somewhere before it hit the wire.
+    // Blob is the type its own docs/browser usage exercise most, so it's
+    // the safer bet here.
+    const blob = new Blob([new Uint8Array(watermarked)], { type: "image/jpeg" });
     const { error: uploadError } = await admin.storage
       .from("PDF")
-      .upload(storagePath, watermarked, { contentType: "image/jpeg", upsert: true });
+      .upload(storagePath, blob, { contentType: "image/jpeg", upsert: true });
     if (uploadError) {
       console.error("[watermarkImage] upload failed:", uploadError.message);
       return imageUrl;
