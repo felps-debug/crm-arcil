@@ -27,6 +27,17 @@ import { getImageGenerationHistory, type ImageGeneration } from "@/lib/supabase/
 import { formatDateTime } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 
+async function downloadImage(url: string, filename: string): Promise<void> {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 interface ChatMessage {
   role: "assistant" | "user";
   content: string;
@@ -171,14 +182,7 @@ function ChatbotPageInner() {
     if (!generatedImageUrl) return;
     setDownloading(true);
     try {
-      const res = await fetch(generatedImageUrl);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `simulacao-${Date.now()}.jpg`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadImage(generatedImageUrl, `simulacao-${Date.now()}.jpg`);
     } catch {
       toast("Erro ao baixar a imagem.", "error");
     } finally {
@@ -534,6 +538,21 @@ function HistoricoTab({
       </ConsoleCard>
     );
   }
+  const { toast } = useToast();
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  async function handleCardDownload(e: React.MouseEvent, item: ImageGeneration) {
+    e.stopPropagation();
+    setDownloadingId(item.id);
+    try {
+      await downloadImage(item.generated_image_url, `simulacao-${item.id}.jpg`);
+    } catch {
+      toast("Erro ao baixar a imagem.", "error");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {items.map((item) => (
@@ -550,8 +569,18 @@ function HistoricoTab({
           className="text-left"
         >
           <ConsoleCard pad={false} className="overflow-hidden transition-colors hover:border-blue-500/50">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={item.generated_image_url} alt="Simulacao gerada" className="h-36 w-full object-cover" />
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={item.generated_image_url} alt="Simulacao gerada" className="h-36 w-full object-cover" />
+              <button
+                onClick={(e) => handleCardDownload(e, item)}
+                disabled={downloadingId === item.id}
+                title="Baixar imagem"
+                className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-[6px] bg-black/60 text-white transition-colors hover:bg-black/80 disabled:opacity-60"
+              >
+                {downloadingId === item.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+              </button>
+            </div>
             <div className="p-3">
               <div className="flex items-center gap-2">
                 <div className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-blue-500/10 text-[9px] font-bold text-blue-300">
@@ -580,6 +609,20 @@ function PreviewModal({
   };
   onClose: () => void;
 }) {
+  const { toast } = useToast();
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      await downloadImage(item.generatedImageUrl, `simulacao-${Date.now()}.jpg`);
+    } catch {
+      toast("Erro ao baixar a imagem.", "error");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
@@ -605,7 +648,10 @@ function PreviewModal({
             <InstallationNotesCard notes={item.installationNotes} source={item.installationNotesSource} />
           </div>
         )}
-        <div className="border-t border-[var(--border)] p-3 text-right">
+        <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] p-3">
+          <ConsoleButton icon={downloading ? Loader2 : Download} active onClick={handleDownload} disabled={downloading}>
+            {downloading ? "Baixando..." : "Baixar imagem"}
+          </ConsoleButton>
           <ConsoleButton onClick={onClose}>Fechar</ConsoleButton>
         </div>
       </div>
