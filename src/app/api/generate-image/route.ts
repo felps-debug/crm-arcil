@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireApiPermission } from "@/lib/server/api-auth";
 import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK } from "@/lib/env";
 import { ARCIL_LOGO_BASE64 } from "@/lib/logo-base64";
@@ -166,7 +167,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
   }
 
-  const finalImageUrl = await watermarkImage(supabase, generatedImageUrl, leadId);
+  const finalImageUrl = await watermarkImage(generatedImageUrl, leadId);
 
   const { installationNotes, notesSource } = await getInstallationNotes(supabase, String(collectedData.modelo ?? ""));
 
@@ -208,9 +209,14 @@ async function getProductImageUrl(supabase: SupabaseClient, modelo: string): Pro
  * reliably rendering text. Falls back to the unmodified n8n URL on any
  * failure — a missing watermark should never block delivering the image.
  */
-async function watermarkImage(supabase: SupabaseClient, imageUrl: string, leadId: string): Promise<string> {
+async function watermarkImage(imageUrl: string, leadId: string): Promise<string> {
   let stage = "start";
   try {
+    // Use the admin (service-role) client for the upload — the SSR-wrapped
+    // user client corrupted the binary buffer on upload (bytes came out as
+    // repeated UTF-8 replacement characters, ef bf bd), most likely because
+    // its fetch wrapper coerces the body through a text path somewhere.
+    const admin = createAdminClient();
     stage = "fetch generated image";
     const imgRes = await fetch(imageUrl);
     if (!imgRes.ok) throw new Error(`fetch imageUrl -> HTTP ${imgRes.status}`);
@@ -248,7 +254,7 @@ async function watermarkImage(supabase: SupabaseClient, imageUrl: string, leadId
 
     stage = "upload to storage";
     const storagePath = `watermarked/${leadId}.jpg`;
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await admin.storage
       .from("PDF")
       .upload(storagePath, watermarked, { contentType: "image/jpeg", upsert: true });
     if (uploadError) {
@@ -256,7 +262,7 @@ async function watermarkImage(supabase: SupabaseClient, imageUrl: string, leadId
       return imageUrl;
     }
 
-    const { data } = supabase.storage.from("PDF").getPublicUrl(storagePath);
+    const { data } = admin.storage.from("PDF").getPublicUrl(storagePath);
     return data.publicUrl;
   } catch (err) {
     console.error(`[watermarkImage] failed at "${stage}":`, err instanceof Error ? err.message : err);
