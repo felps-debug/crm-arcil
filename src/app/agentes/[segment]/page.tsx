@@ -2,14 +2,14 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { Header } from "@/components/layout/header";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { SectionTitle } from "@/components/ui/section-title";
-import { TableRowSkeleton, MetricCardSkeleton } from "@/components/ui/skeleton";
-import { ErrorState } from "@/components/ui/error-state";
-import { MetricCard } from "@/components/ui/metric-card";
+import {
+  ConsoleCard,
+  ConsoleError,
+  ConsoleLoading,
+  ConsoleMetric,
+  ConsolePage,
+  ConsoleStatus,
+} from "@/components/console/console-shell";
 import { useSupabase } from "@/hooks/use-supabase";
 import { getActiveLeads, getFollowups, getRecentConversations } from "@/lib/supabase/queries";
 import { STATUS_LABELS } from "@/types";
@@ -26,18 +26,20 @@ const AGENT_CONFIG: Record<string, {
   icon: typeof Bot;
   color: string;
   bg: string;
-  accent: string;
 }> = {
-  installer: { label: "Instalador",      description: "Técnicos e instaladores de AC",    icon: Wrench,       color: "text-blue-600",    bg: "bg-blue-500/8",    accent: "#4c93ff" },
-  builder:   { label: "Construtor",      description: "Construtoras e empreiteiras",      icon: Building2,    color: "text-emerald-600", bg: "bg-emerald-500/8", accent: "#059669" },
-  reseller:  { label: "Revenda",         description: "Revendas e distribuidores",        icon: Store,        color: "text-violet-600",  bg: "bg-violet-500/8",  accent: "#7c3aed" },
-  consumer:  { label: "Consumidor",      description: "Pessoa física — consumidor final", icon: ShoppingBag,  color: "text-amber-600",   bg: "bg-amber-500/8",   accent: "#d97706" },
-  new:       { label: "Roteadora",       description: "Classifica e roteia novos leads",  icon: RotateCcw,    color: "text-sky-600",     bg: "bg-sky-500/8",     accent: "#0284c7" },
+  installer: { label: "Instalador",      description: "Técnicos e instaladores de AC",    icon: Wrench,       color: "text-blue-400",    bg: "bg-blue-500/8" },
+  builder:   { label: "Construtor",      description: "Construtoras e empreiteiras",      icon: Building2,    color: "text-emerald-400", bg: "bg-emerald-500/8" },
+  reseller:  { label: "Revenda",         description: "Revendas e distribuidores",        icon: Store,        color: "text-violet-400",  bg: "bg-violet-500/8" },
+  consumer:  { label: "Consumidor",      description: "Pessoa física — consumidor final", icon: ShoppingBag,  color: "text-amber-400",   bg: "bg-amber-500/8" },
+  new:       { label: "Roteadora",       description: "Classifica e roteia novos leads",  icon: RotateCcw,    color: "text-sky-400",     bg: "bg-sky-500/8" },
 };
 
-const STATUS_BADGE: Record<LeadStatus, "success" | "danger" | "warning"> = {
-  ACTIVE: "success", LOST: "danger", IN_PROGRESS: "warning",
-};
+function statusTone(status: string | null): "green" | "amber" | "red" | "blue" | "slate" {
+  if (status === "ACTIVE") return "green";
+  if (status === "IN_PROGRESS") return "blue";
+  if (status === "LOST") return "red";
+  return "slate";
+}
 
 export default function AgentDetailPage({ params }: { params: Promise<{ segment: string }> }) {
   const { segment } = use(params);
@@ -45,13 +47,13 @@ export default function AgentDetailPage({ params }: { params: Promise<{ segment:
   const Icon = cfg.icon;
   const segmentUpper = segment.toUpperCase() as LeadSegment;
 
-  const { data: leads, loading: loadingLeads, error: errorLeads, refetch: refetchLeads } =
+  const { data: leads, loading: loadingLeads, error: errorLeads } =
     useSupabase(() => getActiveLeads({ segment: segmentUpper }), [segment]);
 
-  const { data: followups, loading: loadingFu, error: errorFu, refetch: refetchFu } =
+  const { data: followups, loading: loadingFu, error: errorFu } =
     useSupabase(() => getFollowups(), []);
 
-  const { data: conversations, loading: loadingConv, error: errorConv, refetch: refetchConv } =
+  const { data: conversations, loading: loadingConv, error: errorConv } =
     useSupabase(() => getRecentConversations(50), []);
 
   const segmentLeads = leads ?? [];
@@ -67,162 +69,159 @@ export default function AgentDetailPage({ params }: { params: Promise<{ segment:
   const respondedFu = segmentFollowups.filter((f: Followup) => f.respondeu).length;
 
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--bg-base)" }}>
-      <Header
-        title={cfg.label}
-        subtitle={cfg.description}
-      />
+    <ConsolePage title={cfg.label} subtitle={cfg.description}>
+      <div className="flex items-center gap-4">
+        <Link
+          href="/agentes"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+        >
+          <ArrowLeft size={13} />
+          Agentes
+        </Link>
+        <span className="text-[var(--border-strong)]">/</span>
+        <div className={`flex items-center gap-2.5 rounded-full px-3 py-1.5 ${cfg.bg}`}>
+          <Icon size={14} className={cfg.color} strokeWidth={1.8} />
+          <span className={`text-[12px] font-semibold ${cfg.color}`}>{cfg.label}</span>
+        </div>
+      </div>
 
-      <main className="flex-1 overflow-y-auto px-6 py-6 max-w-[1200px] mx-auto w-full space-y-6">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <ConsoleMetric label="Total de Leads" value={totalLeads} icon={Users} tone="blue" />
+        <ConsoleMetric label="Ativos" value={activeLeads} icon={UserCheck} tone="green" />
+        <ConsoleMetric label="Conversão" value={`${convRate}%`} icon={ArrowRightLeft} tone="violet" />
+        <ConsoleMetric label="Follow-ups" value={segmentFollowups.length} icon={MessageCircleReply} tone="amber" />
+      </section>
 
-        {/* Back + agent identity */}
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4">
-          <Link
-            href="/agentes"
-            className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            <ArrowLeft size={13} />
-            Agentes
-          </Link>
-          <span className="text-[var(--border-strong)]">/</span>
-          <div className={`flex items-center gap-2.5 px-3 py-1.5 rounded-full ${cfg.bg}`}>
-            <Icon size={14} className={cfg.color} strokeWidth={1.8} />
-            <span className={`text-[12px] font-semibold ${cfg.color}`}>{cfg.label}</span>
+      <ConsoleCard pad={false}>
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Users size={15} className="text-blue-300" />
+            <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Leads deste Agente</h2>
           </div>
-        </motion.div>
+          <span className="font-data text-[11px] text-[var(--text-muted)]">{totalLeads} leads</span>
+        </div>
+        {loadingLeads ? (
+          <div className="p-4"><ConsoleLoading /></div>
+        ) : errorLeads ? (
+          <div className="p-4"><ConsoleError message={errorLeads} /></div>
+        ) : !segmentLeads.length ? (
+          <p className="py-12 text-center text-[13px] text-[var(--text-muted)]">Nenhum lead neste segmento</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-[12px]">
+              <thead>
+                <tr className="border-b border-[var(--border)] bg-[var(--bg-inset)]">
+                  {["Nome", "Telefone", "Status", "Cidade", "Criado em"].map((h) => (
+                    <th key={h} className="whitespace-nowrap px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {segmentLeads.slice(0, 20).map((lead: Lead) => (
+                  <tr key={lead.id} className="border-b border-[var(--border)] last:border-0">
+                    <td className="px-3 py-2.5 font-semibold text-[var(--text-primary)]">{lead.name ?? "—"}</td>
+                    <td className="px-3 py-2.5 font-data text-[var(--text-secondary)]">{lead.wa_phone ?? "—"}</td>
+                    <td className="px-3 py-2.5">
+                      {lead.status ? <ConsoleStatus tone={statusTone(lead.status)}>{STATUS_LABELS[lead.status as LeadStatus]}</ConsoleStatus> : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-[var(--text-secondary)]">{lead.city ?? lead.region ?? "—"}</td>
+                    <td className="px-3 py-2.5 font-data text-[11px] text-[var(--text-muted)]">
+                      {lead.created_at ? new Date(lead.created_at).toLocaleDateString("pt-BR") : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ConsoleCard>
 
-        {/* Metrics */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {loadingLeads ? (
-            Array.from({ length: 4 }).map((_, i) => <MetricCardSkeleton key={i} />)
-          ) : (
-            <>
-              <MetricCard label="Total de Leads"  value={String(totalLeads)}     icon={Users}               accent="blue"    />
-              <MetricCard label="Ativos"          value={String(activeLeads)}    icon={UserCheck}           accent="emerald" />
-              <MetricCard label="Conversão"       value={`${convRate}%`}         icon={ArrowRightLeft}      accent="violet"  />
-              <MetricCard label="Follow-ups"      value={String(segmentFollowups.length)} icon={MessageCircleReply} accent="amber"  />
-            </>
-          )}
-        </section>
+      <ConsoleCard pad={false}>
+        <div className="border-b border-[var(--border)] px-4 py-3">
+          <div className="flex items-center gap-2">
+            <MessageCircleReply size={15} className="text-violet-300" />
+            <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Follow-ups</h2>
+          </div>
+          <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">{respondedFu} de {segmentFollowups.length} responderam</p>
+        </div>
+        {loadingFu ? (
+          <div className="p-4"><ConsoleLoading /></div>
+        ) : errorFu ? (
+          <div className="p-4"><ConsoleError message={errorFu} /></div>
+        ) : !segmentFollowups.length ? (
+          <p className="py-10 text-center text-[13px] text-[var(--text-muted)]">Nenhum follow-up registrado</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-[12px]">
+              <thead>
+                <tr className="border-b border-[var(--border)] bg-[var(--bg-inset)]">
+                  {["Cliente", "Telefone", "Step", "Respondeu", "Produto", "Status"].map((h) => (
+                    <th key={h} className="whitespace-nowrap px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {segmentFollowups.slice(0, 15).map((f: Followup) => (
+                  <tr key={f.id} className="border-b border-[var(--border)] last:border-0">
+                    <td className="px-3 py-2.5 font-semibold text-[var(--text-primary)]">{f.nome_cliente ?? "—"}</td>
+                    <td className="px-3 py-2.5 font-data text-[var(--text-secondary)]">{f.numero_cliente ?? "—"}</td>
+                    <td className="px-3 py-2.5"><ConsoleStatus tone={f.followup_step && f.followup_step >= 3 ? "red" : "blue"}>Step {f.followup_step ?? 0}</ConsoleStatus></td>
+                    <td className="px-3 py-2.5">{f.respondeu ? <CheckCircle2 size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
+                    <td className="max-w-[180px] truncate px-3 py-2.5 text-[var(--text-secondary)]">{f.produto_negociado ?? "—"}</td>
+                    <td className="px-3 py-2.5"><ConsoleStatus tone={f.status === "PENDING" ? "amber" : "slate"}>{f.status ?? "—"}</ConsoleStatus></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ConsoleCard>
 
-        {/* Leads table */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <SectionTitle icon={Users} title="Leads deste Agente" subtitle={`${totalLeads} leads`} />
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loadingLeads ? (
-              <div className="p-5">{Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
-            ) : errorLeads ? (
-              <div className="p-5"><ErrorState message={errorLeads} onRetry={refetchLeads} /></div>
-            ) : !segmentLeads.length ? (
-              <p className="text-sm text-center py-12 text-[var(--text-muted)]">Nenhum lead neste segmento</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm table-enterprise">
-                  <thead>
-                    <tr>{["Nome", "Telefone", "Status", "Cidade", "Criado em"].map((h) => <th key={h}>{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {segmentLeads.slice(0, 20).map((lead: Lead) => (
-                      <tr key={lead.id}>
-                        <td className="font-medium text-[var(--text-primary)]">{lead.name ?? "—"}</td>
-                        <td className="tabular-nums">{lead.wa_phone ?? "—"}</td>
-                        <td>{lead.status ? <Badge variant={STATUS_BADGE[lead.status as LeadStatus]}>{STATUS_LABELS[lead.status as LeadStatus]}</Badge> : "—"}</td>
-                        <td>{lead.city ?? lead.region ?? "—"}</td>
-                        <td className="text-xs tabular-nums text-[var(--text-muted)]">
-                          {lead.created_at ? new Date(lead.created_at).toLocaleDateString("pt-BR") : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Follow-ups */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <SectionTitle icon={MessageCircleReply} title="Follow-ups" subtitle={`${respondedFu} de ${segmentFollowups.length} responderam`} iconBg="bg-violet-500/10" iconColor="text-violet-600" />
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loadingFu ? (
-              <div className="p-5">{Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
-            ) : errorFu ? (
-              <div className="p-5"><ErrorState message={errorFu} onRetry={refetchFu} /></div>
-            ) : !segmentFollowups.length ? (
-              <p className="text-sm text-center py-10 text-[var(--text-muted)]">Nenhum follow-up registrado</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm table-enterprise">
-                  <thead>
-                    <tr>{["Cliente", "Telefone", "Step", "Respondeu", "Produto", "Status"].map((h) => <th key={h}>{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {segmentFollowups.slice(0, 15).map((f: Followup) => (
-                      <tr key={f.id}>
-                        <td className="font-medium text-[var(--text-primary)]">{f.nome_cliente ?? "—"}</td>
-                        <td className="tabular-nums">{f.numero_cliente ?? "—"}</td>
-                        <td><Badge variant={f.followup_step && f.followup_step >= 3 ? "danger" : "info"}>Step {f.followup_step ?? 0}</Badge></td>
-                        <td>{f.respondeu ? <CheckCircle2 size={16} className="text-emerald-500" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}</td>
-                        <td className="text-[var(--text-secondary)] max-w-[180px] truncate">{f.produto_negociado ?? "—"}</td>
-                        <td><Badge variant={f.status === "PENDING" ? "warning" : "default"}>{f.status ?? "—"}</Badge></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Conversations */}
-        <Card>
-          <CardHeader>
-            <SectionTitle icon={ArrowRightLeft} title="Conversas Recentes" subtitle="Últimas interações registradas" />
-          </CardHeader>
-          <CardContent className="p-0">
-            {loadingConv ? (
-              <div className="p-5">{Array.from({ length: 4 }).map((_, i) => <TableRowSkeleton key={i} />)}</div>
-            ) : errorConv ? (
-              <div className="p-5"><ErrorState message={errorConv} onRetry={refetchConv} /></div>
-            ) : !segmentConversations.length ? (
-              <p className="text-sm text-center py-10 text-[var(--text-muted)]">Nenhuma conversa registrada</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm table-enterprise">
-                  <thead>
-                    <tr>{["Canal", "Intenção", "Resumo", "Status", "Início"].map((h) => <th key={h}>{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {(segmentConversations as Conversation[]).slice(0, 10).map((conv) => (
-                      <tr key={conv.id}>
-                        <td><Badge variant="info">{conv.channel ?? "—"}</Badge></td>
-                        <td className="font-medium text-[var(--text-primary)]">{conv.intent ?? "—"}</td>
-                        <td className="max-w-[260px] truncate text-[var(--text-secondary)]">{conv.summary ?? "—"}</td>
-                        <td>
-                          <Badge variant={conv.status === "completed" ? "success" : conv.status === "active" ? "info" : "warning"}>
-                            {conv.status ?? "—"}
-                          </Badge>
-                        </td>
-                        <td className="text-xs tabular-nums text-[var(--text-muted)]">
-                          {conv.started_at ? new Date(conv.started_at).toLocaleString("pt-BR") : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </main>
-    </div>
+      <ConsoleCard pad={false}>
+        <div className="border-b border-[var(--border)] px-4 py-3">
+          <div className="flex items-center gap-2">
+            <ArrowRightLeft size={15} className="text-[var(--text-muted)]" />
+            <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Conversas Recentes</h2>
+          </div>
+          <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">Últimas interações registradas</p>
+        </div>
+        {loadingConv ? (
+          <div className="p-4"><ConsoleLoading /></div>
+        ) : errorConv ? (
+          <div className="p-4"><ConsoleError message={errorConv} /></div>
+        ) : !segmentConversations.length ? (
+          <p className="py-10 text-center text-[13px] text-[var(--text-muted)]">Nenhuma conversa registrada</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-[12px]">
+              <thead>
+                <tr className="border-b border-[var(--border)] bg-[var(--bg-inset)]">
+                  {["Canal", "Intenção", "Resumo", "Status", "Início"].map((h) => (
+                    <th key={h} className="whitespace-nowrap px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(segmentConversations as Conversation[]).slice(0, 10).map((conv) => (
+                  <tr key={conv.id} className="border-b border-[var(--border)] last:border-0">
+                    <td className="px-3 py-2.5"><ConsoleStatus tone="blue">{conv.channel ?? "—"}</ConsoleStatus></td>
+                    <td className="px-3 py-2.5 font-semibold text-[var(--text-primary)]">{conv.intent ?? "—"}</td>
+                    <td className="max-w-[260px] truncate px-3 py-2.5 text-[var(--text-secondary)]">{conv.summary ?? "—"}</td>
+                    <td className="px-3 py-2.5">
+                      <ConsoleStatus tone={conv.status === "completed" ? "green" : conv.status === "active" ? "blue" : "amber"}>
+                        {conv.status ?? "—"}
+                      </ConsoleStatus>
+                    </td>
+                    <td className="px-3 py-2.5 font-data text-[11px] text-[var(--text-muted)]">
+                      {conv.started_at ? new Date(conv.started_at).toLocaleString("pt-BR") : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ConsoleCard>
+    </ConsolePage>
   );
 }

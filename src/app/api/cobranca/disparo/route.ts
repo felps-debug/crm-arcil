@@ -1,26 +1,38 @@
 import { NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireApiPermission } from "@/lib/server/api-auth";
 
 type DisparoLead = Record<string, string>;
 
 const PYTHON_COBRANCA_URL = (process.env.PYTHON_COBRANCA_URL || "https://arcil-arcil-cobranca-py.47nukb.easypanel.host/cobranca").trim().replace(/^﻿/, "");
 
-const COBRANCA_ROLES = ["superadmin", "owner", "manager"];
+const MAX_LEADS_PER_DISPARO = 1000;
+const PHONE_RE = /^55\d{10,11}$/;
+
+function validateLeads(leads: DisparoLead[]): string | null {
+  if (leads.length > MAX_LEADS_PER_DISPARO) {
+    return `Máximo de ${MAX_LEADS_PER_DISPARO} leads por disparo (recebido: ${leads.length})`;
+  }
+  for (const lead of leads) {
+    const numero = lead["numero"];
+    if (!numero || !PHONE_RE.test(numero)) {
+      return `Telefone inválido: "${numero ?? ""}" — esperado DDI 55 + DDD + número (10-11 dígitos)`;
+    }
+  }
+  return null;
+}
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
-  const admin = createAdminClient();
-  const { data: profile } = await admin.from("user_profiles").select("role").eq("id", user.id).single();
-  if (!profile || !COBRANCA_ROLES.includes(String(profile.role))) {
-    return Response.json({ error: "Sem permissão para disparar cobrança" }, { status: 403 });
-  }
+  const { user, response } = await requireApiPermission("manage_cobranca");
+  if (response) return response;
 
   const { leads }: { leads: DisparoLead[] } = await req.json();
   if (!leads?.length) return Response.json({ error: "Nenhum lead fornecido" }, { status: 400 });
+
+  const validationError = validateLeads(leads);
+  if (validationError) return Response.json({ error: validationError }, { status: 400 });
+
+  const admin = createAdminClient();
 
   // Build phone → boletos_json map before dispatch
   const boletosByPhone: Record<string, string> = {};
@@ -89,6 +101,14 @@ export async function POST(req: NextRequest) {
       console.error("[DISPARO] Falha ao salvar boletos_json no metadata:", err);
     }
   }
+
+  await admin.from("activity_log").insert({
+    entity_type: "cobranca_disparo",
+    entity_id: crypto.randomUUID(),
+    action: "disparo",
+    metadata: { count: leads.length, pythonStatus, actor_id: user!.id },
+    wf_origin: "crm",
+  });
 
   return Response.json({ ok: true, inserted: leads.length, pythonStatus });
 }

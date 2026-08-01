@@ -46,7 +46,7 @@ function CobrancaPageInner() {
   const [expandedMeta, setExpandedMeta] = useState<string | null>(null);
 
   const { data: stats, loading: loadingStats, error: errorStats } = useSupabase(() => getCobrancaStats(), []);
-  const { data: followups, loading: loadingFu, error: errorFu, refetch: refetchFu } = useSupabase(() => getFollowupsByType("cobranca"), []);
+  const { data: followups, loading: loadingFu, error: errorFu } = useSupabase(() => getFollowupsByType("cobranca"), []);
 
   const [logs, setLogs] = useState<CobrancaLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
@@ -116,9 +116,15 @@ function CobrancaPageInner() {
         )}
       </section>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Seções de cobrança">
         {TABS.filter((t) => !t.adminOnly || isSuperAdmin).map((t) => (
-          <ConsoleButton key={t.id} active={tab === t.id} onClick={() => setTab(t.id)}>
+          <ConsoleButton
+            key={t.id}
+            active={tab === t.id}
+            onClick={() => setTab(t.id)}
+            role="tab"
+            aria-selected={tab === t.id}
+          >
             {t.label}
             {t.count !== undefined && t.count > 0 && <span className="font-data opacity-80">{t.count}</span>}
           </ConsoleButton>

@@ -56,11 +56,14 @@ export async function getActiveLeads(filters?: { segment?: string; status?: stri
 }
 
 export async function getLeadsBySearch(query: string): Promise<Lead[]> {
-  if (!query.trim()) return [];
+  // Strip comma/parens — PostgREST's .or() splits on "," and groups on "()",
+  // so leaving them in lets a search string inject extra filter clauses.
+  const safe = query.replace(/[,()]/g, "").trim();
+  if (!safe) return [];
   const { data, error } = await supabase
     .from("leads")
     .select(LEAD_FIELDS)
-    .or(`name.ilike.%${query}%,wa_phone.ilike.%${query}%,company.ilike.%${query}%`)
+    .or(`name.ilike.%${safe}%,wa_phone.ilike.%${safe}%,company.ilike.%${safe}%`)
     .order("created_at", { ascending: false })
     .limit(10);
 

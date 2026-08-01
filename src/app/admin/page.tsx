@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { KeyRound, MoreVertical, Plus, Shield, UserRound, Users, X } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Check, KeyRound, MoreVertical, Plus, Shield, UserRound, Users, X } from "lucide-react";
 import {
   ConsoleButton,
   ConsoleCard,
@@ -71,7 +73,6 @@ function AdminPageInner() {
   const activity = useApi<ActivityLogResponse>(`/api/admin/activity?t=${reloadToken}`);
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null);
 
   const users = useMemo(() => {
     const all = data?.users ?? [];
@@ -92,7 +93,6 @@ function AdminPageInner() {
       return;
     }
     toast("Papel atualizado.", "success");
-    setMenuOpenFor(null);
     setReloadToken((t) => t + 1);
   }
 
@@ -119,7 +119,6 @@ function AdminPageInner() {
       return;
     }
     toast("Usuario removido.", "success");
-    setMenuOpenFor(null);
     setReloadToken((t) => t + 1);
   }
 
@@ -132,7 +131,8 @@ function AdminPageInner() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar usuarios..."
-          className="w-64"
+          aria-label="Buscar usuarios"
+          className="w-full sm:w-64"
         />
       }
     >
@@ -167,48 +167,62 @@ function AdminPageInner() {
                   </td>
                   <td className="px-3 py-3"><ConsoleStatus tone={roleTone[user.role ?? ""] ?? "slate"}>{user.role ?? "employee"}</ConsoleStatus></td>
                   <td className="px-3 py-3 font-data text-[var(--text-secondary)]">{formatDateTime(user.created_at)}</td>
-                  <td className="relative px-3 py-3">
-                    <ConsoleButton icon={MoreVertical} onClick={() => setMenuOpenFor(menuOpenFor === user.id ? null : user.id)} />
-                    {menuOpenFor === user.id && (
-                      <div className="absolute right-3 top-11 z-20 w-56 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] p-2 shadow-[var(--shadow-lg)]">
-                        <p className="px-2 pb-1 text-[10px] font-bold uppercase text-[var(--text-muted)]">Alterar papel</p>
-                        {ROLES.map((role) => (
-                          <button
-                            key={role}
-                            onClick={() => handleChangeRole(user.id, role)}
-                            className="block w-full rounded-[6px] px-2 py-1.5 text-left text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
-                          >
-                            {role}
-                          </button>
-                        ))}
-                        <div className="my-1 h-px bg-[var(--border)]" />
-                        <p className="px-2 pb-1 text-[10px] font-bold uppercase text-[var(--text-muted)]">Acesso a modulos</p>
-                        {MODULE_PERMISSIONS.map((mod) => {
-                          const checked = user.permissions?.[mod.key] === true;
-                          return (
-                            <label
-                              key={mod.key}
-                              className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]"
-                            >
-                              <input
-                                type="checkbox"
-                                className="accent-blue-500"
-                                checked={checked}
-                                onChange={(e) => handleTogglePermission(user, mod.key, e.target.checked)}
-                              />
-                              {mod.label}
-                            </label>
-                          );
-                        })}
-                        <div className="my-1 h-px bg-[var(--border)]" />
-                        <button
-                          onClick={() => handleDeleteUser(user.id)}
-                          className="block w-full rounded-[6px] px-2 py-1.5 text-left text-[12px] font-bold text-red-400 hover:bg-red-500/10"
+                  <td className="px-3 py-3">
+                    <DropdownMenu.Root>
+                      <DropdownMenu.Trigger asChild>
+                        <ConsoleButton icon={MoreVertical} aria-label="Ações do usuário" />
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Content
+                          align="end"
+                          sideOffset={4}
+                          className="z-20 w-56 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] p-2 shadow-[var(--shadow-lg)]"
                         >
-                          Remover usuario
-                        </button>
-                      </div>
-                    )}
+                          <DropdownMenu.Label className="px-2 pb-1 text-[10px] font-bold uppercase text-[var(--text-muted)]">
+                            Alterar papel
+                          </DropdownMenu.Label>
+                          {ROLES.map((role) => (
+                            <DropdownMenu.Item
+                              key={role}
+                              onSelect={() => handleChangeRole(user.id, role)}
+                              className="block w-full cursor-pointer rounded-[6px] px-2 py-1.5 text-left text-[12px] font-medium text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-subtle)] focus:bg-[var(--bg-subtle)]"
+                            >
+                              {role}
+                            </DropdownMenu.Item>
+                          ))}
+                          <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
+                          <DropdownMenu.Label className="px-2 pb-1 text-[10px] font-bold uppercase text-[var(--text-muted)]">
+                            Acesso a modulos
+                          </DropdownMenu.Label>
+                          {MODULE_PERMISSIONS.map((mod) => {
+                            const checked = user.permissions?.[mod.key] === true;
+                            return (
+                              <DropdownMenu.CheckboxItem
+                                key={mod.key}
+                                checked={checked}
+                                onCheckedChange={(value) => handleTogglePermission(user, mod.key, value)}
+                                onSelect={(e) => e.preventDefault()}
+                                className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-subtle)] focus:bg-[var(--bg-subtle)]"
+                              >
+                                <span className="grid h-3.5 w-3.5 place-items-center">
+                                  <DropdownMenu.ItemIndicator>
+                                    <Check size={12} />
+                                  </DropdownMenu.ItemIndicator>
+                                </span>
+                                {mod.label}
+                              </DropdownMenu.CheckboxItem>
+                            );
+                          })}
+                          <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
+                          <DropdownMenu.Item
+                            onSelect={() => handleDeleteUser(user.id)}
+                            className="block w-full cursor-pointer rounded-[6px] px-2 py-1.5 text-left text-[12px] font-bold text-red-400 outline-none hover:bg-red-500/10 focus:bg-red-500/10"
+                          >
+                            Remover usuario
+                          </DropdownMenu.Item>
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu.Root>
                   </td>
                 </tr>
               ))}
@@ -294,32 +308,37 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-      <div className="w-full max-w-md rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-xl)]">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-[14px] font-bold text-[var(--text-primary)]">Criar usuario</h2>
-          <button onClick={onClose} aria-label="Fechar" className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-            <X size={16} />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <ConsoleInput type="text" placeholder="Nome completo" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full" />
-          <ConsoleInput type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full" />
-          <ConsoleInput type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full" />
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            className="w-full rounded-[8px] border border-[var(--border-strong)] bg-[var(--bg-inset)] px-3 py-2 text-[13px] text-[var(--text-primary)]"
-          >
-            {ROLES.map((r) => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-          <ConsoleButton type="submit" active className="w-full justify-center" disabled={saving}>
-            {saving ? "Criando..." : "Criar usuario"}
-          </ConsoleButton>
-        </form>
-      </div>
-    </div>
+    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 px-4" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-xl)] focus:outline-none">
+          <div className="mb-4 flex items-center justify-between">
+            <Dialog.Title className="text-[14px] font-bold text-[var(--text-primary)]">Criar usuario</Dialog.Title>
+            <Dialog.Close asChild>
+              <button aria-label="Fechar" className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                <X size={16} />
+              </button>
+            </Dialog.Close>
+          </div>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <ConsoleInput type="text" placeholder="Nome completo" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full" />
+            <ConsoleInput type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full" />
+            <ConsoleInput type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full" />
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="w-full rounded-[8px] border border-[var(--border-strong)] bg-[var(--bg-inset)] px-3 py-2 text-[13px] text-[var(--text-primary)]"
+            >
+              {ROLES.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+            <ConsoleButton type="submit" active className="w-full justify-center" disabled={saving}>
+              {saving ? "Criando..." : "Criar usuario"}
+            </ConsoleButton>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

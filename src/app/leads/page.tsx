@@ -43,7 +43,12 @@ function statusTone(status: string | null): "green" | "amber" | "red" | "blue" |
 }
 
 export default function LeadsPage() {
-  const [view, setView] = useState<ViewMode>("kanban");
+  // Kanban needs horizontal scroll room a phone doesn't have — default to the
+  // existing Cards view below 768px instead. Lazy initializer (not an effect)
+  // so there's no flash of the wrong view before it corrects itself.
+  const [view, setView] = useState<ViewMode>(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches ? "cards" : "kanban"
+  );
   const [segment, setSegment] = useState("");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -70,7 +75,13 @@ export default function LeadsPage() {
       title="Leads"
       subtitle="Gestao de leads e oportunidades"
       actions={
-        <ConsoleInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar lead..." className="w-64" />
+        <ConsoleInput
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar lead..."
+          aria-label="Buscar lead"
+          className="w-full sm:w-64"
+        />
       }
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -85,7 +96,7 @@ export default function LeadsPage() {
         <div className="flex gap-2">
           <ConsoleButton icon={Grid2X2} active={view === "cards"} onClick={() => setView("cards")}>Cards</ConsoleButton>
           <ConsoleButton icon={List} active={view === "table"} onClick={() => setView("table")}>Tabela</ConsoleButton>
-          <ConsoleButton icon={Kanban} active={view === "kanban"} onClick={() => setView("kanban")}>Kanban</ConsoleButton>
+          <ConsoleButton icon={Kanban} active={view === "kanban"} onClick={() => setView("kanban")} className="hidden md:inline-flex">Kanban</ConsoleButton>
         </div>
       </div>
 
@@ -115,14 +126,21 @@ export default function LeadsPage() {
 function LeadsTable({ leads, onSelect, selectedId }: { leads: LeadListItem[]; onSelect: (id: string) => void; selectedId: string | null }) {
   return (
     <ConsoleCard pad={false}>
-      <ConsoleTable headers={["", "Lead", "Segmento", "Status", "Responsavel", "Ultimo contato", "Proxima acao"]}>
+      <ConsoleTable headers={["Lead", "Segmento", "Status", "Responsavel", "Ultimo contato", "Proxima acao"]}>
         {leads.map((lead) => (
           <tr
             key={lead.id}
             onClick={() => onSelect(lead.id)}
-            className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-blue-500/5 ${selectedId === lead.id ? "bg-blue-500/10" : ""}`}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(lead.id);
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-blue-500/5 focus-visible:bg-blue-500/10 ${selectedId === lead.id ? "bg-blue-500/10" : ""}`}
           >
-            <td className="px-3 py-3"><input type="checkbox" onClick={(e) => e.stopPropagation()} /></td>
             <td className="px-3 py-3">
               <div className="font-semibold text-[var(--text-primary)]">{lead.name ?? "Sem nome"}</div>
               <div className="mt-1 flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
@@ -141,7 +159,7 @@ function LeadsTable({ leads, onSelect, selectedId }: { leads: LeadListItem[]; on
       </ConsoleTable>
       <div className="flex items-center justify-between border-t border-[var(--border)] px-4 py-3 text-[11px] text-[var(--text-muted)]">
         <span>Exibindo {leads.length} leads</span>
-        <span className="font-data">1 / 1</span>
+        {leads.length >= 300 && <span className="font-data text-amber-400">Limite de 300 atingido — refine a busca</span>}
       </div>
     </ConsoleCard>
   );
@@ -156,33 +174,33 @@ function LeadsKanban({ leads, onSelect }: { leads: LeadListItem[]; onSelect: (id
           <ConsoleCard key={stage.id} className="min-h-[620px] w-[284px] shrink-0 p-3">
             <div className="mb-3 flex items-start justify-between">
               <h2 className="text-[11px] font-bold uppercase tracking-[0.04em] text-[var(--text-primary)]">{stage.label}</h2>
-              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#17283f] px-1.5 font-data text-[10px] text-blue-200">
+              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[var(--bg-inset)] px-1.5 font-data text-[10px] text-blue-300">
                 {stageLeads.length}
               </span>
             </div>
             <div className="space-y-3">
               {stageLeads.length === 0 && (
-                <p className="px-1 py-6 text-center text-[11px] text-[#66748a]">Nenhum lead neste estado</p>
+                <p className="px-1 py-6 text-center text-[11px] text-[var(--text-muted)]">Nenhum lead neste estado</p>
               )}
               {stageLeads.map((lead) => (
                 <button
                   key={lead.id}
                   onClick={() => onSelect(lead.id)}
-                  className="w-full rounded-[10px] border border-[#223047] bg-[#101b2c] p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-blue-500/60"
+                  className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--bg-inset)] p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-blue-500/60"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-[13px] font-bold text-white">{lead.name ?? "Sem nome"}</p>
+                      <p className="text-[13px] font-bold text-[var(--text-primary)]">{lead.name ?? "Sem nome"}</p>
                       <ConsoleStatus tone={lead.segment === "INSTALLER" ? "green" : lead.segment === "RESELLER" ? "violet" : "slate"}>
                         {lead.segmentLabel}
                       </ConsoleStatus>
                     </div>
                     <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-bold text-violet-200">IA</span>
                   </div>
-                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-[#9aa8bb]">
+                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
                     <Phone size={11} /> {lead.phone ?? "-"}
                   </div>
-                  <div className="mt-3 space-y-1.5 text-[10px] text-[#9aa8bb]">
+                  <div className="mt-3 space-y-1.5 text-[10px] text-[var(--text-muted)]">
                     <div className="flex items-center gap-1.5">
                       <CalendarDays size={11} /> Ultimo contato: {formatDateTime(lead.lastContactAt)}
                     </div>

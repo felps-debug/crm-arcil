@@ -1,8 +1,8 @@
-import { requireApiUser, handleApiError } from "@/lib/server/api-auth";
+import { requireStaffUser, handleApiError } from "@/lib/server/api-auth";
 import { getVendorConversations } from "@/lib/server/crm-data";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { response } = await requireApiUser();
+  const { response } = await requireStaffUser();
   if (response) return response;
 
   try {

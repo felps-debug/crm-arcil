@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireApiPermission } from "@/lib/server/api-auth";
 
 export async function GET(request: NextRequest) {
+  const { response } = await requireApiPermission("manage_gerador_imagem");
+  if (response) return response;
+
   const sessionId = request.nextUrl.searchParams.get("sessionId");
   if (!sessionId) {
     return Response.json({ error: "sessionId obrigatório" }, { status: 400 });

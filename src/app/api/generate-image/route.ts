@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireApiPermission } from "@/lib/server/api-auth";
 import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK } from "@/lib/env";
+import { assertEnv } from "@/lib/server/env-guard";
 import { ARCIL_WATERMARK_BADGE_BASE64, ARCIL_WATERMARK_BADGE_WIDTH } from "@/lib/watermark-badge";
 
 interface ApiMessage {
@@ -27,6 +28,14 @@ async function openAI(body: object) {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    assertEnv("OPENAI_API_KEY", OPENAI_API_KEY);
+    assertEnv("N8N_CHATBOT_WEBHOOK", N8N_CHATBOT_WEBHOOK);
+  } catch (err) {
+    console.error("[generate-image]", err);
+    return Response.json({ error: "Configuração do servidor incompleta" }, { status: 500 });
+  }
+
   const { user, response } = await requireApiPermission("manage_gerador_imagem");
   if (response) return response;
 
@@ -40,9 +49,10 @@ export async function POST(request: NextRequest) {
 
   if (imageUrl) {
     const allowedHost = new URL(SUPABASE_URL).hostname;
+    const allowedPathPrefix = "/storage/v1/object/public/chatbot-images/";
     try {
       const parsed = new URL(imageUrl);
-      if (parsed.hostname !== allowedHost) {
+      if (parsed.hostname !== allowedHost || !parsed.pathname.startsWith(allowedPathPrefix)) {
         return Response.json({ error: "imageUrl não permitido" }, { status: 400 });
       }
     } catch {

@@ -21,7 +21,7 @@ export function ConsolePage({
             <h1 className="text-[22px] font-bold leading-tight tracking-normal text-[var(--text-primary)]">{title}</h1>
             {subtitle && <p className="mt-0.5 text-[12px] font-medium text-[var(--text-muted)]">{subtitle}</p>}
           </div>
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
         {children}
       </div>

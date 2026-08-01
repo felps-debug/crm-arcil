@@ -1,20 +1,10 @@
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { requireApiPermission } from "@/lib/server/api-auth";
 
 const PYTHON_BASE_URL = (process.env.PYTHON_BASE_URL || "https://arcil-arcil-cobranca-py.47nukb.easypanel.host").trim().replace(/^﻿/, "");
 
-const COBRANCA_ROLES = ["superadmin", "owner", "manager"];
-
 export async function POST() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
-  const admin = createAdminClient();
-  const { data: profile } = await admin.from("user_profiles").select("role").eq("id", user.id).single();
-  if (!profile || !COBRANCA_ROLES.includes(String(profile.role))) {
-    return Response.json({ error: "Sem permissão" }, { status: 403 });
-  }
+  const { response } = await requireApiPermission("manage_cobranca");
+  if (response) return response;
 
   let pythonStatus: string;
   try {

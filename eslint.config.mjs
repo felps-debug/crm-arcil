@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Isolated git worktrees (e.g. created by parallel agent workflows) —
+    // each is a full nested checkout and must not be linted as part of this project.
+    ".claude/worktrees/**",
   ]),
 ]);
 

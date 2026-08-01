@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Activity, BarChart3, Bot, DollarSign, MessageCircle, Receipt, TrendingUp, UserPlus, Users, Zap } from "lucide-react";
 import {
   ConsoleCard,
@@ -12,6 +13,7 @@ import {
 } from "@/components/console/console-shell";
 import { formatMoney, formatNumber, useApi } from "@/lib/client-api";
 import { useSupabase } from "@/hooks/use-supabase";
+import { createClient } from "@/lib/supabase/client";
 import { getRecentActivity } from "@/lib/supabase/queries";
 import { formatRelativeTime } from "@/lib/utils";
 import type { DashboardSummaryResponse } from "@/types/api";
@@ -27,8 +29,25 @@ function toneForIndex(index: number): "blue" | "green" | "amber" | "red" | "viol
 }
 
 export default function DashboardPage() {
-  const summary = useApi<DashboardSummaryResponse>("/api/dashboard/summary");
-  const { data: activity, loading: loadingActivity } = useSupabase(() => getRecentActivity(), []);
+  // Bump on any lead/sale/billing change so the dashboard updates live instead
+  // of only on a manual refresh — same postgres_changes pattern used in /cobranca.
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const ch = supabase
+      .channel("dashboard-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => setRefreshTick((t) => t + 1))
+      .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, () => setRefreshTick((t) => t + 1))
+      .on("postgres_changes", { event: "*", schema: "public", table: "billing" }, () => setRefreshTick((t) => t + 1))
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, []);
+
+  const summary = useApi<DashboardSummaryResponse>(`/api/dashboard/summary${refreshTick ? `?_r=${refreshTick}` : ""}`);
+  const { data: activity, loading: loadingActivity } = useSupabase(() => getRecentActivity(), [refreshTick]);
 
   const loading = summary.loading;
   const error = summary.error;

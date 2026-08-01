@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   Bot,
   Boxes,
   Brain,
   CreditCard,
   Gauge,
+  Headset,
   Image as ImageIcon,
   LogOut,
+  Menu,
   Moon,
   Settings,
   ShieldCheck,
@@ -31,6 +34,7 @@ const NAV = [
   { href: "/demanda-estoque", label: "Demanda & Estoque", icon: Boxes, perm: "manage_estoque" },
   { href: "/cobranca", label: "Campanhas & Cobrancas", icon: CreditCard, perm: "manage_cobranca" },
   { href: "/chatbot", label: "Gerador de Imagem", icon: ImageIcon, perm: "manage_gerador_imagem" },
+  { href: "/atendimento", label: "Atendimento", icon: Headset, perm: "manage_atendimento" },
   { href: "/cerebro", label: "Cerebro Arcil", icon: Brain },
   { href: "/admin", label: "Admin", icon: ShieldCheck, superAdminOnly: true },
 ];
@@ -41,6 +45,16 @@ export function Sidebar() {
   const { profile, isSuperAdmin, isOwnerOrAbove, can } = useCurrentUser();
   const { theme, toggle: toggleTheme } = useTheme();
   const [urgentCount, setUrgentCount] = useState(0);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close the mobile drawer on every route change — adjusted during render
+  // (React's recommended pattern for resetting state when a prop changes)
+  // rather than in an effect, which would cause an extra cascading render.
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
+    setMobileOpen(false);
+  }
 
   useEffect(() => {
     getUrgentFollowupsCount().then(setUrgentCount);
@@ -58,8 +72,14 @@ export function Sidebar() {
   const displayName = profile?.full_name ?? profile?.email ?? "Arcil Admin";
   const role = profile?.role ?? "Admin Master";
 
-  return (
-    <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-[244px] flex-col border-r border-[#1f2b3d] bg-[#050b14] text-[#d8e2f2]">
+  const visibleNav = NAV.filter((item) => {
+    if (item.superAdminOnly) return isSuperAdmin;
+    if (item.perm) return isOwnerOrAbove || can(item.perm);
+    return true;
+  });
+
+  const sidebarBody = (
+    <>
       <div className="flex items-center gap-3 px-6 pb-8 pt-8">
         <Image src="/logo-icon.png" alt="Arcil" width={34} height={34} className="h-[34px] w-[34px] shrink-0 object-contain" />
         <div>
@@ -69,11 +89,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-2 px-3">
-        {NAV.filter((item) => {
-          if (item.superAdminOnly) return isSuperAdmin;
-          if (item.perm) return isOwnerOrAbove || can(item.perm);
-          return true;
-        }).map(({ href, label, icon: Icon, badge }) => {
+        {visibleNav.map(({ href, label, icon: Icon, badge }) => {
           const active = pathname === href || (href !== "/" && pathname.startsWith(href));
           const showBadge = badge && urgentCount > 0;
           return (
@@ -135,6 +151,38 @@ export function Sidebar() {
           Logout
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop — fixed rail, unchanged */}
+      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-[244px] flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] text-[#d8e2f2]">
+        {sidebarBody}
+      </aside>
+
+      {/* Mobile — topbar + off-canvas drawer (Sidebar was `hidden` below md with no replacement before this) */}
+      <div className="md:hidden fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-4">
+        <button
+          onClick={() => setMobileOpen(true)}
+          aria-label="Abrir menu"
+          className="grid h-10 w-10 place-items-center rounded-[8px] text-[#d8e2f2] hover:bg-white/[0.08]"
+        >
+          <Menu size={20} />
+        </button>
+        <Image src="/logo-icon.png" alt="Arcil" width={26} height={26} className="h-[26px] w-[26px] object-contain" />
+        <div className="w-10" />
+      </div>
+
+      <Dialog.Root open={mobileOpen} onOpenChange={setMobileOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="md:hidden fixed inset-0 z-50 bg-black/50" />
+          <Dialog.Content className="md:hidden fixed left-0 top-0 z-50 flex h-full w-[280px] flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] text-[#d8e2f2] focus:outline-none">
+            <Dialog.Title className="sr-only">Menu de navegação</Dialog.Title>
+            {sidebarBody}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </>
   );
 }

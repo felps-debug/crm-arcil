@@ -3,10 +3,12 @@
 import { useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Upload, X } from "lucide-react";
 import { ConsoleButton, ConsoleCard } from "@/components/console/console-shell";
+import { useToast } from "@/components/ui/toast";
 import { checkRedisparos } from "@/lib/supabase/queries";
 import { parseSheetLeads, type DisparoLead } from "../cobranca-helpers";
 
 export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
+  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<DisparoLead[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -42,7 +44,9 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
         setPreview(leads);
         checkRedisparos(leads.map((l) => l.numero).filter(Boolean)).then(setRedisparoWarnings);
       } catch (err) {
-        setParseError(err instanceof Error ? err.message : "Erro ao processar arquivo.");
+        const message = err instanceof Error ? err.message : "Erro ao processar arquivo.";
+        setParseError(message);
+        toast(message, "error");
       }
     };
     reader.readAsArrayBuffer(file);
@@ -64,8 +68,11 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
       setPreview([]);
       setFileName(null);
       onDispatched();
+      toast(`${data.inserted} leads inseridos — acompanhe no Monitoramento`, "success");
     } catch (err) {
-      setDispatchResult({ ok: false, error: err instanceof Error ? err.message : "Erro" });
+      const message = err instanceof Error ? err.message : "Erro";
+      setDispatchResult({ ok: false, error: message });
+      toast(message, "error");
     } finally {
       setDispatching(false);
     }

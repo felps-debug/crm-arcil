@@ -16,6 +16,7 @@ import {
   Zap,
 } from "lucide-react";
 import { ConsoleButton, ConsoleCard, ConsoleError, ConsoleStatus } from "@/components/console/console-shell";
+import { useToast } from "@/components/ui/toast";
 import { bulkSetPagamentoConfirmado } from "@/lib/supabase/queries";
 import type { CobrancaLog } from "@/types";
 import { parseMoneyToNumber, type SortKey } from "../cobranca-helpers";
@@ -80,6 +81,7 @@ export function MonitoramentoTab({
   const [reenvioResult, setReenvioResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [relatorioModal, setRelatorioModal] = useState(false);
   const [relFiltros, setRelFiltros] = useState({ de: "", ate: "", tipo: "Todos", status: "Todos" });
+  const { toast } = useToast();
 
   function handleSort(col: SortKey) {
     if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -116,7 +118,8 @@ export function MonitoramentoTab({
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const s = new Set(prev);
-      s.has(id) ? s.delete(id) : s.add(id);
+      if (s.has(id)) s.delete(id);
+      else s.add(id);
       return s;
     });
   }
@@ -126,13 +129,15 @@ export function MonitoramentoTab({
   }
   async function handleBulkConfirm() {
     if (!selectedIds.size) return;
+    if (!confirm(`Marcar ${selectedIds.size} registro(s) como pago?`)) return;
     setBulkLoading(true);
     try {
       await bulkSetPagamentoConfirmado([...selectedIds], true);
       setSelectedIds(new Set());
       onRefetch();
+      toast("Pagamento(s) confirmado(s).", "success");
     } catch {
-      /* silent */
+      toast("Erro ao confirmar pagamentos.", "error");
     } finally {
       setBulkLoading(false);
     }
@@ -266,6 +271,7 @@ export function MonitoramentoTab({
             <input
               type="text"
               placeholder="Nome ou telefone..."
+              aria-label="Buscar por nome ou telefone"
               value={searchLogs}
               onChange={(e) => setSearchLogs(e.target.value)}
               className="w-52 rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] py-1.5 pl-7 pr-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-blue-500/60"
@@ -343,7 +349,16 @@ export function MonitoramentoTab({
                 {filteredLogs.map((log) => (
                   <tr
                     key={log.id}
-                    className={`border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--bg-subtle)] ${
+                    onClick={() => onSelectLog(log)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelectLog(log);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--bg-subtle)] focus-visible:bg-[var(--bg-subtle)] ${
                       selectedIds.has(log.id) ? "bg-blue-500/5" : ""
                     }`}
                   >
@@ -355,16 +370,10 @@ export function MonitoramentoTab({
                         onChange={() => toggleSelect(log.id)}
                       />
                     </td>
-                    <td className="cursor-pointer px-3 py-2.5 font-semibold text-[var(--text-primary)]" onClick={() => onSelectLog(log)}>
-                      {log.nome ?? "—"}
-                    </td>
-                    <td className="cursor-pointer px-3 py-2.5 font-data text-[var(--text-secondary)]" onClick={() => onSelectLog(log)}>
-                      {log.telefone}
-                    </td>
-                    <td className="cursor-pointer px-3 py-2.5 font-data font-semibold text-[var(--text-primary)]" onClick={() => onSelectLog(log)}>
-                      {log.valor ?? "—"}
-                    </td>
-                    <td className="cursor-pointer px-3 py-2.5" onClick={() => onSelectLog(log)}>
+                    <td className="px-3 py-2.5 font-semibold text-[var(--text-primary)]">{log.nome ?? "—"}</td>
+                    <td className="px-3 py-2.5 font-data text-[var(--text-secondary)]">{log.telefone}</td>
+                    <td className="px-3 py-2.5 font-data font-semibold text-[var(--text-primary)]">{log.valor ?? "—"}</td>
+                    <td className="px-3 py-2.5">
                       {log.boleto_count != null ? (
                         <span
                           className={`inline-flex h-[18px] min-w-[22px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${
@@ -379,19 +388,17 @@ export function MonitoramentoTab({
                         "—"
                       )}
                     </td>
-                    <td className="cursor-pointer px-3 py-2.5 text-[var(--text-secondary)]" onClick={() => onSelectLog(log)}>
-                      {log.vencimento ?? "—"}
-                    </td>
-                    <td className="cursor-pointer px-3 py-2.5" onClick={() => onSelectLog(log)}>
+                    <td className="px-3 py-2.5 text-[var(--text-secondary)]">{log.vencimento ?? "—"}</td>
+                    <td className="px-3 py-2.5">
                       <ConsoleStatus tone={statusTone(log.status_disparo)}>{log.status_disparo}</ConsoleStatus>
                     </td>
-                    <td className="cursor-pointer px-3 py-2.5" onClick={() => onSelectLog(log)}>
+                    <td className="px-3 py-2.5">
                       {log.respondeu ? <CheckCircle2 size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}
                     </td>
-                    <td className="cursor-pointer px-3 py-2.5" onClick={() => onSelectLog(log)}>
+                    <td className="px-3 py-2.5">
                       {log.pagamento_confirmado ? <CheckCircle2 size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}
                     </td>
-                    <td className="cursor-pointer px-3 py-2.5 font-data text-[11px] text-[var(--text-muted)]" onClick={() => onSelectLog(log)}>
+                    <td className="px-3 py-2.5 font-data text-[11px] text-[var(--text-muted)]">
                       {log.data_disparo ? new Date(log.data_disparo).toLocaleString("pt-BR") : "—"}
                     </td>
                   </tr>
@@ -434,11 +441,11 @@ export function MonitoramentoTab({
 
       {relatorioModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
           onClick={() => setRelatorioModal(false)}
         >
           <div
-            className="w-full max-w-sm space-y-4 rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-6 shadow-[var(--shadow-card)]"
+            className="max-h-[90dvh] w-full max-w-sm space-y-4 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-6 shadow-[var(--shadow-card)]"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">

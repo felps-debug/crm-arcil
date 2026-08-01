@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { OPENAI_API_KEY } from "@/lib/env";
+import { assertEnv } from "@/lib/server/env-guard";
 
 const SYSTEM_PROMPT = `Você é um consultor técnico da ARCIL Ar-Condicionado, especializado em instalações de ar-condicionado. Sua missão é ajudar o cliente a gerar uma visualização realista de como o equipamento ficará instalado no ambiente.
 
@@ -29,6 +30,13 @@ interface ApiMessage {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    assertEnv("OPENAI_API_KEY", OPENAI_API_KEY);
+  } catch (err) {
+    console.error("[chat]", err);
+    return Response.json({ error: "Configuração do servidor incompleta" }, { status: 500 });
+  }
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });

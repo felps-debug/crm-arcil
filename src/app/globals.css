@@ -120,6 +120,13 @@ body {
 
 * { box-sizing: border-box; }
 
+/* ── Keyboard focus (was entirely absent — Tab navigation had no visible indicator) ── */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .font-data {
   font-family: var(--font-mono, "IBM Plex Mono"), "SF Mono", "Fira Code", monospace;
   font-variant-numeric: tabular-nums;
@@ -233,6 +240,8 @@ body {
 .dark .ring-violet-600\/10  { --tw-ring-color: rgba(191, 90, 242, 0.2) !important; }
 .dark .ring-slate-200\/60   { --tw-ring-color: rgba(255, 255, 255, 0.08) !important; }
 .dark .ring-slate-100       { --tw-ring-color: rgba(255, 255, 255, 0.06) !important; }
+.dark .ring-slate-200       { --tw-ring-color: rgba(255, 255, 255, 0.10) !important; }
+.dark .ring-red-100         { --tw-ring-color: rgba(255, 59, 48, 0.15) !important; }
 
 /* ── Badge text overrides (dark mode) ────────────────────────────── */
 

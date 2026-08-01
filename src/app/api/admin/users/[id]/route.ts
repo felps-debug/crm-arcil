@@ -1,70 +1,76 @@
 import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { requireSuperAdmin, handleApiError } from "@/lib/server/api-auth";
+import { VALID_ROLES, ROLE_PERMISSIONS, type ValidRole } from "@/lib/server/roles";
 
-const ROLE_PERMISSIONS: Record<string, Record<string, boolean>> = {
-  superadmin: { view_all: true, manage_users: true, manage_roles: true, manage_cobranca: true, manage_estoque: true, manage_gerador_imagem: true },
-  owner:      { view_all: true, manage_cobranca: true, manage_estoque: true, manage_gerador_imagem: true },
-  manager:    { view_all: true, manage_cobranca: true },
-  vendor:     { view_leads: true },
-  employee:   { view_leads: true },
-  client:     {},
-};
-
-async function requireSuperAdmin() {
-  try {
-    const supabase = await createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) return null;
-    const admin = createAdminClient();
-    const { data: profile } = await admin.from("user_profiles").select("role").eq("id", user.id).single();
-    if (!profile || String(profile.role) !== "superadmin") return null;
-    return user;
-  } catch {
-    return null;
-  }
+function isPlainBooleanRecord(value: unknown): value is Record<string, boolean> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return Object.values(value).every((v) => typeof v === "boolean");
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const caller = await requireSuperAdmin();
-    if (!caller) return Response.json({ error: "Unauthorized" }, { status: 403 });
+    const { user: caller, response } = await requireSuperAdmin();
+    if (response) return response;
 
     const { id } = await params;
     const { role, full_name, permissions } = await req.json();
+
+    if (role !== undefined && !VALID_ROLES.includes(role)) {
+      return Response.json({ error: `Role inválida. Use uma de: ${VALID_ROLES.join(", ")}` }, { status: 400 });
+    }
+    if (permissions !== undefined && !isPlainBooleanRecord(permissions)) {
+      return Response.json({ error: "permissions deve ser um objeto de chaves booleanas" }, { status: 400 });
+    }
 
     const admin = createAdminClient();
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
     if (role || permissions) {
       const { data: current } = await admin.from("user_profiles").select("permissions").eq("id", id).single();
-      const base = role ? ROLE_PERMISSIONS[role] ?? {} : (current?.permissions as Record<string, boolean>) ?? {};
+      const base = role ? ROLE_PERMISSIONS[role as ValidRole] ?? {} : (current?.permissions as Record<string, boolean>) ?? {};
       updates.permissions = permissions ? { ...base, ...permissions } : base;
     }
     if (role) updates.role = role;
     if (full_name !== undefined) updates.full_name = full_name;
 
     const { error } = await admin.from("user_profiles").update(updates).eq("id", id);
-    if (error) return Response.json({ error: error.message }, { status: 500 });
+    if (error) return handleApiError(error);
+
+    await admin.from("activity_log").insert({
+      entity_type: "user_profile",
+      entity_id: id,
+      action: "update",
+      metadata: { actor_id: caller!.id, changes: { role, full_name, permissions } },
+      wf_origin: "crm",
+    });
 
     return Response.json({ ok: true });
   } catch (err) {
-    return Response.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 });
+    return handleApiError(err);
   }
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const caller = await requireSuperAdmin();
-    if (!caller) return Response.json({ error: "Unauthorized" }, { status: 403 });
+    const { user: caller, response } = await requireSuperAdmin();
+    if (response) return response;
 
     const { id } = await params;
     const admin = createAdminClient();
     const { error } = await admin.auth.admin.deleteUser(id);
-    if (error) return Response.json({ error: error.message }, { status: 500 });
+    if (error) return handleApiError(error);
+
+    await admin.from("activity_log").insert({
+      entity_type: "user_profile",
+      entity_id: id,
+      action: "delete",
+      metadata: { actor_id: caller!.id },
+      wf_origin: "crm",
+    });
 
     return Response.json({ ok: true });
   } catch (err) {
-    return Response.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 });
+    return handleApiError(err);
   }
 }

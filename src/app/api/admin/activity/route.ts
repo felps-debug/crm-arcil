@@ -1,8 +1,8 @@
-import { requireApiUser, handleApiError } from "@/lib/server/api-auth";
+import { requireApiPermission, handleApiError } from "@/lib/server/api-auth";
 import { getActivityLog } from "@/lib/server/crm-data";
 
 export async function GET() {
-  const { response } = await requireApiUser();
+  const { response } = await requireApiPermission("view_all");
   if (response) return response;
 
   try {

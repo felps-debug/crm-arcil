@@ -14,6 +14,7 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   ConsoleButton,
   ConsoleCard,
@@ -291,11 +292,11 @@ function ChatbotPageInner() {
 
   return (
     <ConsolePage title="Gerador de Imagem" subtitle="Simulacao de instalacao com IA">
-      <div className="flex flex-wrap gap-2">
-        <ConsoleButton icon={MessageSquare} active={tab === "chat"} onClick={() => setTab("chat")}>
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Seções do gerador de imagem">
+        <ConsoleButton icon={MessageSquare} active={tab === "chat"} onClick={() => setTab("chat")} role="tab" aria-selected={tab === "chat"}>
           Nova simulacao
         </ConsoleButton>
-        <ConsoleButton icon={History} active={tab === "historico"} onClick={() => setTab("historico")}>
+        <ConsoleButton icon={History} active={tab === "historico"} onClick={() => setTab("historico")} role="tab" aria-selected={tab === "historico"}>
           Historico
           {historyItems.length > 0 && <span className="font-data opacity-80">{historyItems.length}</span>}
         </ConsoleButton>
@@ -303,7 +304,7 @@ function ChatbotPageInner() {
 
       {tab === "chat" ? (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-          <ConsoleCard className="flex h-[600px] flex-col" pad={false}>
+          <ConsoleCard className="flex h-[min(600px,70dvh)] flex-col" pad={false}>
             <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
               <div className="flex items-center gap-2">
                 <div className="grid h-8 w-8 place-items-center rounded-full bg-violet-500/10 text-violet-300">
@@ -528,6 +529,9 @@ function HistoricoTab({
     installationNotesSource: "manual" | "ia" | null;
   }) => void;
 }) {
+  const { toast } = useToast();
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
   if (loading) return <ConsoleLoading />;
   if (error) return <ConsoleError message={error} />;
   if (!items.length) {
@@ -538,8 +542,6 @@ function HistoricoTab({
       </ConsoleCard>
     );
   }
-  const { toast } = useToast();
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   async function handleCardDownload(e: React.MouseEvent, item: ImageGeneration) {
     e.stopPropagation();
@@ -575,10 +577,11 @@ function HistoricoTab({
               <button
                 onClick={(e) => handleCardDownload(e, item)}
                 disabled={downloadingId === item.id}
+                aria-label="Baixar imagem"
                 title="Baixar imagem"
-                className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-[6px] bg-black/60 text-white transition-colors hover:bg-black/80 disabled:opacity-60"
+                className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-[6px] bg-black/60 text-white transition-colors hover:bg-black/80 disabled:opacity-60"
               >
-                {downloadingId === item.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                {downloadingId === item.id ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
               </button>
             </div>
             <div className="p-3">
@@ -624,37 +627,42 @@ function PreviewModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={`grid grid-cols-1 ${item.wallImageUrl ? "sm:grid-cols-2" : ""}`}>
-          {item.wallImageUrl && (
+    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 p-4 backdrop-blur-sm" />
+        <Dialog.Content
+          className="fixed left-1/2 top-1/2 z-50 max-h-[90dvh] w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] focus:outline-none"
+        >
+          <Dialog.Title className="sr-only">Pré-visualização da simulação</Dialog.Title>
+          <div className={`grid grid-cols-1 ${item.wallImageUrl ? "sm:grid-cols-2" : ""}`}>
+            {item.wallImageUrl && (
+              <div>
+                <span className="block px-3 pt-3 text-[10px] font-bold uppercase text-[var(--text-muted)]">Antes</span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={item.wallImageUrl} alt="Antes" className="h-[260px] w-full object-cover p-3 pt-1 sm:h-[420px]" />
+              </div>
+            )}
             <div>
-              <span className="block px-3 pt-3 text-[10px] font-bold uppercase text-[var(--text-muted)]">Antes</span>
+              <span className="block px-3 pt-3 text-[10px] font-bold uppercase text-[var(--text-muted)]">Depois</span>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={item.wallImageUrl} alt="Antes" className="h-[420px] w-full object-cover p-3 pt-1" />
+              <img src={item.generatedImageUrl} alt="Depois" className="h-[260px] w-full object-cover p-3 pt-1 sm:h-[420px]" />
+            </div>
+          </div>
+          {item.installationNotes && (
+            <div className="px-3 pb-3">
+              <InstallationNotesCard notes={item.installationNotes} source={item.installationNotesSource} />
             </div>
           )}
-          <div>
-            <span className="block px-3 pt-3 text-[10px] font-bold uppercase text-[var(--text-muted)]">Depois</span>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={item.generatedImageUrl} alt="Depois" className="h-[420px] w-full object-cover p-3 pt-1" />
+          <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] p-3">
+            <ConsoleButton icon={downloading ? Loader2 : Download} active onClick={handleDownload} disabled={downloading}>
+              {downloading ? "Baixando..." : "Baixar imagem"}
+            </ConsoleButton>
+            <Dialog.Close asChild>
+              <ConsoleButton>Fechar</ConsoleButton>
+            </Dialog.Close>
           </div>
-        </div>
-        {item.installationNotes && (
-          <div className="px-3 pb-3">
-            <InstallationNotesCard notes={item.installationNotes} source={item.installationNotesSource} />
-          </div>
-        )}
-        <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] p-3">
-          <ConsoleButton icon={downloading ? Loader2 : Download} active onClick={handleDownload} disabled={downloading}>
-            {downloading ? "Baixando..." : "Baixar imagem"}
-          </ConsoleButton>
-          <ConsoleButton onClick={onClose}>Fechar</ConsoleButton>
-        </div>
-      </div>
-    </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

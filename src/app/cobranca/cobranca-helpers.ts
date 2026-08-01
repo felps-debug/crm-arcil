@@ -78,7 +78,7 @@ export function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] 
     const rawPhone = n["celular"] || n["telefone"] || n["fone"] || n["whatsapp"] || n["numero"] || "";
     const digits = rawPhone.replace(/\D/g, "");
     const numero = digits ? `55${digits}` : "";
-    if (numero.length < 12) continue;
+    if (!/^55\d{10,11}$/.test(numero)) continue;
 
     let nome = n["nome"] ?? "";
     let codigoCliente = "";
