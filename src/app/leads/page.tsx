@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Building2, CalendarDays, ChevronRight, Grid2X2, Kanban, List, Phone, Search, UserRound } from "lucide-react";
 import {
   ConsoleButton,
@@ -13,6 +13,7 @@ import {
   ConsoleTable,
 } from "@/components/console/console-shell";
 import { formatDateTime, useApi } from "@/lib/client-api";
+import { createClient } from "@/lib/supabase/client";
 import type { LeadDetailResponse, LeadListItem, LeadsResponse } from "@/types/api";
 
 type ViewMode = "table" | "kanban" | "cards";
@@ -59,13 +60,33 @@ export default function LeadsPage() {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // Bump on any leads/followups change so the board (and the open lead's
+  // detail panel) update live instead of only on a manual refresh — same
+  // postgres_changes pattern used in / and /cobranca.
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const ch = supabase
+      .channel("leads-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => setRefreshTick((t) => t + 1))
+      .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, () => setRefreshTick((t) => t + 1))
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, []);
+
   const params = new URLSearchParams();
   if (segment) params.set("segment", segment);
   if (search) params.set("search", search);
   params.set("limit", "300");
+  if (refreshTick) params.set("_r", String(refreshTick));
 
   const leads = useApi<LeadsResponse>(`/api/leads?${params.toString()}`);
-  const detail = useApi<LeadDetailResponse>(selectedId ? `/api/leads/${selectedId}` : null);
+  const detail = useApi<LeadDetailResponse>(
+    selectedId ? `/api/leads/${selectedId}${refreshTick ? `?_r=${refreshTick}` : ""}` : null
+  );
   const items = useMemo(() => leads.data?.items ?? [], [leads.data]);
 
   const segments = useMemo(() => {

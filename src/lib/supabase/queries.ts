@@ -395,19 +395,3 @@ export async function getImageGenerationHistory(limit = 30) {
   return data as ImageGeneration[];
 }
 
-/* ── REALTIME ───────────────────────────────────────────────────── */
-
-export function subscribeToLeads(callback: (payload: unknown) => void) {
-  return supabase
-    .channel("leads-changes")
-    .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, callback)
-    .subscribe();
-}
-
-export function subscribeToFollowups(callback: (payload: unknown) => void) {
-  return supabase
-    .channel("followups-changes")
-    .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, callback)
-    .subscribe();
-}
-
