@@ -186,23 +186,30 @@ export default function LoginPage() {
           <div className="px-9 pt-9 pb-8 space-y-7">
 
             {/* ── Logo ── */}
-            <div className="flex flex-col items-center gap-3.5">
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="flex flex-col items-center gap-3"
+            >
               <div
-                className="w-16 h-16 rounded-xl flex items-center justify-center border"
+                className="w-16 h-16 rounded-2xl flex items-center justify-center border"
                 style={{ background: "#0b1528", borderColor: "#1f2b3d" }}
               >
-                <Image src="/logo-icon.png" alt="Grupo Arcil" width={36} height={36} className="w-9 h-9 object-contain" />
+                <Image src="/logo-icon.png" alt="Grupo Arcil" width={80} height={80} priority className="w-10 h-10 object-contain" />
               </div>
               <div className="text-center">
-                <Image src="/logo-lockup-dark.jpg" alt="Grupo Arcil" width={90} height={160} className="h-16 w-auto object-contain mx-auto rounded-md" />
+                <p className="text-[26px] font-extrabold leading-none tracking-tight" style={{ color: "#a9c9ff" }}>
+                  ARCIL
+                </p>
                 <p
-                  className="text-[9px] font-bold mt-2"
-                  style={{ color: "rgba(96,165,250,0.4)", letterSpacing: "0.3em" }}
+                  className="mt-2 text-[10px] font-bold"
+                  style={{ color: "rgba(148,178,230,0.5)", letterSpacing: "0.32em" }}
                 >
-                  CRM
+                  OPERACIONAL COMERCIAL
                 </p>
               </div>
-            </div>
+            </motion.div>
 
             {/* ── Divider ── */}
             <div
@@ -215,7 +222,7 @@ export default function LoginPage() {
                 <button
                   key={t}
                   onClick={() => switchTab(t)}
-                  className="relative flex-1 pb-2.5 text-[12px] font-semibold transition-colors duration-150"
+                  className="relative flex-1 pb-2.5 text-[12px] font-semibold transition-colors duration-150 hover:text-white"
                   style={{
                     color: tab === t ? "#F8FAFC" : "rgba(248,250,252,0.3)",
                     borderBottom: `1px solid ${tab === t ? "transparent" : "rgba(255,255,255,0.07)"}`,
@@ -281,7 +288,8 @@ export default function LoginPage() {
                   <motion.button
                     type="submit"
                     disabled={loading}
-                    whileTap={{ scale: 0.987 }}
+                    whileHover={{ y: -1, boxShadow: "0 1px 0 rgba(255,255,255,0.12) inset, 0 6px 22px rgba(37,99,235,0.45)" }}
+                    whileTap={{ scale: 0.987, y: 0 }}
                     className="w-full py-3 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-opacity"
                     style={{
                       background: "linear-gradient(180deg, #4c93ff 0%, #2f6fe0 100%)",
@@ -404,7 +412,8 @@ export default function LoginPage() {
                         <motion.button
                           type="submit"
                           disabled={loading || (!!TURNSTILE_SITE_KEY && !captchaToken)}
-                          whileTap={{ scale: 0.987 }}
+                          whileHover={{ y: -1, boxShadow: "0 1px 0 rgba(255,255,255,0.12) inset, 0 6px 22px rgba(37,99,235,0.45)" }}
+                          whileTap={{ scale: 0.987, y: 0 }}
                           className="w-full py-3 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-opacity"
                           style={{
                             background: "linear-gradient(180deg, #4c93ff 0%, #2f6fe0 100%)",
