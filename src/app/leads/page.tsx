@@ -29,7 +29,13 @@ const PIPELINE: { id: KanbanStageId; label: string; tone: "green" | "amber" | "r
 
 function kanbanStage(lead: LeadListItem): KanbanStageId {
   if (lead.status === "LOST") return "PERDIDO";
-  if (lead.responsible) return "ENCAMINHADO";
+  // aiAgent is the vendor tied to the lead's active conversation
+  // (conversations.vendor_id, set by WF-07's segment-based routing) — that IS
+  // the "forwarded to salesperson" moment, even when leads.owner_name (a
+  // separate, later-set field) is still empty. Checking aiAgent too fixes
+  // leads getting stuck in "Recebendo Follow-up" despite already having a
+  // vendor attached, just because an automated followup was also queued.
+  if (lead.responsible || lead.aiAgent) return "ENCAMINHADO";
   if (lead.nextActionAt) return "FOLLOWUP";
   if (lead.hasConversation) return "CONVERSANDO";
   return "NOVO";
