@@ -18,9 +18,10 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  // Boots the actual Next.js dev server for the smoke test. Does not require
-  // real Supabase credentials — the login page renders its form client-side
-  // before any Supabase call is made.
+  // Boots the actual Next.js dev server for the smoke test. Requires
+  // NEXT_PUBLIC_SUPABASE_URL/ANON_KEY (public-safe, not secrets) — proxy.ts
+  // runs on every request, including /login, and 500s without them before
+  // any page renders. Set in CI via .github/workflows/ci.yml's job env.
   webServer: {
     command: "npm run dev",
     url: baseURL,

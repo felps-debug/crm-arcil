@@ -1,8 +1,10 @@
 import { test, expect } from "@playwright/test";
 
 // Smoke test only: confirms the login form renders with the fields a user
-// needs to authenticate. Does not attempt a real sign-in (no Supabase
-// session), so it stays green without live credentials configured.
+// needs to authenticate. Does not attempt a real sign-in — no session is
+// created — but the app does need real NEXT_PUBLIC_SUPABASE_URL/ANON_KEY
+// available (see playwright.config.ts) since proxy.ts requires them just to
+// serve any page, including this one.
 test("login page renders email, password fields and a submit button", async ({ page }) => {
   await page.goto("/login");
 

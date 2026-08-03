@@ -8,6 +8,12 @@ jobs:
   build-and-test:
     name: Lint, Typecheck, Test, Build
     runs-on: ubuntu-latest
+    # Public-safe values (anon key is meant to ship in the client bundle) —
+    # needed so `next build`'s static prerendering can construct a Supabase
+    # client for pages that read from lib/supabase/queries.ts at module scope.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://swcqvrowqwylcegrcesu.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3Y3F2cm93cXd5bGNlZ3JjZXN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NDA3MjEsImV4cCI6MjA4OTQxNjcyMX0.05s0gwPdfCuUKm--MUUNf5SFnDwsjdCT_6yD2i5-ejY
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,8 +24,14 @@ jobs:
           node-version: "20"
           cache: "npm"
 
+      # npm ci requires a lockfile with every platform's optional deps
+      # pre-resolved; this repo's lock was generated on Windows and doesn't
+      # carry the Linux-only optional entries (e.g. sharp's linux binaries),
+      # which made a strict `npm ci` fail on this runner. `npm install` still
+      # pins to the versions in package.json/package-lock.json, just without
+      # that cross-platform-completeness requirement.
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Lint
         run: npm run lint
@@ -37,6 +49,12 @@ jobs:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
     needs: build-and-test
+    # proxy.ts (this Next 16 project's middleware) runs on every request,
+    # including /login, and constructs a Supabase server client unconditionally
+    # — without these it 500s before any page (even the login form) renders.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://swcqvrowqwylcegrcesu.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3Y3F2cm93cXd5bGNlZ3JjZXN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NDA3MjEsImV4cCI6MjA4OTQxNjcyMX0.05s0gwPdfCuUKm--MUUNf5SFnDwsjdCT_6yD2i5-ejY
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,7 +81,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.playwright_check.outputs.has_e2e == 'true'
-        run: npm ci
+        run: npm install
 
       - name: Install Playwright browsers
         if: steps.playwright_check.outputs.has_e2e == 'true'
