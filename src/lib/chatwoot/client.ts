@@ -193,6 +193,12 @@ export async function listConversations(opts?: { status?: string }): Promise<Cha
   const raw = extractArray<ChatwootConversationRaw>(body);
   return raw
     .map(normalizeConversation)
+    // Every Arcil inbox is a WhatsApp number tied to a vendor; a real lead
+    // always has a contact phone. A conversation with no phone is a WhatsApp
+    // GROUP the vendor's personal number happens to be in (confirmed against
+    // the live instance on 2026-08-03 — e.g. a car-raffle community group
+    // leaking into the "Vinicius - Construtor" inbox), not an Arcil lead.
+    .filter((c) => c.contactPhone !== null)
     .sort((a, b) => (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""));
 }
 
