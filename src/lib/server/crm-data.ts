@@ -99,6 +99,7 @@ type SheetSourceRow = {
   created_at: string | null;
 };
 
+/** Imagens geradas pelo n8n, indexadas por telefone. */
 type GeneratedImageRow = {
   id: string;
   phone_number: string | null;
@@ -107,6 +108,16 @@ type GeneratedImageRow = {
   agent_type: string | null;
   created_at: string | null;
   image_description: string | null;
+};
+
+/** Imagens geradas dentro do CRM (/chatbot), indexadas por lead_id. Tabela
+ * separada da acima porque o produtor e as colunas são outros. */
+type CrmImageRow = {
+  id: string;
+  lead_id: string | null;
+  user_name: string | null;
+  generated_image_url: string | null;
+  created_at: string | null;
 };
 
 type QuoteRow = {
@@ -524,20 +535,27 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
 
   const leadConversations = conversations.filter((c) => c.lead_id === id);
   const conversationIds = leadConversations.map((c) => c.id);
-  const [messagesRes, imagesRes] = await Promise.all([
+  const [messagesRes, imagesRes, crmImagesRes] = await Promise.all([
     conversationIds.length
       ? supabase.from("messages").select("*").in("conversation_id", conversationIds).order("created_at", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
     lead.wa_phone
       ? supabase.from("generated_images").select("*").eq("phone_number", lead.wa_phone).order("created_at", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
+    // Duas tabelas, dois produtores: generated_images é o que o n8n grava (por
+    // telefone) e image_generations é o que o próprio CRM grava (por lead_id).
+    // O timeline só lia a primeira, que está vazia, então imagem gerada dentro
+    // do CRM nunca aparecia no prontuário do lead.
+    supabase.from("image_generations").select("*").eq("lead_id", id).order("created_at", { ascending: false }),
   ]);
 
   if (messagesRes.error) throw messagesRes.error;
   if (imagesRes.error) throw imagesRes.error;
+  if (crmImagesRes.error) throw crmImagesRes.error;
 
   const messages = (messagesRes.data ?? []) as MessageRow[];
   const images = (imagesRes.data ?? []) as GeneratedImageRow[];
+  const crmImages = (crmImagesRes.data ?? []) as CrmImageRow[];
   const leadFollowups = followups.filter((f) => f.lead_id === id || f.numero_cliente === lead.wa_phone);
   const leadCobrancas = cobrancas.filter((c) => c.telefone === lead.wa_phone);
   const leadQuotes = quotes.filter((q) => q.lead_id === id);
@@ -591,6 +609,14 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
       description: img.image_description,
       occurredAt: img.created_at,
       metadata: { url: img.url_imagem_final ?? img.storage_url, agent_type: img.agent_type },
+    })),
+    ...crmImages.map((img) => ({
+      id: img.id,
+      type: "image" as const,
+      title: "Imagem gerada no CRM",
+      description: img.user_name,
+      occurredAt: img.created_at,
+      metadata: { url: img.generated_image_url, origem: "crm" },
     })),
     ...leadQuotes.map((q) => ({
       id: q.id,
