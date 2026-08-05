@@ -32,12 +32,11 @@ const PIPELINE: { id: KanbanStageId; label: string; tone: "green" | "amber" | "r
 
 function kanbanStage(lead: LeadListItem): KanbanStageId {
   if (lead.status === "LOST") return "PERDIDO";
-  // ENCAMINHADO means a human salesperson took over — only leads.owner_name
-  // proves that. Do NOT use aiAgent here: it maps conversations.vendor_id,
-  // which n8n stamps on every conversation the moment it opens (today every
-  // row carries the same vendor regardless of segment), so treating it as a
-  // handoff marked every lead with a conversation as already forwarded.
-  if (lead.responsible) return "ENCAMINHADO";
+  // handoffSentAt é o sinal real: a mensagem saiu para o WhatsApp do vendedor.
+  // NÃO usar aiAgent aqui — ele mapeia conversations.vendor_id, que o n8n
+  // carimba na abertura da conversa, e tratar isso como handoff marcava todo
+  // lead com conversa como já encaminhado.
+  if (lead.handoffSentAt || lead.responsible) return "ENCAMINHADO";
   // awaitingFollowup, not nextActionAt: a followups row is created together
   // with the lead, so "has a followup row" ≠ "a followup was sent".
   if (lead.awaitingFollowup) return "FOLLOWUP";
@@ -49,9 +48,18 @@ function kanbanStage(lead: LeadListItem): KanbanStageId {
  * the automated routing target, so label it as such instead of passing it off
  * as the responsible salesperson. */
 function responsibleLabel(lead: LeadListItem): string {
+  if (lead.handoffVendor) return lead.handoffVendor;
   if (lead.responsible) return lead.responsible;
   if (lead.aiAgent) return `Fila IA · ${lead.aiAgent}`;
   return "Sem responsavel";
+}
+
+/** Enviado sem aceite é o estado que precisa saltar aos olhos: o lead parece
+ * atendido e ninguém pegou. */
+function handoffState(lead: LeadListItem): { label: string; tone: "green" | "red" } | null {
+  if (!lead.handoffSentAt) return null;
+  if (lead.handoffAcceptedAt) return { label: "Assumido", tone: "green" };
+  return { label: "Aguardando aceite", tone: "red" };
 }
 
 function statusTone(status: string | null): "green" | "amber" | "red" | "blue" | "slate" {
@@ -262,7 +270,14 @@ function LeadsTable({ leads, onSelect, selectedId }: { leads: LeadListItem[]; on
             </td>
             <td className="px-3 py-3"><ConsoleStatus tone="slate">{lead.segmentLabel}</ConsoleStatus></td>
             <td className="px-3 py-3"><ConsoleStatus tone={statusTone(lead.status)}>{lead.statusLabel}</ConsoleStatus></td>
-            <td className="px-3 py-3 text-[var(--text-secondary)]">{responsibleLabel(lead)}</td>
+            <td className="px-3 py-3 text-[var(--text-secondary)]">
+              {responsibleLabel(lead)}
+              {handoffState(lead) && (
+                <div className="mt-1">
+                  <ConsoleStatus tone={handoffState(lead)!.tone}>{handoffState(lead)!.label}</ConsoleStatus>
+                </div>
+              )}
+            </td>
             <td className="px-3 py-3 text-[var(--text-muted)]">{formatDateTime(lead.lastContactAt)}</td>
             <td className="px-3 py-3">
               {lead.awaitingSince ? <ConsoleStatus tone="amber">{formatDateTime(lead.awaitingSince)}</ConsoleStatus> : <span className="text-[var(--text-muted)]">-</span>}
@@ -330,6 +345,14 @@ function LeadsKanban({
                     {lead.awaitingSince && (
                       <div className="flex items-center gap-1.5">
                         <CalendarDays size={11} /> Follow-up sem resposta desde {formatDateTime(lead.awaitingSince)}
+                      </div>
+                    )}
+                    {lead.handoffSentAt && (
+                      <div className="flex items-center gap-1.5">
+                        <UserRound size={11} />
+                        {lead.handoffAcceptedAt
+                          ? `${lead.handoffVendor ?? "Vendedor"} assumiu em ${formatDateTime(lead.handoffAcceptedAt)}`
+                          : `Enviado a ${lead.handoffVendor ?? "vendedor"} em ${formatDateTime(lead.handoffSentAt)} — sem aceite`}
                       </div>
                     )}
                   </div>

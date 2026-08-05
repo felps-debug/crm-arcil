@@ -82,6 +82,14 @@ export type LeadListItem = {
   origin: string | null;
   responsible: string | null;
   aiAgent: string | null;
+  /** Vendedor humano que recebeu o handoff por WhatsApp. Diferente de aiAgent,
+   * que é o agente de IA que atendeu a conversa. */
+  handoffVendor: string | null;
+  /** Quando a mensagem de handoff saiu para o vendedor. */
+  handoffSentAt: string | null;
+  /** Quando o vendedor confirmou que assumiu. Enviado sem aceite é o estado
+   * perigoso: o lead parece atendido e ninguém pegou. */
+  handoffAcceptedAt: string | null;
   hasConversation: boolean;
   /** True only when a followup was actually dispatched (followups.followup_sent)
    * and the lead hasn't answered it. A followups row exists from the moment the

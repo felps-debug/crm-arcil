@@ -31,6 +31,9 @@ type LeadRow = {
   owner_name?: string | null;
   city?: string | null;
   origem?: string | null;
+  handoff_vendor_id?: string | null;
+  handoff_sent_at?: string | null;
+  handoff_accepted_at?: string | null;
 };
 
 type FollowupRow = {
@@ -161,7 +164,7 @@ type LeadFilters = {
   limit?: string | null;
 };
 
-const LEAD_SELECT = "id,wa_phone,name,company,region,channel_origin,segment,status,lead_score,created_at,updated_at,owner_name,city,origem";
+const LEAD_SELECT = "id,wa_phone,name,company,region,channel_origin,segment,status,lead_score,created_at,updated_at,owner_name,city,origem,handoff_vendor_id,handoff_sent_at,handoff_accepted_at";
 
 function nowIso() {
   return new Date().toISOString();
@@ -223,6 +226,9 @@ function mapLead(lead: LeadRow, vendors: Map<string, VendorRow>, conversations: 
     origin: lead.origem ?? lead.channel_origin,
     responsible: lead.owner_name ?? null,
     aiAgent,
+    handoffVendor: lead.handoff_vendor_id ? vendors.get(lead.handoff_vendor_id)?.name ?? null : null,
+    handoffSentAt: lead.handoff_sent_at ?? null,
+    handoffAcceptedAt: lead.handoff_accepted_at ?? null,
     hasConversation: leadConversations.length > 0,
     awaitingFollowup: Boolean(nextFollowup),
     leadScore: lead.lead_score,
@@ -427,12 +433,25 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
       {
         id: "leads_without_owner",
         label: "Leads sem responsavel",
-        count: leads.filter((l) => !l.owner_name).length,
+        count: leads.filter((l) => !l.owner_name && !l.handoff_vendor_id).length,
         severity: "warning",
-        formula: "count(leads where owner_name is null)",
+        formula: "count(leads where owner_name is null and handoff_vendor_id is null)",
         period: allTimePeriod(),
         tooltip: "Leads que ainda nao tem responsavel comercial definido.",
         drilldown: { href: "/leads", filters: { unassigned: "true" } },
+      },
+      {
+        // O estado perigoso do handoff por WhatsApp: a mensagem saiu para o
+        // vendedor, o lead consta como encaminhado, e ninguem confirmou que
+        // assumiu. Sem este alerta so se descobre quando o cliente cobra.
+        id: "handoff_without_acceptance",
+        label: "Handoff sem aceite",
+        count: leads.filter((l) => l.handoff_sent_at && !l.handoff_accepted_at).length,
+        severity: "danger",
+        formula: "count(leads where handoff_sent_at is not null and handoff_accepted_at is null)",
+        period: allTimePeriod(),
+        tooltip: "Encaminhados ao vendedor por WhatsApp que ainda nao foram assumidos por ninguem.",
+        drilldown: { href: "/leads", filters: { handoff: "pending" } },
       },
       {
         id: "leads_without_followup",
