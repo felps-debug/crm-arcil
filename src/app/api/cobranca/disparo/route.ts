@@ -36,9 +36,22 @@ export async function POST(req: NextRequest) {
 
   // Build phone → boletos_json map before dispatch
   const boletosByPhone: Record<string, string> = {};
+  // O valor que o CRM calculou a partir da planilha, por telefone. O serviço de
+  // cobrança grava esse campo com o valor multiplicado por 10 — uma cobrança de
+  // R$ 471,50 virou R$ 4.715,00 no cobranca_log — e o serviço é um deploy
+  // separado, fora deste repositório. Enquanto ele não for corrigido, o CRM
+  // reescreve o campo com o número que ele mesmo somou da planilha.
+  const valorByPhone: Record<string, string> = {};
   for (const lead of leads) {
-    if (lead["numero"] && lead["boletos_json"]) {
-      boletosByPhone[lead["numero"]] = lead["boletos_json"];
+    const phone = lead["numero"];
+    if (!phone) continue;
+    if (lead["boletos_json"]) boletosByPhone[phone] = lead["boletos_json"];
+    const numerico = Number(lead["valor_numerico"]);
+    if (Number.isFinite(numerico) && numerico > 0) {
+      valorByPhone[phone] = numerico.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      });
     }
   }
 
@@ -84,39 +97,45 @@ export async function POST(req: NextRequest) {
   }
   const missingPhones = allPhones.filter((p) => !confirmedPhones.includes(p));
 
-  // After Python inserts the rows (synchronously before its response),
-  // patch metadata.boletos_json for each phone so the drawer can show details.
-  if (Object.keys(boletosByPhone).length > 0) {
-    try {
-      const phones = Object.keys(boletosByPhone);
-
+  // O Python insere as linhas antes de responder. Aqui o CRM corrige o que ele
+  // sabe melhor: o valor somado da planilha e o detalhamento dos boletos.
+  let valoresCorrigidos = 0;
+  try {
+    const phones = [...new Set([...Object.keys(boletosByPhone), ...Object.keys(valorByPhone)])];
+    if (phones.length > 0) {
       const { data: recentRows } = await admin
         .from("cobranca_log")
-        .select("id, telefone, metadata")
+        .select("id, telefone, valor, metadata")
         .in("telefone", phones)
         .gte("created_at", cutoff)
         .order("created_at", { ascending: false });
 
-      if (recentRows) {
-        // Pick the most-recent row per phone (recentRows already ordered desc)
-        const byPhone = new Map<string, { id: string; metadata: Record<string, unknown> | null }>();
-        for (const row of recentRows) {
-          if (row.telefone && !byPhone.has(row.telefone) && boletosByPhone[row.telefone]) {
-            byPhone.set(row.telefone, { id: row.id, metadata: row.metadata });
-          }
+      // Uma linha por telefone — recentRows já vem em ordem decrescente.
+      const byPhone = new Map<string, { id: string; valor: string | null; metadata: Record<string, unknown> | null }>();
+      for (const row of recentRows ?? []) {
+        if (row.telefone && !byPhone.has(row.telefone)) {
+          byPhone.set(row.telefone, { id: row.id, valor: row.valor, metadata: row.metadata });
         }
-        await Promise.all(
-          [...byPhone.entries()].map(([phone, row]) =>
-            // Merge: preserva a metadata gravada pelo ERP/Python (update substituiria a coluna inteira)
-            admin.from("cobranca_log").update({
-              metadata: { ...(row.metadata ?? {}), boletos_json: boletosByPhone[phone] },
-            }).eq("id", row.id)
-          )
-        );
       }
-    } catch (err) {
-      console.error("[DISPARO] Falha ao salvar boletos_json no metadata:", err);
+
+      await Promise.all(
+        [...byPhone.entries()].map(([phone, row]) => {
+          const patch: Record<string, unknown> = {};
+          if (boletosByPhone[phone]) {
+            // Merge: preserva a metadata gravada pelo ERP/Python (update substituiria a coluna inteira)
+            patch.metadata = { ...(row.metadata ?? {}), boletos_json: boletosByPhone[phone] };
+          }
+          if (valorByPhone[phone] && row.valor !== valorByPhone[phone]) {
+            patch.valor = valorByPhone[phone];
+            valoresCorrigidos += 1;
+          }
+          if (Object.keys(patch).length === 0) return Promise.resolve();
+          return admin.from("cobranca_log").update(patch).eq("id", row.id);
+        })
+      );
     }
+  } catch (err) {
+    console.error("[DISPARO] Falha ao corrigir valor/boletos na cobranca_log:", err);
   }
 
   await admin.from("activity_log").insert({
@@ -127,6 +146,7 @@ export async function POST(req: NextRequest) {
       count: leads.length,
       confirmed: confirmedPhones.length,
       missing: missingPhones,
+      valoresCorrigidos,
       pythonStatus,
       actor_id: user!.id,
     },
