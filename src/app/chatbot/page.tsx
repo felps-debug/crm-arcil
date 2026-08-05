@@ -58,7 +58,8 @@ const STEPS: Step[] = [
   { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
   { key: "ponto_eletrico", question: "Ja existe ponto eletrico na parede?", type: "choice", options: ["Sim", "Nao"] },
   { key: "unidade_externa", question: "Onde ficara a unidade externa (condensadora) e a que distancia aproximada?", type: "text" },
-  { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente"] },
+  { key: "nivel_condensadora", question: "A condensadora fica acima, abaixo ou no mesmo nivel do ambiente?", type: "choice", options: ["Acima do ambiente", "Abaixo do ambiente", "Mesmo nivel do ambiente"] },
+  { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente", "Sem canaleta"] },
 ];
 
 type Tab = "chat" | "historico";

@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
         {
           role: "system",
           content:
-            "Extraia as informações da conversa e retorne um JSON com os campos: modelo, pe_direito, ponto_eletrico (boolean), unidade_externa, tubulacao. Retorne APENAS o JSON válido, sem markdown.",
+            "Extraia as informações da conversa e retorne um JSON com os campos: modelo, pe_direito, ponto_eletrico (boolean), unidade_externa, nivel_condensadora, tubulacao. Retorne APENAS o JSON válido, sem markdown.",
         },
         ...messages.map((m) => ({ role: m.role, content: m.content })),
       ],
@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
   if (answers?.pe_direito) collectedData.pe_direito = answers.pe_direito;
   if (answers?.tubulacao) collectedData.tubulacao = answers.tubulacao;
   if (answers?.unidade_externa) collectedData.unidade_externa = answers.unidade_externa;
+  if (answers?.nivel_condensadora) collectedData.nivel_condensadora = answers.nivel_condensadora;
   if (answers?.ponto_eletrico) collectedData.ponto_eletrico = answers.ponto_eletrico === "Sim";
   if (answers?.tipo_parede) collectedData.tipo_parede = answers.tipo_parede;
 
@@ -122,6 +123,7 @@ export async function POST(request: NextRequest) {
       ? `Ponto elétrico: ${collectedData.ponto_eletrico ? "já existe" : "não existe"}`
       : null,
     collectedData.unidade_externa ? `Unidade externa: ${collectedData.unidade_externa}` : null,
+    collectedData.nivel_condensadora ? `Nível da condensadora em relação ao ambiente: ${collectedData.nivel_condensadora}` : null,
     collectedData.tubulacao ? `Tubulação: ${collectedData.tubulacao}` : null,
     imageDescription ? `Descrição do ambiente: ${imageDescription}` : null,
   ]
