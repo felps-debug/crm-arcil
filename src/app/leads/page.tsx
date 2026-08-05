@@ -198,7 +198,7 @@ function LeadsBoard() {
         <div className={view === "kanban" ? "block" : "grid grid-cols-1 gap-4 xl:grid-cols-[1fr_380px]"}>
           <div className="min-w-0">
             {view === "table" && <LeadsTable leads={items} onSelect={setSelectedId} selectedId={selectedId} />}
-            {view === "kanban" && <LeadsKanban leads={items} onSelect={setSelectedId} />}
+            {view === "kanban" && <LeadsKanban leads={items} onSelect={setSelectedId} selectedId={selectedId} />}
             {view === "cards" && <LeadsCards leads={items} onSelect={setSelectedId} />}
           </div>
           {view !== "kanban" && (
@@ -210,6 +210,28 @@ function LeadsBoard() {
           )}
         </div>
       )}
+
+      {/* O kanban ocupa a largura toda e rola na horizontal, então não cabe a
+          coluna lateral de 380px que os outros modos usam. Antes disso o painel
+          simplesmente não era renderizado no kanban: clicar num card marcava o
+          lead, buscava o detalhe e não mostrava nada. Aqui ele vira gaveta. */}
+      {view === "kanban" && selectedId && (
+        <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true" aria-label="Prontuário do lead">
+          <button
+            type="button"
+            aria-label="Fechar prontuário"
+            className="flex-1 bg-black/50 backdrop-blur-[1px]"
+            onClick={() => setSelectedId(null)}
+          />
+          <div className="w-full max-w-[400px] overflow-y-auto border-l border-[var(--border)] bg-[var(--bg-base)] p-4 shadow-2xl">
+            <LeadPanel
+              loading={detail.loading}
+              detail={detail.data}
+              onClose={() => setSelectedId(null)}
+            />
+          </div>
+        </div>
+      )}
     </ConsolePage>
   );
 }
@@ -217,7 +239,7 @@ function LeadsBoard() {
 function LeadsTable({ leads, onSelect, selectedId }: { leads: LeadListItem[]; onSelect: (id: string) => void; selectedId: string | null }) {
   return (
     <ConsoleCard pad={false}>
-      <ConsoleTable headers={["Lead", "Segmento", "Status", "Responsavel", "Ultimo contato", "Proxima acao"]}>
+      <ConsoleTable headers={["Lead", "Segmento", "Status", "Responsável", "Último contato", "Aguardando desde"]}>
         {leads.map((lead) => (
           <tr
             key={lead.id}
@@ -243,7 +265,7 @@ function LeadsTable({ leads, onSelect, selectedId }: { leads: LeadListItem[]; on
             <td className="px-3 py-3 text-[var(--text-secondary)]">{responsibleLabel(lead)}</td>
             <td className="px-3 py-3 text-[var(--text-muted)]">{formatDateTime(lead.lastContactAt)}</td>
             <td className="px-3 py-3">
-              {lead.nextActionAt ? <ConsoleStatus tone="amber">{formatDateTime(lead.nextActionAt)}</ConsoleStatus> : <span className="text-[var(--text-muted)]">-</span>}
+              {lead.awaitingSince ? <ConsoleStatus tone="amber">{formatDateTime(lead.awaitingSince)}</ConsoleStatus> : <span className="text-[var(--text-muted)]">-</span>}
             </td>
           </tr>
         ))}
@@ -256,7 +278,15 @@ function LeadsTable({ leads, onSelect, selectedId }: { leads: LeadListItem[]; on
   );
 }
 
-function LeadsKanban({ leads, onSelect }: { leads: LeadListItem[]; onSelect: (id: string) => void }) {
+function LeadsKanban({
+  leads,
+  onSelect,
+  selectedId,
+}: {
+  leads: LeadListItem[];
+  onSelect: (id: string) => void;
+  selectedId: string | null;
+}) {
   return (
     <div className="-mx-1 flex min-h-[650px] gap-4 overflow-x-auto pb-4">
       {PIPELINE.map((stage) => {
@@ -277,7 +307,9 @@ function LeadsKanban({ leads, onSelect }: { leads: LeadListItem[]; onSelect: (id
                 <button
                   key={lead.id}
                   onClick={() => onSelect(lead.id)}
-                  className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--bg-inset)] p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-blue-500/60"
+                  className={`w-full rounded-[10px] border bg-[var(--bg-inset)] p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-blue-500/60 ${
+                    selectedId === lead.id ? "border-blue-500" : "border-[var(--border)]"
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -293,11 +325,11 @@ function LeadsKanban({ leads, onSelect }: { leads: LeadListItem[]; onSelect: (id
                   </div>
                   <div className="mt-3 space-y-1.5 text-[10px] text-[var(--text-muted)]">
                     <div className="flex items-center gap-1.5">
-                      <CalendarDays size={11} /> Ultimo contato: {formatDateTime(lead.lastContactAt)}
+                      <CalendarDays size={11} /> Último contato: {formatDateTime(lead.lastContactAt)}
                     </div>
-                    {lead.nextActionAt && (
+                    {lead.awaitingSince && (
                       <div className="flex items-center gap-1.5">
-                        <CalendarDays size={11} /> Follow-up: {formatDateTime(lead.nextActionAt)}
+                        <CalendarDays size={11} /> Follow-up sem resposta desde {formatDateTime(lead.awaitingSince)}
                       </div>
                     )}
                   </div>

@@ -89,7 +89,10 @@ export type LeadListItem = {
   awaitingFollowup: boolean;
   leadScore: number | null;
   lastContactAt: string | null;
-  nextActionAt: string | null;
+  /** Quando o follow-up pendente foi ENVIADO — uma data no passado. Já se
+   * chamou nextActionAt e era exibido como "Próxima ação", o que lia como
+   * agendamento futuro sendo que nada é agendado hoje. */
+  awaitingSince: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 };

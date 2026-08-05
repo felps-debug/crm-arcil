@@ -215,7 +215,7 @@ function mapLead(lead: LeadRow, vendors: Map<string, VendorRow>, conversations: 
     awaitingFollowup: Boolean(nextFollowup),
     leadScore: lead.lead_score,
     lastContactAt: lastConversation?.started_at ?? lead.updated_at,
-    nextActionAt: nextFollowup?.created_at ?? null,
+    awaitingSince: nextFollowup?.created_at ?? null,
     createdAt: lead.created_at,
     updatedAt: lead.updated_at,
   };
