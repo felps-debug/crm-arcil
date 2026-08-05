@@ -26,7 +26,10 @@ type AdminUser = {
   role?: string | null;
   created_at?: string | null;
   permissions?: Record<string, boolean> | null;
+  chatwoot_inbox_id?: string | null;
 };
+
+type ChatwootInboxesResponse = { inboxes: { id: number; name: string }[] };
 
 const MODULE_PERMISSIONS: { key: string; label: string }[] = [
   { key: "manage_cobranca", label: "Campanhas & Cobrancas" },
@@ -72,6 +75,9 @@ function AdminPageInner() {
   const [reloadToken, setReloadToken] = useState(0);
   const { data, loading, error } = useApi<UsersResponse>(`/api/admin/users?t=${reloadToken}`);
   const activity = useApi<ActivityLogResponse>(`/api/admin/activity?t=${reloadToken}`);
+  // Errors silently (e.g. Chatwoot not configured yet) — the inbox picker
+  // just doesn't render below rather than breaking the whole admin page.
+  const inboxes = useApi<ChatwootInboxesResponse>("/api/atendimento/inboxes");
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
 
@@ -108,6 +114,21 @@ function AdminPageInner() {
       toast(body.error ?? "Erro ao alterar permissao.", "error");
       return;
     }
+    setReloadToken((t) => t + 1);
+  }
+
+  async function handleSetChatwootInbox(userId: string, chatwootInboxId: string | null) {
+    const res = await fetch(`/api/admin/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatwoot_inbox_id: chatwootInboxId }),
+    });
+    const body = await res.json();
+    if (!res.ok || body.error) {
+      toast(body.error ?? "Erro ao vincular número.", "error");
+      return;
+    }
+    toast(chatwootInboxId ? "Número vinculado." : "Vínculo removido.", "success");
     setReloadToken((t) => t + 1);
   }
 
@@ -214,6 +235,26 @@ function AdminPageInner() {
                               </DropdownMenu.CheckboxItem>
                             );
                           })}
+                          {!["superadmin", "owner", "manager"].includes(user.role ?? "") && inboxes.data?.inboxes && (
+                            <>
+                              <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
+                              <DropdownMenu.Label className="px-2 pb-1 text-[10px] font-bold uppercase text-[var(--text-muted)]">
+                                Número Chatwoot (Atendimento)
+                              </DropdownMenu.Label>
+                              <div className="px-2 pb-1.5" onClick={(e) => e.stopPropagation()}>
+                                <select
+                                  value={user.chatwoot_inbox_id ?? ""}
+                                  onChange={(e) => handleSetChatwootInbox(user.id, e.target.value || null)}
+                                  className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1.5 text-[12px] text-[var(--text-primary)]"
+                                >
+                                  <option value="">Nenhum vínculo</option>
+                                  {inboxes.data.inboxes.map((ib) => (
+                                    <option key={ib.id} value={String(ib.id)}>{ib.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </>
+                          )}
                           <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
                           <DropdownMenu.Item
                             onSelect={() => handleDeleteUser(user.id)}

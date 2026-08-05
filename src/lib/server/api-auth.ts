@@ -70,6 +70,42 @@ export async function requireSuperAdmin() {
   return { user: user!, response: null };
 }
 
+/**
+ * Requires manage_atendimento, then resolves how far this caller's view of
+ * Chatwoot should reach. superadmin/owner/manager see every inbox
+ * (scopedInboxId: null). Everyone else (a vendor/employee an admin granted
+ * the permission to) is locked to the single Chatwoot inbox an admin linked
+ * on their profile (user_profiles.chatwoot_inbox_id) — if that's not set
+ * yet, they get a distinct error code so the UI can say "ask an admin to
+ * link your number" instead of a generic failure.
+ */
+export async function requireAtendimentoScope() {
+  const { user, response } = await requireApiPermission("manage_atendimento");
+  if (response) return { user: null, scopedInboxId: null as number | null, response };
+
+  const admin = createAdminClient();
+  const { data: profile } = await admin.from("user_profiles").select("role,chatwoot_inbox_id").eq("id", user!.id).single();
+  const role = String(profile?.role ?? "");
+
+  if (["superadmin", "owner", "manager"].includes(role)) {
+    return { user: user!, scopedInboxId: null as number | null, response: null };
+  }
+
+  const inboxId = profile?.chatwoot_inbox_id ? Number(profile.chatwoot_inbox_id) : null;
+  if (!inboxId) {
+    return {
+      user: null,
+      scopedInboxId: null as number | null,
+      response: Response.json(
+        { error: "Seu usuário ainda não está vinculado a um número do Chatwoot.", code: "chatwoot_inbox_not_linked" },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return { user: user!, scopedInboxId: inboxId, response: null };
+}
+
 export function handleApiError(error: unknown) {
   // Full error stays server-side only — returning error.message to the client
   // leaks Postgres/internal details (constraint names, column names, etc).

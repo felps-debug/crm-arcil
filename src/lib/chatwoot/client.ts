@@ -137,12 +137,18 @@ export interface ChatwootConversationSummary {
   id: number;
   status: string;
   inboxId: number | null;
+  inboxName: string | null;
   unreadCount: number;
   lastActivityAt: string | null; // ISO
   contactName: string | null;
   contactPhone: string | null;
   assigneeName: string | null;
   lastMessage: string | null;
+}
+
+export interface ChatwootInbox {
+  id: number;
+  name: string;
 }
 
 export interface ChatwootConversationDetail extends ChatwootConversationSummary {
@@ -171,12 +177,13 @@ function normalizeMessage(m: ChatwootMessageRaw): ChatwootMessageItem {
   };
 }
 
-function normalizeConversation(c: ChatwootConversationRaw): ChatwootConversationSummary {
+function normalizeConversation(c: ChatwootConversationRaw, inboxNames: Map<number, string>): ChatwootConversationSummary {
   const lastMessage = c.messages && c.messages.length > 0 ? c.messages[c.messages.length - 1] : null;
   return {
     id: c.id,
     status: c.status ?? "open",
     inboxId: c.inbox_id ?? null,
+    inboxName: c.inbox_id != null ? inboxNames.get(c.inbox_id) ?? null : null,
     unreadCount: c.unread_count ?? 0,
     lastActivityAt: toIso(c.timestamp ?? c.contact_last_seen_at),
     contactName: c.meta?.sender?.name ?? null,
@@ -186,13 +193,29 @@ function normalizeConversation(c: ChatwootConversationRaw): ChatwootConversation
   };
 }
 
-/** GET /conversations — inbox list, newest activity first. */
-export async function listConversations(opts?: { status?: string }): Promise<ChatwootConversationSummary[]> {
-  const qs = opts?.status ? `?status=${encodeURIComponent(opts.status)}` : "";
-  const body = await chatwootFetch<unknown>(`/conversations${qs}`);
+/** GET /inboxes — every WhatsApp number/channel connected to the account. */
+export async function listInboxes(): Promise<ChatwootInbox[]> {
+  const body = await chatwootFetch<{ payload?: { id: number; name: string }[] }>("/inboxes");
+  return (body.payload ?? []).map((i) => ({ id: i.id, name: i.name }));
+}
+
+/**
+ * GET /conversations — inbox list, newest activity first.
+ * opts.inboxId scopes to a single Chatwoot inbox — used both for the staff
+ * filter dropdown and to enforce per-vendor scoping server-side (see
+ * requireAtendimentoScope in api-auth.ts).
+ */
+export async function listConversations(opts?: { status?: string; inboxId?: number }): Promise<ChatwootConversationSummary[]> {
+  const params = new URLSearchParams();
+  if (opts?.status) params.set("status", opts.status);
+  if (opts?.inboxId != null) params.set("inbox_id", String(opts.inboxId));
+  const qs = params.toString() ? `?${params.toString()}` : "";
+
+  const [body, inboxes] = await Promise.all([chatwootFetch<unknown>(`/conversations${qs}`), listInboxes()]);
+  const inboxNames = new Map(inboxes.map((i) => [i.id, i.name]));
   const raw = extractArray<ChatwootConversationRaw>(body);
   return raw
-    .map(normalizeConversation)
+    .map((c) => normalizeConversation(c, inboxNames))
     // Every Arcil inbox is a WhatsApp number tied to a vendor; a real lead
     // always has a contact phone. A conversation with no phone is a WhatsApp
     // GROUP the vendor's personal number happens to be in (confirmed against
@@ -213,11 +236,13 @@ export async function listMessages(conversationId: string | number): Promise<Cha
 
 /** GET /conversations/{id} — conversation metadata + its full message thread. */
 export async function getConversation(conversationId: string | number): Promise<ChatwootConversationDetail> {
-  const [conv, messages] = await Promise.all([
+  const [conv, messages, inboxes] = await Promise.all([
     chatwootFetch<ChatwootConversationRaw>(`/conversations/${conversationId}`),
     listMessages(conversationId),
+    listInboxes(),
   ]);
-  return { ...normalizeConversation(conv), messages };
+  const inboxNames = new Map(inboxes.map((i) => [i.id, i.name]));
+  return { ...normalizeConversation(conv, inboxNames), messages };
 }
 
 /** POST /conversations/{id}/messages — send an outgoing reply as the logged-in agent. */

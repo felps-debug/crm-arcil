@@ -14,13 +14,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (response) return response;
 
     const { id } = await params;
-    const { role, full_name, permissions } = await req.json();
+    const { role, full_name, permissions, chatwoot_inbox_id } = await req.json();
 
     if (role !== undefined && !VALID_ROLES.includes(role)) {
       return Response.json({ error: `Role inválida. Use uma de: ${VALID_ROLES.join(", ")}` }, { status: 400 });
     }
     if (permissions !== undefined && !isPlainBooleanRecord(permissions)) {
       return Response.json({ error: "permissions deve ser um objeto de chaves booleanas" }, { status: 400 });
+    }
+    if (chatwoot_inbox_id !== undefined && chatwoot_inbox_id !== null && typeof chatwoot_inbox_id !== "string") {
+      return Response.json({ error: "chatwoot_inbox_id deve ser string ou null" }, { status: 400 });
     }
 
     const admin = createAdminClient();
@@ -33,6 +36,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (role) updates.role = role;
     if (full_name !== undefined) updates.full_name = full_name;
+    if (chatwoot_inbox_id !== undefined) updates.chatwoot_inbox_id = chatwoot_inbox_id;
 
     const { error } = await admin.from("user_profiles").update(updates).eq("id", id);
     if (error) return handleApiError(error);

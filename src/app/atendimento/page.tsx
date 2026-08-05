@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, MessageCircle, Phone, PlugZap, RefreshCcw, Send, User } from "lucide-react";
+import { Loader2, Link2Off, MessageCircle, Phone, PlugZap, RefreshCcw, Send, User } from "lucide-react";
 import {
   ConsoleButton,
   ConsoleCard,
@@ -14,7 +14,7 @@ import {
 import { AccessGuard } from "@/components/layout/access-guard";
 import { useToast } from "@/components/ui/toast";
 import { formatDateTime } from "@/lib/client-api";
-import type { ChatwootConversationDetail, ChatwootConversationSummary, ChatwootMessageItem } from "@/lib/chatwoot/client";
+import type { ChatwootConversationDetail, ChatwootConversationSummary, ChatwootInbox, ChatwootMessageItem } from "@/lib/chatwoot/client";
 
 const STATUS_LABELS: Record<string, string> = {
   open: "Aberta",
@@ -35,6 +35,7 @@ interface FetchState<T> {
   loading: boolean;
   error: string | null;
   notConfigured: boolean;
+  code: string | null;
 }
 
 /**
@@ -46,7 +47,7 @@ interface FetchState<T> {
  * depend on, this page carries its own minimal variant.
  */
 function useAtendimentoFetch<T>(url: string | null): FetchState<T> & { refetch: () => void } {
-  const [state, setState] = useState<FetchState<T>>({ data: null, loading: true, error: null, notConfigured: false });
+  const [state, setState] = useState<FetchState<T>>({ data: null, loading: true, error: null, notConfigured: false, code: null });
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -57,7 +58,7 @@ function useAtendimentoFetch<T>(url: string | null): FetchState<T> & { refetch: 
       // lib/client-api.ts.
       queueMicrotask(() => {
         if (!alive) return;
-        setState({ data: null, loading: false, error: null, notConfigured: false });
+        setState({ data: null, loading: false, error: null, notConfigured: false, code: null });
       });
       return () => {
         alive = false;
@@ -66,7 +67,7 @@ function useAtendimentoFetch<T>(url: string | null): FetchState<T> & { refetch: 
 
     queueMicrotask(() => {
       if (!alive) return;
-      setState((s) => ({ ...s, loading: true, error: null, notConfigured: false }));
+      setState((s) => ({ ...s, loading: true, error: null, notConfigured: false, code: null }));
     });
 
     fetch(url, { cache: "no-store" })
@@ -79,10 +80,11 @@ function useAtendimentoFetch<T>(url: string | null): FetchState<T> & { refetch: 
             loading: false,
             error: body?.error ?? `HTTP ${res.status}`,
             notConfigured: body?.code === "chatwoot_not_configured",
+            code: body?.code ?? null,
           });
           return;
         }
-        setState({ data: body as T, loading: false, error: null, notConfigured: false });
+        setState({ data: body as T, loading: false, error: null, notConfigured: false, code: null });
       })
       .catch((err) => {
         if (!alive) return;
@@ -91,6 +93,7 @@ function useAtendimentoFetch<T>(url: string | null): FetchState<T> & { refetch: 
           loading: false,
           error: err instanceof Error ? err.message : "Erro ao carregar dados",
           notConfigured: false,
+          code: null,
         });
       });
 
@@ -113,11 +116,19 @@ export default function AtendimentoPage() {
 function AtendimentoPageInner() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [inboxFilter, setInboxFilter] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
 
-  const list = useAtendimentoFetch<{ conversations: ChatwootConversationSummary[] }>("/api/atendimento/conversations");
+  // Errors silently — a scoped vendor's own inbox is a single option anyway,
+  // and this dropdown just doesn't render if it can't load.
+  const inboxesFetch = useAtendimentoFetch<{ inboxes: ChatwootInbox[] }>("/api/atendimento/inboxes");
+  const inboxes = inboxesFetch.data?.inboxes ?? [];
+
+  const list = useAtendimentoFetch<{ conversations: ChatwootConversationSummary[]; scoped: boolean }>(
+    `/api/atendimento/conversations${inboxFilter ? `?inboxId=${inboxFilter}` : ""}`
+  );
   const detail = useAtendimentoFetch<{ conversation: ChatwootConversationDetail }>(
     selectedId ? `/api/atendimento/conversations/${selectedId}` : null
   );
@@ -181,6 +192,24 @@ function AtendimentoPageInner() {
     );
   }
 
+  if (list.code === "chatwoot_inbox_not_linked") {
+    return (
+      <ConsolePage title="Atendimento" subtitle="Conversas do WhatsApp via Chatwoot">
+        <ConsoleCard className="flex flex-col items-center gap-3 py-10 text-center">
+          <div className="grid h-12 w-12 place-items-center rounded-full border border-amber-500/25 bg-amber-500/10 text-amber-400">
+            <Link2Off size={22} />
+          </div>
+          <div>
+            <h2 className="text-[14px] font-bold text-[var(--text-primary)]">Seu número ainda não foi vinculado</h2>
+            <p className="mx-auto mt-2 max-w-md text-[12px] text-[var(--text-muted)]">
+              Peça a um administrador para vincular seu usuário a um número do Chatwoot em Admin → menu do seu usuário → &quot;Número Chatwoot (Atendimento)&quot;.
+            </p>
+          </div>
+        </ConsoleCard>
+      </ConsolePage>
+    );
+  }
+
   return (
     <ConsolePage
       title="Atendimento"
@@ -193,6 +222,19 @@ function AtendimentoPageInner() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {list.data?.scoped === false && inboxes.length > 0 && (
+            <select
+              value={inboxFilter}
+              onChange={(e) => setInboxFilter(e.target.value)}
+              aria-label="Filtrar por número"
+              className="h-10 rounded-[10px] border border-[var(--border)] bg-[var(--bg-inset)] px-3 text-[12px] text-[var(--text-primary)]"
+            >
+              <option value="">Todos os números</option>
+              {inboxes.map((ib) => (
+                <option key={ib.id} value={String(ib.id)}>{ib.name}</option>
+              ))}
+            </select>
+          )}
           <ConsoleButton
             icon={RefreshCcw}
             onClick={() => {
@@ -235,11 +277,18 @@ function AtendimentoPageInner() {
                       {STATUS_LABELS[c.status] ?? c.status}
                     </ConsoleStatus>
                   </div>
-                  {c.contactPhone && (
-                    <p className="mt-0.5 flex items-center gap-1 font-data text-[11px] text-[var(--text-muted)]">
-                      <Phone size={10} /> {c.contactPhone}
-                    </p>
-                  )}
+                  <div className="mt-0.5 flex items-center gap-2">
+                    {c.contactPhone && (
+                      <p className="flex items-center gap-1 font-data text-[11px] text-[var(--text-muted)]">
+                        <Phone size={10} /> {c.contactPhone}
+                      </p>
+                    )}
+                    {c.inboxName && (
+                      <span className="truncate rounded-full bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-300">
+                        {c.inboxName}
+                      </span>
+                    )}
+                  </div>
                   <p className="mt-1.5 truncate text-[11px] text-[var(--text-secondary)]">{c.lastMessage ?? "Sem mensagens"}</p>
                   <div className="mt-1.5 flex items-center justify-between">
                     <span className="text-[10px] text-[var(--text-muted)]">{formatDateTime(c.lastActivityAt)}</span>
@@ -288,9 +337,16 @@ function AtendimentoPageInner() {
                       </p>
                     </div>
                   </div>
-                  <ConsoleStatus tone={STATUS_TONES[conv.status] ?? "slate"}>
-                    {STATUS_LABELS[conv.status] ?? conv.status}
-                  </ConsoleStatus>
+                  <div className="flex items-center gap-2">
+                    {conv.inboxName && (
+                      <span className="rounded-full bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold text-violet-300">
+                        {conv.inboxName}
+                      </span>
+                    )}
+                    <ConsoleStatus tone={STATUS_TONES[conv.status] ?? "slate"}>
+                      {STATUS_LABELS[conv.status] ?? conv.status}
+                    </ConsoleStatus>
+                  </div>
                 </div>
 
                 <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
