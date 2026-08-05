@@ -66,11 +66,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // O Python responde 200 mesmo quando descarta lead: um disparo de 2 gravou 1
+  // e o CRM anunciou "2 leads inseridos". Confere o que realmente caiu na
+  // tabela antes de dizer que deu certo.
+  const cutoff = new Date(Date.now() - 90_000).toISOString();
+  const allPhones = [...new Set(leads.map((l) => l["numero"]).filter(Boolean))];
+  let confirmedPhones: string[] = [];
+  try {
+    const { data: landed } = await admin
+      .from("cobranca_log")
+      .select("telefone")
+      .in("telefone", allPhones)
+      .gte("created_at", cutoff);
+    confirmedPhones = [...new Set((landed ?? []).map((r) => r.telefone).filter(Boolean) as string[])];
+  } catch (err) {
+    console.error("[DISPARO] Falha ao conferir linhas gravadas:", err);
+  }
+  const missingPhones = allPhones.filter((p) => !confirmedPhones.includes(p));
+
   // After Python inserts the rows (synchronously before its response),
   // patch metadata.boletos_json for each phone so the drawer can show details.
   if (Object.keys(boletosByPhone).length > 0) {
     try {
-      const cutoff = new Date(Date.now() - 90_000).toISOString();
       const phones = Object.keys(boletosByPhone);
 
       const { data: recentRows } = await admin
@@ -106,9 +123,22 @@ export async function POST(req: NextRequest) {
     entity_type: "cobranca_disparo",
     entity_id: crypto.randomUUID(),
     action: "disparo",
-    metadata: { count: leads.length, pythonStatus, actor_id: user!.id },
+    metadata: {
+      count: leads.length,
+      confirmed: confirmedPhones.length,
+      missing: missingPhones,
+      pythonStatus,
+      actor_id: user!.id,
+    },
     wf_origin: "crm",
   });
 
-  return Response.json({ ok: true, inserted: leads.length, pythonStatus });
+  return Response.json({
+    ok: true,
+    // `inserted` passa a ser o que existe na tabela, não o que foi enviado.
+    inserted: confirmedPhones.length,
+    sent: leads.length,
+    missing: missingPhones,
+    pythonStatus,
+  });
 }

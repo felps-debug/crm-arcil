@@ -150,6 +150,11 @@ export function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] 
         totalReceber > 0
           ? totalReceber.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
           : first.valorDisplay,
+      // `valor` vai formatado em pt-BR ("471,50") e quem consome do outro lado
+      // precisa adivinhar o locale — foi assim que R$ 471,50 virou R$ 4.715,00
+      // no cobranca_log. Este campo vai sem formatação nenhuma, ponto decimal,
+      // para não sobrar interpretação.
+      valor_numerico: totalReceber > 0 ? totalReceber.toFixed(2) : "",
       codigo_cliente: first.codigoCliente,
       vencimento: boletoCount === 1 ? first.vencimento : vencimentos,
       documento: first.documento,

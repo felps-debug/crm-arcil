@@ -68,7 +68,18 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
       setPreview([]);
       setFileName(null);
       onDispatched();
-      toast(`${data.inserted} leads inseridos — acompanhe no Monitoramento`, "success");
+      // O serviço de cobrança responde 200 mesmo descartando lead. Antes o CRM
+      // anunciava o número enviado como se fosse o gravado — um disparo de 2
+      // com 1 gravado dizia "2 leads inseridos".
+      const perdidos: string[] = data.missing ?? [];
+      if (perdidos.length > 0) {
+        toast(
+          `${data.inserted} de ${data.sent} gravados. Nao entraram: ${perdidos.join(", ")}`,
+          "error"
+        );
+      } else {
+        toast(`${data.inserted} leads inseridos — acompanhe no Monitoramento`, "success");
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro";
       setDispatchResult({ ok: false, error: message });
