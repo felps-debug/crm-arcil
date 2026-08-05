@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Building2, CalendarDays, ChevronRight, Grid2X2, Kanban, List, Phone, Search, UserRound } from "lucide-react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Building2, CalendarDays, ChevronRight, Grid2X2, Kanban, List, Phone, Search, UserRound, X } from "lucide-react";
 import {
   ConsoleButton,
   ConsoleCard,
@@ -30,16 +32,26 @@ const PIPELINE: { id: KanbanStageId; label: string; tone: "green" | "amber" | "r
 
 function kanbanStage(lead: LeadListItem): KanbanStageId {
   if (lead.status === "LOST") return "PERDIDO";
-  // aiAgent is the vendor tied to the lead's active conversation
-  // (conversations.vendor_id, set by WF-07's segment-based routing) — that IS
-  // the "forwarded to salesperson" moment, even when leads.owner_name (a
-  // separate, later-set field) is still empty. Checking aiAgent too fixes
-  // leads getting stuck in "Recebendo Follow-up" despite already having a
-  // vendor attached, just because an automated followup was also queued.
-  if (lead.responsible || lead.aiAgent) return "ENCAMINHADO";
-  if (lead.nextActionAt) return "FOLLOWUP";
+  // ENCAMINHADO means a human salesperson took over — only leads.owner_name
+  // proves that. Do NOT use aiAgent here: it maps conversations.vendor_id,
+  // which n8n stamps on every conversation the moment it opens (today every
+  // row carries the same vendor regardless of segment), so treating it as a
+  // handoff marked every lead with a conversation as already forwarded.
+  if (lead.responsible) return "ENCAMINHADO";
+  // awaitingFollowup, not nextActionAt: a followups row is created together
+  // with the lead, so "has a followup row" ≠ "a followup was sent".
+  if (lead.awaitingFollowup) return "FOLLOWUP";
   if (lead.hasConversation) return "CONVERSANDO";
   return "NOVO";
+}
+
+/** Only owner_name is a human owner. The vendor bound to the conversation is
+ * the automated routing target, so label it as such instead of passing it off
+ * as the responsible salesperson. */
+function responsibleLabel(lead: LeadListItem): string {
+  if (lead.responsible) return lead.responsible;
+  if (lead.aiAgent) return `Fila IA · ${lead.aiAgent}`;
+  return "Sem responsavel";
 }
 
 function statusTone(status: string | null): "green" | "amber" | "red" | "blue" | "slate" {
@@ -50,15 +62,44 @@ function statusTone(status: string | null): "green" | "amber" | "red" | "blue" |
 }
 
 export default function LeadsPage() {
+  // useSearchParams exige um limite de Suspense para o App Router conseguir
+  // renderizar o shell antes de conhecer a query string.
+  return (
+    <Suspense fallback={<ConsoleLoading />}>
+      <LeadsBoard />
+    </Suspense>
+  );
+}
+
+function LeadsBoard() {
+  // O dashboard linka para cá já filtrado (ex.: /leads?status=ACTIVE vindo do
+  // card "Leads ativos"). Sem ler a query aqui, aqueles links caíam numa lista
+  // sem filtro nenhum e o drilldown era decorativo.
+  const searchParams = useSearchParams();
+  const urlSegment = searchParams.get("segment") ?? "";
+  const urlStatus = searchParams.get("status") ?? "";
+  const urlSearch = searchParams.get("search") ?? "";
+
   // Kanban needs horizontal scroll room a phone doesn't have — default to the
   // existing Cards view below 768px instead. Lazy initializer (not an effect)
   // so there's no flash of the wrong view before it corrects itself.
   const [view, setView] = useState<ViewMode>(() =>
     typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches ? "cards" : "kanban"
   );
-  const [segment, setSegment] = useState("");
-  const [search, setSearch] = useState("");
+  const [segment, setSegment] = useState(urlSegment);
+  const [search, setSearch] = useState(urlSearch);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Navegar de novo pelo dashboard (mesma rota, query diferente) não remonta o
+  // componente, então o estado tem que acompanhar a URL. Ajuste durante o render
+  // em vez de useEffect: o efeito renderizaria uma vez com o filtro antigo.
+  const queryKey = JSON.stringify([urlSegment, urlSearch]);
+  const [syncedQuery, setSyncedQuery] = useState(queryKey);
+  if (syncedQuery !== queryKey) {
+    setSyncedQuery(queryKey);
+    setSegment(urlSegment);
+    setSearch(urlSearch);
+  }
 
   // Bump on any leads/followups change so the board (and the open lead's
   // detail panel) update live instead of only on a manual refresh — same
@@ -71,14 +112,21 @@ export default function LeadsPage() {
       .channel("leads-rt")
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => setRefreshTick((t) => t + 1))
       .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, () => setRefreshTick((t) => t + 1))
+      // conversations drives CONVERSANDO and the "Fila IA" label, and it's the
+      // table n8n writes when a session opens — without it the board goes stale
+      // exactly when a lead starts talking.
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => setRefreshTick((t) => t + 1))
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
   }, []);
 
+  // O segmento é filtrado no cliente de propósito: mandando-o para a API a lista
+  // volta só com aquele segmento, e as abas — que são derivadas da lista — se
+  // apagavam sozinhas assim que você clicava numa delas.
   const params = new URLSearchParams();
-  if (segment) params.set("segment", segment);
+  if (urlStatus) params.set("status", urlStatus);
   if (search) params.set("search", search);
   params.set("limit", "300");
   if (refreshTick) params.set("_r", String(refreshTick));
@@ -87,20 +135,24 @@ export default function LeadsPage() {
   const detail = useApi<LeadDetailResponse>(
     selectedId ? `/api/leads/${selectedId}${refreshTick ? `?_r=${refreshTick}` : ""}` : null
   );
-  const items = useMemo(() => leads.data?.items ?? [], [leads.data]);
+  const allItems = useMemo(() => leads.data?.items ?? [], [leads.data]);
+  const items = useMemo(
+    () => (segment ? allItems.filter((l) => l.segment === segment) : allItems),
+    [allItems, segment]
+  );
 
   const segments = useMemo(() => {
     const unique = new Map<string, string>();
-    for (const lead of items) {
+    for (const lead of allItems) {
       if (lead.segment) unique.set(lead.segment, lead.segmentLabel);
     }
     return [...unique.entries()].map(([id, label]) => ({ id, label }));
-  }, [items]);
+  }, [allItems]);
 
   return (
     <ConsolePage
       title="Leads"
-      subtitle="Gestao de leads e oportunidades"
+      subtitle="Gestão de leads e oportunidades"
       actions={
         <ConsoleInput
           value={search}
@@ -111,12 +163,24 @@ export default function LeadsPage() {
         />
       }
     >
+      {/* Sem isto o usuário chega pelo dashboard numa lista filtrada e não tem
+          como saber por quê, nem como voltar para a lista inteira. */}
+      {urlStatus && (
+        <div className="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
+          <span>Filtrado por status</span>
+          <ConsoleStatus tone={statusTone(urlStatus)}>{urlStatus}</ConsoleStatus>
+          <Link href="/leads" className="inline-flex items-center gap-1 font-semibold text-blue-300 hover:underline">
+            <X size={12} /> limpar
+          </Link>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          <ConsoleButton active={!segment} onClick={() => setSegment("")}>Todos <span className="font-data opacity-80">{items.length}</span></ConsoleButton>
+          <ConsoleButton active={!segment} onClick={() => setSegment("")}>Todos <span className="font-data opacity-80">{allItems.length}</span></ConsoleButton>
           {segments.map((s) => (
             <ConsoleButton key={s.id} active={segment === s.id} onClick={() => setSegment(s.id)}>
-              {s.label} <span className="font-data opacity-80">{items.filter((i) => i.segment === s.id).length}</span>
+              {s.label} <span className="font-data opacity-80">{allItems.filter((i) => i.segment === s.id).length}</span>
             </ConsoleButton>
           ))}
         </div>
@@ -176,7 +240,7 @@ function LeadsTable({ leads, onSelect, selectedId }: { leads: LeadListItem[]; on
             </td>
             <td className="px-3 py-3"><ConsoleStatus tone="slate">{lead.segmentLabel}</ConsoleStatus></td>
             <td className="px-3 py-3"><ConsoleStatus tone={statusTone(lead.status)}>{lead.statusLabel}</ConsoleStatus></td>
-            <td className="px-3 py-3 text-[var(--text-secondary)]">{lead.responsible ?? lead.aiAgent ?? "Sem responsavel"}</td>
+            <td className="px-3 py-3 text-[var(--text-secondary)]">{responsibleLabel(lead)}</td>
             <td className="px-3 py-3 text-[var(--text-muted)]">{formatDateTime(lead.lastContactAt)}</td>
             <td className="px-3 py-3">
               {lead.nextActionAt ? <ConsoleStatus tone="amber">{formatDateTime(lead.nextActionAt)}</ConsoleStatus> : <span className="text-[var(--text-muted)]">-</span>}
@@ -344,7 +408,7 @@ function LeadPanel({
       <div className="grid grid-cols-2 gap-2">
         <Info icon={Phone} label="Contato" value={detail.lead.phone ?? "-"} />
         <Info icon={Building2} label="Empresa" value={detail.lead.company ?? "-"} />
-        <Info icon={UserRound} label="Responsavel" value={detail.lead.responsible ?? detail.lead.aiAgent ?? "-"} />
+        <Info icon={UserRound} label="Responsavel" value={responsibleLabel(detail.lead)} />
         <Info icon={Search} label="Origem" value={detail.lead.origin ?? "-"} />
       </div>
 

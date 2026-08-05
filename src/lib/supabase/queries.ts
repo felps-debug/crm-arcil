@@ -333,7 +333,9 @@ export async function getRecentActivity(): Promise<ActivityItem[]> {
   const [leadsRes, cobrancaRes, followupsRes] = await Promise.all([
     supabase.from("leads").select("id,name,segment,created_at").order("created_at", { ascending: false }).limit(6),
     supabase.from("cobranca_log").select("id,nome,valor,data_disparo").order("data_disparo", { ascending: false }).limit(6),
-    supabase.from("followups").select("id,tipo,updated_at").eq("respondeu", true).order("updated_at", { ascending: false }).limit(6),
+    // followups has no updated_at column — ordering by it made this query fail
+    // silently, so answered follow-ups never showed up in the activity feed.
+    supabase.from("followups").select("id,tipo,ultima_msg_lead,created_at").eq("respondeu", true).order("created_at", { ascending: false }).limit(6),
   ]);
 
   const items: ActivityItem[] = [];
@@ -342,7 +344,7 @@ export async function getRecentActivity(): Promise<ActivityItem[]> {
   for (const c of cobrancaRes.data ?? [])
     items.push({ id: c.id, type: "cobranca", label: c.nome ?? "Cobrança", sub: c.valor ?? "", date: c.data_disparo });
   for (const f of followupsRes.data ?? [])
-    items.push({ id: f.id, type: "followup", label: "Follow-up respondido", sub: f.tipo ?? "", date: f.updated_at });
+    items.push({ id: f.id, type: "followup", label: "Follow-up respondido", sub: f.tipo ?? "", date: f.ultima_msg_lead ?? f.created_at });
 
   return items
     .filter((i) => i.date)

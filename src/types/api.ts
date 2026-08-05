@@ -40,6 +40,8 @@ export type DashboardSummaryResponse = {
   metrics: ApiMetric[];
   commercialFunnel: ApiBreakdownItem[];
   commercialIndicators: ApiMetric[];
+  /** Leads criados por dia no período, dias vazios inclusos com 0. */
+  leadsPerDay: { date: string; value: number }[];
   breakdowns: {
     leadsByStatus: ApiBreakdownItem[];
     leadsBySegment: ApiBreakdownItem[];
@@ -81,6 +83,10 @@ export type LeadListItem = {
   responsible: string | null;
   aiAgent: string | null;
   hasConversation: boolean;
+  /** True only when a followup was actually dispatched (followups.followup_sent)
+   * and the lead hasn't answered it. A followups row exists from the moment the
+   * lead is created, so its mere presence means nothing. */
+  awaitingFollowup: boolean;
   leadScore: number | null;
   lastContactAt: string | null;
   nextActionAt: string | null;

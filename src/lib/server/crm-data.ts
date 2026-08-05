@@ -168,6 +168,22 @@ function inRange(date: string | null, from: Date, to: Date) {
   return t >= from.getTime() && t <= to.getTime();
 }
 
+/** Contagem por dia no intervalo, com os dias vazios preenchidos com 0 — senao
+ * o grafico liga dois dias distantes com uma reta e inventa uma tendencia. */
+function dailySeries(dates: (string | null)[], from: Date, to: Date) {
+  const buckets = new Map<string, number>();
+  for (const cursor = new Date(from); cursor <= to; cursor.setDate(cursor.getDate() + 1)) {
+    buckets.set(cursor.toISOString().slice(0, 10), 0);
+  }
+  for (const date of dates) {
+    if (!date) continue;
+    const key = new Date(date).toISOString().slice(0, 10);
+    const current = buckets.get(key);
+    if (current !== undefined) buckets.set(key, current + 1);
+  }
+  return [...buckets.entries()].map(([date, value]) => ({ date, value }));
+}
+
 function mapLead(lead: LeadRow, vendors: Map<string, VendorRow>, conversations: ConversationRow[], followups: FollowupRow[]): LeadListItem {
   const leadConversations = conversations.filter((c) => c.lead_id === lead.id);
   const lastConversation = leadConversations
@@ -175,8 +191,11 @@ function mapLead(lead: LeadRow, vendors: Map<string, VendorRow>, conversations: 
     .sort((a, b) => new Date(b.started_at!).getTime() - new Date(a.started_at!).getTime())[0];
   const aiAgent = lastConversation?.vendor_id ? vendors.get(lastConversation.vendor_id)?.name ?? null : null;
   const leadFollowups = followups.filter((f) => f.lead_id === lead.id);
+  // A followups row is created together with the lead (followup_step 0,
+  // followup_sent false) — it's a queue entry, not a pending action. Only a row
+  // that was actually dispatched and went unanswered represents real waiting.
   const nextFollowup = leadFollowups
-    .filter((f) => !f.respondeu && f.created_at)
+    .filter((f) => f.followup_sent && !f.respondeu && f.created_at)
     .sort((a, b) => new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime())[0];
 
   return {
@@ -193,6 +212,7 @@ function mapLead(lead: LeadRow, vendors: Map<string, VendorRow>, conversations: 
     responsible: lead.owner_name ?? null,
     aiAgent,
     hasConversation: leadConversations.length > 0,
+    awaitingFollowup: Boolean(nextFollowup),
     leadScore: lead.lead_score,
     lastContactAt: lastConversation?.started_at ?? lead.updated_at,
     nextActionAt: nextFollowup?.created_at ?? null,
@@ -247,7 +267,11 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
 
   const currentLeads = leads.filter((l) => inRange(l.created_at, from, to)).length;
   const previousLeads = leads.filter((l) => inRange(l.created_at, previousFrom, from)).length;
-  const previousFollowups = sentFollowups.filter((f) => inRange(f.created_at, previousFrom, from)).length;
+  // Comparação tem que ser taxa contra taxa. Antes o "vs ant." da taxa de
+  // resposta usava a CONTAGEM de follow-ups do periodo anterior, então um
+  // percentual era comparado com um número absoluto e o delta saía sem sentido.
+  const previousSent = sentFollowups.filter((f) => inRange(f.created_at, previousFrom, from));
+  const previousResponseRate = percent(previousSent.filter((f) => f.respondeu).length, previousSent.length);
 
   return {
     generatedAt: nowIso(),
@@ -259,7 +283,10 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
         value: leads.length,
         formula: "count(leads)",
         period: allTimePeriod(),
-        previous: previousLeads,
+        // Base completa não tem "periodo anterior" — comparar o total histórico
+        // com a contagem de 30 dias atrás gerava um delta% inventado.
+        // A comparação por periodo vive em new_leads_30d, abaixo.
+        previous: null,
         tooltip: "Todos os leads existentes na tabela leads, sem filtrar por status.",
         drilldown: { href: "/leads", filters: {} },
       }),
@@ -270,7 +297,7 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
         formula: "count(leads where status = ACTIVE)",
         period: allTimePeriod(),
         previous: null,
-        tooltip: "Leads cujo status atual esta marcado como ACTIVE.",
+        tooltip: "Leads cujo status atual está marcado como ACTIVE.",
         drilldown: { href: "/leads", filters: { status: "ACTIVE" } },
       }),
       metric({
@@ -281,7 +308,7 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
         formula: "sum(quotes.price_offered)",
         period: allTimePeriod(),
         previous: null,
-        tooltip: "Soma dos valores ofertados em orcamentos registrados.",
+        tooltip: "Soma dos valores ofertados em orçamentos registrados.",
         drilldown: { href: "/leads", filters: { hasQuotes: "true" } },
       }),
       metric({
@@ -291,7 +318,7 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
         unit: "%",
         formula: `${answeredFollowups.length} respostas / ${sentFollowups.length} follow-ups enviados`,
         period: allTimePeriod(),
-        previous: previousFollowups,
+        previous: previousResponseRate,
         tooltip: "Percentual de follow-ups enviados que tiveram respondeu=true.",
         drilldown: { href: "/leads", filters: { view: "followups", respondeu: "true" } },
       }),
@@ -302,7 +329,7 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
         formula: "count(vendors where active = true)",
         period: allTimePeriod(),
         previous: null,
-        tooltip: "Agentes cadastrados como ativos. Nao significa online em tempo real.",
+        tooltip: "Agentes cadastrados como ativos. Não significa online em tempo real.",
         drilldown: { href: "/agentes", filters: { active: "true" } },
       }),
     ],
@@ -310,7 +337,7 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
       { id: "received", label: "Recebidos", value: leads.length },
       { id: "answered", label: "Respondidos", value: answeredFollowups.length },
       { id: "qualified", label: "Qualificados", value: leads.filter((l) => l.status === "IN_PROGRESS").length },
-      { id: "quoted", label: "Orcamento enviado", value: quotes.length },
+      { id: "quoted", label: "Orçamento enviado", value: quotes.length },
       { id: "closed", label: "Fechados", value: closedSales.length },
     ],
     commercialIndicators: [
@@ -321,35 +348,36 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
         formula: "count(leads created in current period)",
         period,
         previous: previousLeads,
-        tooltip: "Leads criados nos ultimos 30 dias comparados aos 30 dias anteriores.",
+        tooltip: "Leads criados nos últimos 30 dias comparados aos 30 dias anteriores.",
         drilldown: { href: "/leads", filters: { period: "30d" } },
       }),
       metric({
         id: "qualification_rate",
-        label: "Taxa de qualificacao",
+        label: "Taxa de qualificação",
         value: percent(leads.filter((l) => l.status === "IN_PROGRESS").length, leads.length),
         unit: "%",
         formula: "leads IN_PROGRESS / total leads",
         period: allTimePeriod(),
         previous: null,
-        tooltip: "Aproximacao baseada no status IN_PROGRESS ate existir pipeline completo.",
+        tooltip: "Aproximação baseada no status IN_PROGRESS até existir pipeline completo.",
         drilldown: { href: "/leads", filters: { status: "IN_PROGRESS" } },
       }),
       metric({
         id: "average_ticket",
-        label: "Ticket medio",
+        label: "Ticket médio",
         value: closedSales.length ? Math.round(closedRevenue / closedSales.length) : 0,
         unit: "BRL",
         formula: "sum(sales.final_price) / count(sales fechadas)",
         period: allTimePeriod(),
         previous: null,
-        tooltip: "Ticket medio calculado sobre vendas confirmadas/fechadas.",
+        tooltip: "Ticket médio calculado sobre vendas confirmadas/fechadas.",
         drilldown: { href: "/leads", filters: { hasSales: "true" } },
       }),
     ],
+    leadsPerDay: dailySeries(leads.map((l) => l.created_at), from, to),
     breakdowns: {
-      leadsByStatus: countBy(leads, (l) => labelStatus(l.status)),
-      leadsBySegment: countBy(leads, (l) => labelSegment(l.segment)),
+      leadsByStatus: countBy(leads, (l) => l.status, labelStatus),
+      leadsBySegment: countBy(leads, (l) => l.segment, labelSegment),
       leadsByCity: countBy(leads, (l) => l.city ?? l.region),
       leadsByOrigin: countBy(leads, (l) => l.origem ?? l.channel_origin),
       salesByVendor: countBy(sales, (s) => vendors.find((v) => v.id === s.vendor_id)?.name),
