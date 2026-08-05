@@ -136,6 +136,9 @@ export type AgentSummaryItem = {
   enabled: boolean;
   status: "enabled" | "disabled" | "online_unknown";
   waPhone: string | null;
+  /** Inbox do Chatwoot que este agente atende — destino do handoff. Null nos
+   * cadastros antigos que não correspondem a nenhum agente de IA. */
+  chatwootInboxId: number | null;
   totalLeads: number;
   activeLeads: number;
   lostLeads: number;

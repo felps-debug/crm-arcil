@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Bot, CheckCircle2, Clock, MessageSquare, Pause, PlugZap, Wrench } from "lucide-react";
+import Link from "next/link";
+import { Bot, CheckCircle2, Clock, Inbox, MessageSquare, Pause, PlugZap, Wrench } from "lucide-react";
 import {
   ConsoleCard,
   ConsoleError,
@@ -85,6 +86,17 @@ export default function AgentesPage() {
                     Conversas
                   </ConsoleButton>
                 </div>
+                {/* Fecha o circuito com /atendimento: o agente de IA e o inbox
+                    do Chatwoot para onde ele passa a conversa no handoff eram
+                    duas listas sem chave em comum. */}
+                {agent.chatwootInboxId != null && (
+                  <Link
+                    href={`/atendimento?inboxId=${agent.chatwootInboxId}`}
+                    className="mt-2 flex items-center justify-center gap-1.5 rounded-[8px] border border-[var(--border)] px-3 py-2 text-[11px] font-bold text-[var(--text-secondary)] transition-colors hover:border-blue-500/50 hover:text-blue-300"
+                  >
+                    <Inbox size={12} /> Inbox no Chatwoot
+                  </Link>
+                )}
               </ConsoleCard>
             ))}
           </section>

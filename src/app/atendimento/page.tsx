@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Loader2, Link2Off, MessageCircle, Phone, PlugZap, RefreshCcw, Send, User } from "lucide-react";
 import {
   ConsoleButton,
@@ -108,7 +109,10 @@ function useAtendimentoFetch<T>(url: string | null): FetchState<T> & { refetch: 
 export default function AtendimentoPage() {
   return (
     <AccessGuard perm="manage_atendimento">
-      <AtendimentoPageInner />
+      {/* useSearchParams precisa de um limite de Suspense no App Router. */}
+      <Suspense fallback={<ConsoleLoading />}>
+        <AtendimentoPageInner />
+      </Suspense>
     </AccessGuard>
   );
 }
@@ -116,7 +120,12 @@ export default function AtendimentoPage() {
 function AtendimentoPageInner() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
-  const [inboxFilter, setInboxFilter] = useState("");
+  // /agentes linka para cá com o inbox do agente (?inboxId=15). Sem ler a query
+  // o link caía na lista completa e o usuário tinha que reachar o inbox na mão.
+  // Um vendedor com escopo é travado no próprio inbox pelo servidor de qualquer
+  // forma, então aqui isso só pré-seleciona o filtro de quem vê tudo.
+  const searchParams = useSearchParams();
+  const [inboxFilter, setInboxFilter] = useState(searchParams.get("inboxId") ?? "");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);

@@ -74,6 +74,7 @@ type VendorRow = {
   wa_phone: string | null;
   active: boolean | null;
   created_at: string | null;
+  chatwoot_inbox_id: number | null;
 };
 
 type CobrancaRow = {
@@ -631,10 +632,23 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
 export async function getAgentSummary(): Promise<AgentSummaryResponse> {
   const { leads, conversations, vendors } = await fetchCore();
 
+  // Um lead pertence a UM agente. Antes cada agente contava todo lead cujo
+  // segmento aparecesse na sua lista, e os segmentos se sobrepõem — os 6 leads
+  // reais viravam 9 espalhados entre Ana Paula, Thiago, Ana Paula Costa e
+  // Marcos Vieira, e a soma da aba /agentes não batia com o dashboard.
+  // Só agente ativo recebe; entre ativos, o mais antigo do segmento vence.
+  const activeVendors = vendors.filter((v) => v.active === true);
+  const ownerOf = new Map<string, string>();
+  for (const lead of leads) {
+    if (!lead.segment) continue;
+    const owner = activeVendors.find((v) => (v.segment ?? []).includes(lead.segment!));
+    if (owner) ownerOf.set(lead.id, owner.id);
+  }
+
   const agents: AgentSummaryItem[] = vendors.map((vendor) => {
     const segments = vendor.segment ?? [];
     const vendorConversations = conversations.filter((c) => c.vendor_id === vendor.id);
-    const segmentLeads = leads.filter((l) => l.segment && segments.includes(l.segment));
+    const segmentLeads = leads.filter((l) => ownerOf.get(l.id) === vendor.id);
     const lastActivityAt = vendorConversations
       .map((c) => c.started_at)
       .filter(Boolean)
@@ -647,6 +661,7 @@ export async function getAgentSummary(): Promise<AgentSummaryResponse> {
       enabled: vendor.active === true,
       status: vendor.active ? "online_unknown" : "disabled",
       waPhone: vendor.wa_phone,
+      chatwootInboxId: vendor.chatwoot_inbox_id ?? null,
       totalLeads: segmentLeads.length,
       activeLeads: segmentLeads.filter((l) => l.status === "ACTIVE").length,
       lostLeads: segmentLeads.filter((l) => l.status === "LOST").length,
