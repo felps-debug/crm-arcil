@@ -115,6 +115,7 @@ interface ChatwootConversationRaw {
   unread_count?: number;
   timestamp?: number;
   contact_last_seen_at?: number;
+  labels?: string[];
   meta?: {
     sender?: ChatwootSenderRaw;
     assignee?: { id?: number; name?: string } | null;
@@ -133,6 +134,11 @@ export interface ChatwootMessageItem {
   createdAt: string | null; // ISO
 }
 
+export interface ChatwootLabel {
+  title: string;
+  color: string;
+}
+
 export interface ChatwootConversationSummary {
   id: number;
   status: string;
@@ -144,6 +150,7 @@ export interface ChatwootConversationSummary {
   contactPhone: string | null;
   assigneeName: string | null;
   lastMessage: string | null;
+  labels: ChatwootLabel[];
 }
 
 export interface ChatwootInbox {
@@ -177,7 +184,11 @@ function normalizeMessage(m: ChatwootMessageRaw): ChatwootMessageItem {
   };
 }
 
-function normalizeConversation(c: ChatwootConversationRaw, inboxNames: Map<number, string>): ChatwootConversationSummary {
+function normalizeConversation(
+  c: ChatwootConversationRaw,
+  inboxNames: Map<number, string>,
+  labelColors: Map<string, string>
+): ChatwootConversationSummary {
   const lastMessage = c.messages && c.messages.length > 0 ? c.messages[c.messages.length - 1] : null;
   return {
     id: c.id,
@@ -190,6 +201,7 @@ function normalizeConversation(c: ChatwootConversationRaw, inboxNames: Map<numbe
     contactPhone: c.meta?.sender?.phone_number ?? null,
     assigneeName: c.meta?.assignee?.name ?? null,
     lastMessage: lastMessage?.content ?? null,
+    labels: (c.labels ?? []).map((title) => ({ title, color: labelColors.get(title) ?? "#64748b" })),
   };
 }
 
@@ -197,6 +209,20 @@ function normalizeConversation(c: ChatwootConversationRaw, inboxNames: Map<numbe
 export async function listInboxes(): Promise<ChatwootInbox[]> {
   const body = await chatwootFetch<{ payload?: { id: number; name: string }[] }>("/inboxes");
   return (body.payload ?? []).map((i) => ({ id: i.id, name: i.name }));
+}
+
+/** GET /labels — every tag defined on the account, with its display color. */
+export async function listLabels(): Promise<ChatwootLabel[]> {
+  const body = await chatwootFetch<{ payload?: { title: string; color: string }[] }>("/labels");
+  return (body.payload ?? []).map((l) => ({ title: l.title, color: l.color }));
+}
+
+async function fetchLookups() {
+  const [inboxes, labels] = await Promise.all([listInboxes(), listLabels()]);
+  return {
+    inboxNames: new Map(inboxes.map((i) => [i.id, i.name])),
+    labelColors: new Map(labels.map((l) => [l.title, l.color])),
+  };
 }
 
 /**
@@ -211,11 +237,10 @@ export async function listConversations(opts?: { status?: string; inboxId?: numb
   if (opts?.inboxId != null) params.set("inbox_id", String(opts.inboxId));
   const qs = params.toString() ? `?${params.toString()}` : "";
 
-  const [body, inboxes] = await Promise.all([chatwootFetch<unknown>(`/conversations${qs}`), listInboxes()]);
-  const inboxNames = new Map(inboxes.map((i) => [i.id, i.name]));
+  const [body, { inboxNames, labelColors }] = await Promise.all([chatwootFetch<unknown>(`/conversations${qs}`), fetchLookups()]);
   const raw = extractArray<ChatwootConversationRaw>(body);
   return raw
-    .map((c) => normalizeConversation(c, inboxNames))
+    .map((c) => normalizeConversation(c, inboxNames, labelColors))
     // Every Arcil inbox is a WhatsApp number tied to a vendor; a real lead
     // always has a contact phone. A conversation with no phone is a WhatsApp
     // GROUP the vendor's personal number happens to be in (confirmed against
@@ -236,13 +261,12 @@ export async function listMessages(conversationId: string | number): Promise<Cha
 
 /** GET /conversations/{id} — conversation metadata + its full message thread. */
 export async function getConversation(conversationId: string | number): Promise<ChatwootConversationDetail> {
-  const [conv, messages, inboxes] = await Promise.all([
+  const [conv, messages, { inboxNames, labelColors }] = await Promise.all([
     chatwootFetch<ChatwootConversationRaw>(`/conversations/${conversationId}`),
     listMessages(conversationId),
-    listInboxes(),
+    fetchLookups(),
   ]);
-  const inboxNames = new Map(inboxes.map((i) => [i.id, i.name]));
-  return { ...normalizeConversation(conv, inboxNames), messages };
+  return { ...normalizeConversation(conv, inboxNames, labelColors), messages };
 }
 
 /** POST /conversations/{id}/messages — send an outgoing reply as the logged-in agent. */

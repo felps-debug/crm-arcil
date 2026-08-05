@@ -290,6 +290,7 @@ function AtendimentoPageInner() {
                     )}
                   </div>
                   <p className="mt-1.5 truncate text-[11px] text-[var(--text-secondary)]">{c.lastMessage ?? "Sem mensagens"}</p>
+                  <LabelChips labels={c.labels} />
                   <div className="mt-1.5 flex items-center justify-between">
                     <span className="text-[10px] text-[var(--text-muted)]">{formatDateTime(c.lastActivityAt)}</span>
                     {c.unreadCount > 0 && (
@@ -349,6 +350,12 @@ function AtendimentoPageInner() {
                   </div>
                 </div>
 
+                {conv.labels.length > 0 && (
+                  <div className="border-b border-[var(--border)] px-4 py-2">
+                    <LabelChips labels={conv.labels} />
+                  </div>
+                )}
+
                 <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
                   {conv.messages.length === 0 && (
                     <p className="text-[12px] text-[var(--text-muted)]">Nenhuma mensagem nesta conversa.</p>
@@ -384,6 +391,23 @@ function AtendimentoPageInner() {
         </div>
       )}
     </ConsolePage>
+  );
+}
+
+function LabelChips({ labels }: { labels: { title: string; color: string }[] }) {
+  if (!labels.length) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {labels.map((l) => (
+        <span
+          key={l.title}
+          className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+          style={{ backgroundColor: `${l.color}26`, color: l.color }}
+        >
+          {l.title}
+        </span>
+      ))}
+    </div>
   );
 }
 
