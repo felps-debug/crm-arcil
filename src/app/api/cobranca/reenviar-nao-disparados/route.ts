@@ -8,7 +8,10 @@ export async function POST() {
 
   let pythonStatus: string;
   try {
-    const r = await fetch(`${PYTHON_BASE_URL}/reenviar-nao-disparados`, { method: "POST" });
+    // O serviço expõe /reenviar-pendentes ("Forcar Reenvio"). O caminho que
+    // estava aqui, /reenviar-nao-disparados, devolve 404 — o botão "Reenviar
+    // Não Disparados" nunca chegou a disparar nada.
+    const r = await fetch(`${PYTHON_BASE_URL}/reenviar-pendentes`, { method: "POST" });
     pythonStatus = `ok:${r.status}`;
     if (!r.ok) {
       console.error("[REENVIO] Python respondeu erro:", r.status);
