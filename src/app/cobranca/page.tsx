@@ -23,7 +23,7 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import { useSupabase } from "@/hooks/use-supabase";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
-import { getCobrancaLog, getCobrancaStats, getFollowupsByType } from "@/lib/supabase/queries";
+import { getCobrancaLog, getFollowupsByType } from "@/lib/supabase/queries";
 import type { CobrancaLog } from "@/types";
 import { DispararTab } from "./_components/disparar-tab";
 import { MonitoramentoTab } from "./_components/monitoramento-tab";
@@ -45,7 +45,6 @@ function CobrancaPageInner() {
   const [selectedLog, setSelectedLog] = useState<CobrancaLog | null>(null);
   const [expandedMeta, setExpandedMeta] = useState<string | null>(null);
 
-  const { data: stats, loading: loadingStats, error: errorStats } = useSupabase(() => getCobrancaStats(), []);
   const { data: followups, loading: loadingFu, error: errorFu } = useSupabase(() => getFollowupsByType("cobranca"), []);
 
   const [logs, setLogs] = useState<CobrancaLog[]>([]);
@@ -76,6 +75,21 @@ function CobrancaPageInner() {
     };
   }, [fetchLogs]);
 
+  // Derivado de `logs`, não de uma segunda consulta. getCobrancaStats rodava
+  // uma vez na montagem e nunca mais, enquanto a tabela se atualiza por
+  // realtime — os cards mostravam "1 disparado" com 3 linhas na tela logo
+  // abaixo. Vindo da mesma lista, os números não têm como divergir.
+  const stats = useMemo(
+    () => ({
+      total: logs.length,
+      pendentes: logs.filter((l) => l.status_disparo === "PENDENTE").length,
+      disparados: logs.filter((l) => l.status_disparo === "DISPARADO").length,
+      responderam: logs.filter((l) => l.respondeu).length,
+      pagos: logs.filter((l) => l.pagamento_confirmado).length,
+    }),
+    [logs]
+  );
+
   const totalEmAberto = useMemo(() => logs.reduce((sum, l) => sum + (parseMoneyToNumber(l.valor ?? "") ?? 0), 0), [logs]);
   const selectedFollowup = selectedLog ? followups?.find((f) => f.numero_cliente === selectedLog.telefone) ?? null : null;
 
@@ -89,22 +103,22 @@ function CobrancaPageInner() {
   return (
     <ConsolePage title="Cobranca" subtitle="Disparos e acompanhamento em tempo real">
       <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {loadingStats ? (
+        {loadingLogs ? (
           <div className="xl:col-span-5"><ConsoleLoading /></div>
-        ) : errorStats ? (
-          <div className="xl:col-span-5"><ConsoleError message={errorStats} /></div>
+        ) : errorLogs ? (
+          <div className="xl:col-span-5"><ConsoleError message={errorLogs} /></div>
         ) : (
           <>
-            <ConsoleMetric label="Total disparados" value={stats?.total ?? 0} helper={`${stats?.disparados ?? 0} enviados`} icon={Send} tone="blue" />
-            <ConsoleMetric label="Pendentes" value={stats?.pendentes ?? 0} helper="aguardando" icon={Clock} tone="amber" />
+            <ConsoleMetric label="Total disparados" value={stats.total} helper={`${stats.disparados} enviados`} icon={Send} tone="blue" />
+            <ConsoleMetric label="Pendentes" value={stats.pendentes} helper="aguardando" icon={Clock} tone="amber" />
             <ConsoleMetric
               label="Responderam"
-              value={stats?.responderam ?? 0}
-              helper={`${stats?.total ? ((stats.responderam / stats.total) * 100).toFixed(0) : 0}% taxa`}
+              value={stats.responderam}
+              helper={`${stats.total ? ((stats.responderam / stats.total) * 100).toFixed(0) : 0}% taxa`}
               icon={MessageCircleReply}
               tone="green"
             />
-            <ConsoleMetric label="Pag. confirmado" value={stats?.pagos ?? 0} helper="confirmados" icon={Receipt} tone="violet" />
+            <ConsoleMetric label="Pag. confirmado" value={stats.pagos} helper="confirmados" icon={Receipt} tone="violet" />
             <ConsoleMetric
               label="Total em aberto"
               value={!loadingLogs && totalEmAberto > 0 ? formatCurrency(totalEmAberto) : "—"}
