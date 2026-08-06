@@ -32,7 +32,7 @@ type AdminUser = {
 type ChatwootInboxesResponse = { inboxes: { id: number; name: string }[] };
 
 const MODULE_PERMISSIONS: { key: string; label: string }[] = [
-  { key: "manage_cobranca", label: "Campanhas & Cobrancas" },
+  { key: "manage_cobranca", label: "Cobranças" },
   { key: "manage_estoque", label: "Demanda & Estoque" },
   { key: "manage_gerador_imagem", label: "Gerador de Imagem" },
   { key: "manage_atendimento", label: "Atendimento (Chatwoot)" },

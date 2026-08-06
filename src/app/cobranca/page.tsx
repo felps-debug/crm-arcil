@@ -101,7 +101,7 @@ function CobrancaPageInner() {
   ];
 
   return (
-    <ConsolePage title="Cobranca" subtitle="Disparos e acompanhamento em tempo real">
+    <ConsolePage title="Cobranças" subtitle="Disparos e acompanhamento em tempo real">
       <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
         {loadingLogs ? (
           <div className="xl:col-span-5"><ConsoleLoading /></div>

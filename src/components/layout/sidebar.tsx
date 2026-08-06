@@ -32,7 +32,7 @@ const NAV = [
   { href: "/leads", label: "Leads", icon: Users, badge: true },
   { href: "/agentes", label: "Agentes IA", icon: Bot },
   { href: "/demanda-estoque", label: "Demanda & Estoque", icon: Boxes, perm: "manage_estoque" },
-  { href: "/cobranca", label: "Campanhas & Cobrancas", icon: CreditCard, perm: "manage_cobranca" },
+  { href: "/cobranca", label: "Cobranças", icon: CreditCard, perm: "manage_cobranca" },
   { href: "/chatbot", label: "Gerador de Imagem", icon: ImageIcon, perm: "manage_gerador_imagem" },
   { href: "/atendimento", label: "Atendimento", icon: Headset, perm: "manage_atendimento" },
   { href: "/cerebro", label: "Cerebro Arcil", icon: Brain },
