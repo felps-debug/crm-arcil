@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseClienteField, parseMoneyToNumber, parseSheetLeads } from "./cobranca-helpers";
+import {
+  parseClienteField,
+  parseMoneyToNumber,
+  parseSheetLeads,
+  parseSheetRows,
+} from "./cobranca-helpers";
 
 describe("parseClienteField", () => {
   it("splits the ERP 'codigo - nome' format and strips CPF/CNPJ, whether leading or trailing", () => {
@@ -63,5 +68,43 @@ describe("parseSheetLeads", () => {
     expect(lead.valor).toBe("650,50"); // 530,00 + 120,50 somados
     expect(lead.vencimento).toBe("10/01/2024 | 15/02/2024");
     expect(lead.tag).toBe("COBRANCA");
+  });
+});
+
+describe("parseSheetRows", () => {
+  it("keeps one row per boleto so the dispatch service can rebuild the client's position", () => {
+    // A mesma planilha do teste acima: dois boletos do mesmo telefone.
+    // O preview agrupa em um cliente; o disparo NÃO pode agrupar, senão o
+    // serviço lê as colunas do ERP do primeiro boleto e cobra só ele.
+    const rows = [
+      {
+        Celular: "(11) 91234-5678",
+        Cliente: "535 - ADILSON ROBERTO SOARES",
+        "Ser/Doc/Par": "B1 001",
+        Receber: "530,00",
+        Vencimento: "10/01/2024",
+      },
+      {
+        Celular: "(11) 91234-5678",
+        Cliente: "535 - ADILSON ROBERTO SOARES",
+        "Ser/Doc/Par": "B1 002",
+        Receber: "120,50",
+        Vencimento: "15/02/2024",
+      },
+    ];
+
+    const linhas = parseSheetRows(rows);
+
+    expect(linhas).toHaveLength(2);
+    expect(linhas.map((l) => l.documento)).toEqual(["B1 001", "B1 002"]);
+    // Cada linha carrega o valor e o vencimento DO SEU boleto, nunca concatenados.
+    expect(linhas.map((l) => l.valor)).toEqual(["530,00", "120,50"]);
+    expect(linhas.map((l) => l.vencimento)).toEqual(["10/01/2024", "15/02/2024"]);
+    linhas.forEach((l) => expect(l.vencimento).not.toContain("|"));
+
+    // O total do cliente viaja repetido, para a API corrigir o valor do log.
+    expect(linhas.map((l) => l.valor_numerico)).toEqual(["650.50", "650.50"]);
+    expect(linhas.map((l) => l.numero)).toEqual(["5511912345678", "5511912345678"]);
+    expect(linhas.map((l) => l.boleto_count)).toEqual(["2", "2"]);
   });
 });

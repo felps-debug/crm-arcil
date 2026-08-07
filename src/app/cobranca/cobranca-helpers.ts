@@ -51,20 +51,21 @@ export function parseMoneyToNumber(raw: string): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
-export function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
-  // 1. Processar cada linha em um boleto normalizado
-  type RawBoleto = {
-    numero: string;
-    nome: string;
-    codigoCliente: string;
-    receberNum: number; // "Receber" = principal + juros + multa - já recebido
-    valorDisplay: string;
-    vencimento: string;
-    documento: string;
-    original: Record<string, string>;
-    item: BoletoItem;
-  };
+type RawBoleto = {
+  numero: string;
+  nome: string;
+  codigoCliente: string;
+  receberNum: number; // "Receber" = principal + juros + multa - já recebido
+  valorDisplay: string;
+  vencimento: string;
+  documento: string;
+  original: Record<string, string>;
+  item: BoletoItem;
+};
 
+// Uma linha da planilha = um boleto. O agrupamento por cliente acontece depois,
+// e só para a tela: quem dispara precisa dos boletos separados.
+function parseRawBoletos(rows: Record<string, unknown>[]): RawBoleto[] {
   const rawBoletos: RawBoleto[] = [];
 
   for (const row of rows) {
@@ -128,15 +129,63 @@ export function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] 
     });
   }
 
-  // 2. Agrupar por número de telefone
+  return rawBoletos;
+}
+
+function agruparPorTelefone(rawBoletos: RawBoleto[]): RawBoleto[][] {
   const byPhone: Record<string, RawBoleto[]> = {};
   for (const b of rawBoletos) {
     if (!byPhone[b.numero]) byPhone[b.numero] = [];
     byPhone[b.numero].push(b);
   }
+  return Object.values(byPhone);
+}
 
-  // 3. Um DisparoLead por cliente com valor total e detalhes dos boletos
-  return Object.values(byPhone).map((group) => {
+/**
+ * Uma linha por boleto, que é o formato que o serviço de cobrança espera.
+ *
+ * Antes o CRM mandava uma linha por CLIENTE, com os vencimentos concatenados por
+ * " | " e as colunas do ERP do primeiro boleto. O serviço lê `Receber`,
+ * `Ser/Doc/Par` e `Prorrog` da linha que chega, então um cliente com três boletos
+ * virava um boleto só: o valor do primeiro, com as três datas empilhadas num campo.
+ * Foi assim que uma dívida de R$ 932,00 foi cobrada como R$ 298,55.
+ *
+ * O agrupamento por telefone continua existindo — só que do lado do serviço, que
+ * já faz isso em agrupar_leads() e monta o array de boletos corretamente.
+ */
+export function parseSheetRows(rows: Record<string, unknown>[]): DisparoLead[] {
+  const grupos = agruparPorTelefone(parseRawBoletos(rows));
+
+  return grupos.flatMap((group) => {
+    const totalReceber = group.reduce((s, b) => s + b.receberNum, 0);
+    // Vai repetido em cada linha do mesmo cliente; a API usa o primeiro que achar.
+    const boletosJson = JSON.stringify(group.map((b) => b.item));
+
+    return group.map((b) => ({
+      ...b.original,
+      numero: b.numero,
+      nome: b.nome,
+      codigo_cliente: b.codigoCliente,
+      // Deste boleto, não do cliente. Mesmo formato do preview agrupado: número
+      // em pt-BR, sem "R$" — é o que o serviço de cobrança sabe ler.
+      valor:
+        b.receberNum > 0
+          ? b.receberNum.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : b.valorDisplay,
+      vencimento: b.vencimento,
+      documento: b.documento,
+      // Do cliente inteiro — a API soma para corrigir o valor gravado no log
+      valor_numerico: totalReceber > 0 ? totalReceber.toFixed(2) : "",
+      boleto_count: String(group.length),
+      boletos_json: boletosJson,
+      tag: "COBRANCA",
+    }));
+  });
+}
+
+/** Um lead por cliente, com total e boletos agrupados. Só para o preview da tela. */
+export function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
+  return agruparPorTelefone(parseRawBoletos(rows)).map((group) => {
     const first = group[0];
     const totalReceber = group.reduce((s, b) => s + b.receberNum, 0);
     const boletoCount = group.length;

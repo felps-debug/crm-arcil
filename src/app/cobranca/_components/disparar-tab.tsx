@@ -5,12 +5,15 @@ import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Upload, X } from
 import { ConsoleButton, ConsoleCard } from "@/components/console/console-shell";
 import { useToast } from "@/components/ui/toast";
 import { checkRedisparos } from "@/lib/supabase/queries";
-import { parseSheetLeads, type DisparoLead } from "../cobranca-helpers";
+import { parseSheetLeads, parseSheetRows, type DisparoLead } from "../cobranca-helpers";
 
 export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<DisparoLead[]>([]);
+  // O preview mostra um cliente por linha; o disparo manda um BOLETO por linha.
+  // Agrupar antes de enviar apagava os boletos extras — ver parseSheetRows().
+  const [linhasDisparo, setLinhasDisparo] = useState<DisparoLead[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [dispatching, setDispatching] = useState(false);
@@ -25,6 +28,7 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
     if (!file) return;
     setParseError(null);
     setPreview([]);
+    setLinhasDisparo([]);
     setDispatchResult(null);
     setFileName(file.name);
     setRedisparoWarnings([]);
@@ -42,6 +46,7 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
         const leads = parseSheetLeads(rows);
         if (!leads.length) throw new Error("Nenhum lead válido. Verifique se há coluna de telefone.");
         setPreview(leads);
+        setLinhasDisparo(parseSheetRows(rows));
         checkRedisparos(leads.map((l) => l.numero).filter(Boolean)).then(setRedisparoWarnings);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erro ao processar arquivo.";
@@ -53,19 +58,20 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
   }
 
   async function handleDispatch() {
-    if (!preview.length) return;
+    if (!linhasDisparo.length) return;
     setDispatching(true);
     setDispatchResult(null);
     try {
       const res = await fetch("/api/cobranca/disparo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leads: preview }),
+        body: JSON.stringify({ leads: linhasDisparo }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Erro ao disparar");
       setDispatchResult({ ok: true, inserted: data.inserted });
       setPreview([]);
+      setLinhasDisparo([]);
       setFileName(null);
       onDispatched();
       // O serviço de cobrança responde 200 mesmo descartando lead. Antes o CRM
@@ -140,6 +146,7 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
               <button
                 onClick={() => {
                   setPreview([]);
+                  setLinhasDisparo([]);
                   setFileName(null);
                 }}
                 className="flex items-center gap-1 text-[12px] text-[var(--text-muted)] transition-colors hover:text-red-400"

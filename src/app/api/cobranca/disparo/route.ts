@@ -172,8 +172,10 @@ export async function POST(req: NextRequest) {
   return Response.json({
     ok: true,
     // `inserted` passa a ser o que existe na tabela, não o que foi enviado.
+    // Ambos contam CLIENTES: `leads` agora chega com uma linha por boleto, e um
+    // cliente com três boletos continua sendo um disparo só.
     inserted: confirmedPhones.length,
-    sent: leads.length,
+    sent: allPhones.length,
     missing: missingPhones,
     pythonStatus,
   });
