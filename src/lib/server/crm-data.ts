@@ -432,12 +432,12 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
     items: [
       {
         id: "leads_without_owner",
-        label: "Leads sem responsavel",
+        label: "Leads sem responsável",
         count: leads.filter((l) => !l.owner_name && !l.handoff_vendor_id).length,
         severity: "warning",
         formula: "count(leads where owner_name is null and handoff_vendor_id is null)",
         period: allTimePeriod(),
-        tooltip: "Leads que ainda nao tem responsavel comercial definido.",
+        tooltip: "Leads que ainda não têm responsável comercial definido.",
         drilldown: { href: "/leads", filters: { unassigned: "true" } },
       },
       {
@@ -450,7 +450,7 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
         severity: "danger",
         formula: "count(leads where handoff_sent_at is not null and handoff_accepted_at is null)",
         period: allTimePeriod(),
-        tooltip: "Encaminhados ao vendedor por WhatsApp que ainda nao foram assumidos por ninguem.",
+        tooltip: "Encaminhados ao vendedor por WhatsApp que ainda não foram assumidos por ninguém.",
         drilldown: { href: "/leads", filters: { handoff: "pending" } },
       },
       {
@@ -470,7 +470,7 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
         severity: "danger",
         formula: "count(followups where respondeu=false and created_at older than 24h)",
         period: allTimePeriod(),
-        tooltip: "Atraso estimado por created_at enquanto nao existir campo agendado_para.",
+        tooltip: "Atraso estimado por created_at enquanto não existir campo agendado_para.",
         drilldown: { href: "/leads", filters: { view: "followups", late: "true" } },
       },
       {
@@ -616,7 +616,7 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
     ...leadCobrancas.map((c) => ({
       id: c.id,
       type: "collection" as const,
-      title: "Cobranca",
+      title: "Cobranças",
       description: c.valor,
       occurredAt: c.data_disparo ?? c.created_at,
       metadata: { status_disparo: c.status_disparo, pagamento_confirmado: c.pagamento_confirmado },
@@ -731,7 +731,7 @@ export async function getAgentSummary(): Promise<AgentSummaryResponse> {
         label: "Agentes habilitados",
         value: vendors.filter((v) => v.active).length,
         formula: "count(vendors where active = true)",
-        tooltip: "Agentes habilitados para operacao; nao representa online real.",
+        tooltip: "Agentes habilitados para operação; não representa online real.",
         drilldown: { href: "/agentes", filters: { active: "true" } },
       }),
       metric({
@@ -894,7 +894,7 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
         label: "Sem estoque",
         value: outOfStock,
         formula: "count(out_of_stock_requests)",
-        tooltip: "Solicitacoes de produtos que os agentes nao conseguiram atender por falta de estoque.",
+        tooltip: "Solicitações de produtos que os agentes não conseguiram atender por falta de estoque.",
         drilldown: { href: "/demanda-estoque", filters: { stock: "out" } },
       }),
       metric({

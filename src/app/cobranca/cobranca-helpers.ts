@@ -51,6 +51,74 @@ export function parseMoneyToNumber(raw: string): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+/* ── Régua de follow-up ─────────────────────────────────────────────
+   Horas desde `followups.created_at` até cada toque. Espelha o `case` de
+   disparar_followup_cobranca() no Postgres — mudou lá, muda aqui, senão a
+   tela promete um horário que o banco não cumpre. */
+const REGUA_HORAS = [3, 24, 72, 120, 168];
+const JANELA_INICIO = 8;
+const JANELA_FIM = 18;
+
+function horaEmSaoPaulo(d: Date): number {
+  return Number(
+    new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).format(d),
+  );
+}
+
+/** A função do Postgres testa a janela na hora de disparar, não na hora alvo:
+ *  um toque que vence às 22h só sai na manhã seguinte. */
+function adiarParaJanela(alvo: Date): Date {
+  const d = new Date(alvo);
+  for (let i = 0; i < 24; i++) {
+    const h = horaEmSaoPaulo(d);
+    if (h >= JANELA_INICIO && h < JANELA_FIM) return d;
+    d.setTime(d.getTime() + 3_600_000);
+  }
+  return d;
+}
+
+export type ProximoToque = { texto: string; tone: "blue" | "amber" | "slate" };
+
+/**
+ * Quando o próximo follow-up deste cliente deve sair.
+ *
+ * A aba mostrava só o número do step, que não diz nada sozinho. Com a régua
+ * fixa dá para dizer quem recebe mensagem hoje — que é a pergunta de quem opera.
+ */
+export function proximoToque(
+  followup: {
+    created_at?: string | null;
+    followup_step?: number | null;
+    respondeu?: boolean | null;
+    status?: string | null;
+  },
+  agora: Date = new Date(),
+): ProximoToque {
+  if (followup.respondeu) return { texto: "respondeu", tone: "slate" };
+  if (followup.status && followup.status !== "PENDING") return { texto: "encerrado", tone: "slate" };
+  if (!followup.created_at) return { texto: "—", tone: "slate" };
+
+  const step = followup.followup_step ?? 0;
+  const horas = REGUA_HORAS[step];
+  if (horas == null) return { texto: "encerrado", tone: "slate" };
+
+  const criado = new Date(followup.created_at);
+  if (Number.isNaN(criado.getTime())) return { texto: "—", tone: "slate" };
+
+  const quando = adiarParaJanela(new Date(criado.getTime() + horas * 3_600_000));
+  const faltamMin = Math.round((quando.getTime() - agora.getTime()) / 60_000);
+
+  // Vencido: o cron roda a cada minuto, então ou sai já ou está fora da janela.
+  if (faltamMin <= 0) return { texto: "no próximo ciclo", tone: "amber" };
+  if (faltamMin < 60) return { texto: `em ${faltamMin}min`, tone: "blue" };
+  if (faltamMin < 48 * 60) return { texto: `em ${Math.round(faltamMin / 60)}h`, tone: "blue" };
+  return { texto: `em ${Math.round(faltamMin / 1440)}d`, tone: "blue" };
+}
+
 // Colunas de data do relatório do ERP. normalizeKey já removeu o "ã" de "Emissão".
 const CHAVES_DE_DATA = new Set(["prorrog", "emisso", "emissao", "vencimento", "datavcto", "vcto"]);
 

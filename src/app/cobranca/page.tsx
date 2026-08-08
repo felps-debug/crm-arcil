@@ -24,10 +24,10 @@ import { useSupabase } from "@/hooks/use-supabase";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { getCobrancaLog, getFollowupsByType } from "@/lib/supabase/queries";
-import type { CobrancaLog } from "@/types";
+import type { CobrancaLog, Followup } from "@/types";
 import { DispararTab } from "./_components/disparar-tab";
 import { MonitoramentoTab } from "./_components/monitoramento-tab";
-import { parseMoneyToNumber } from "./cobranca-helpers";
+import { parseMoneyToNumber, proximoToque } from "./cobranca-helpers";
 
 type Tab = "disparar" | "logs" | "followups" | "tecnico";
 
@@ -90,7 +90,16 @@ function CobrancaPageInner() {
     [logs]
   );
 
-  const totalEmAberto = useMemo(() => logs.reduce((sum, l) => sum + (parseMoneyToNumber(l.valor ?? "") ?? 0), 0), [logs]);
+  // Só o que ainda se deve. Antes somava todo log, então um pagamento confirmado
+  // continuava no total e o card nunca caía — o número que mais gente olha era o
+  // único que não reagia a ninguém pagar.
+  const totalEmAberto = useMemo(
+    () =>
+      logs
+        .filter((l) => !l.pagamento_confirmado)
+        .reduce((sum, l) => sum + (parseMoneyToNumber(l.valor ?? "") ?? 0), 0),
+    [logs]
+  );
   const selectedFollowup = selectedLog ? followups?.find((f) => f.numero_cliente === selectedLog.telefone) ?? null : null;
 
   const TABS: { id: Tab; label: string; count?: number; adminOnly?: boolean }[] = [
@@ -122,7 +131,7 @@ function CobrancaPageInner() {
             <ConsoleMetric
               label="Total em aberto"
               value={!loadingLogs && totalEmAberto > 0 ? formatCurrency(totalEmAberto) : "—"}
-              helper="soma dos valores"
+              helper="boletos não pagos"
               icon={DollarSign}
               tone="green"
             />
@@ -183,7 +192,7 @@ function CobrancaPageInner() {
                   <table className="w-full border-collapse text-left text-[12px]">
                     <thead>
                       <tr className="border-b border-[var(--border)] bg-[var(--bg-inset)]">
-                        {["Cliente", "Telefone", "Step", "Respondeu", "Última Msg", "Status"].map((h) => (
+                        {["Cliente", "Telefone", "Step", "Próximo toque", "Respondeu", "Última Msg", "Status"].map((h) => (
                           <th key={h} className="whitespace-nowrap px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">
                             {h}
                           </th>
@@ -197,6 +206,9 @@ function CobrancaPageInner() {
                           <td className="px-3 py-2.5 font-data text-[var(--text-secondary)]">{f.numero_cliente ?? "—"}</td>
                           <td className="px-3 py-2.5">
                             <ConsoleStatus tone={f.followup_step && f.followup_step >= 3 ? "red" : "blue"}>Step {f.followup_step ?? 0}</ConsoleStatus>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <ProximoToqueCell followup={f} />
                           </td>
                           <td className="px-3 py-2.5">
                             {f.respondeu ? <CheckCircle2 size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}
@@ -308,4 +320,15 @@ function CobrancaPageInner() {
       <CobrancaLogDrawer log={selectedLog} followup={selectedFollowup} onClose={() => setSelectedLog(null)} />
     </ConsolePage>
   );
+}
+
+/** Quando o próximo follow-up deste cliente sai, pela mesma régua que o cron do
+ *  Postgres usa. Sem contador ao vivo: a aba inteira é um retrato do momento em
+ *  que carregou, e um relógio correndo ao lado de números parados enganaria. */
+function ProximoToqueCell({ followup }: { followup: Followup }) {
+  const { texto, tone } = proximoToque(followup);
+  if (tone === "slate") {
+    return <span className="text-[11px] text-[var(--text-muted)]">{texto}</span>;
+  }
+  return <ConsoleStatus tone={tone}>{texto}</ConsoleStatus>;
 }

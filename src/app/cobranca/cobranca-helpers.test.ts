@@ -6,6 +6,7 @@ import {
   parseMoneyToNumber,
   parseSheetLeads,
   parseSheetRows,
+  proximoToque,
 } from "./cobranca-helpers";
 
 describe("parseClienteField", () => {
@@ -30,6 +31,47 @@ describe("parseMoneyToNumber", () => {
     expect(parseMoneyToNumber("17.16")).toBe(17.16); // en-US decimal
     expect(parseMoneyToNumber("")).toBeNull();
     expect(parseMoneyToNumber("abc")).toBeNull();
+  });
+});
+
+describe("proximoToque", () => {
+  // 10/08/2026 é uma segunda. Horários em -03:00, que é America/Sao_Paulo.
+  const criado = "2026-08-10T09:00:00-03:00"; // segunda, 9h
+
+  it("uses the ladder the Postgres function uses: 3h, 24h, 72h, 120h, 168h", () => {
+    // Step 0 → primeiro toque 3h depois do insert, às 12h.
+    expect(proximoToque({ created_at: criado, followup_step: 0, status: "PENDING" }, new Date("2026-08-10T10:00:00-03:00")))
+      .toEqual({ texto: "em 2h", tone: "blue" });
+
+    // Step 1 → 24h depois do insert, não 24h depois do toque anterior.
+    expect(proximoToque({ created_at: criado, followup_step: 1, status: "PENDING" }, new Date("2026-08-10T13:00:00-03:00")))
+      .toEqual({ texto: "em 20h", tone: "blue" });
+
+    // Step 3 → 120h = 5 dias.
+    expect(proximoToque({ created_at: criado, followup_step: 3, status: "PENDING" }, new Date("2026-08-10T09:00:00-03:00")))
+      .toEqual({ texto: "em 5d", tone: "blue" });
+  });
+
+  it("pushes a touch that falls outside 8h-18h to the next window", () => {
+    // Insert às 23h de segunda + 3h = 2h de terça, fora da janela. O Postgres
+    // testa a janela na hora de disparar, então isso só sai às 8h.
+    const madrugada = proximoToque(
+      { created_at: "2026-08-10T23:00:00-03:00", followup_step: 0, status: "PENDING" },
+      new Date("2026-08-11T02:00:00-03:00"),
+    );
+    expect(madrugada).toEqual({ texto: "em 6h", tone: "blue" });
+  });
+
+  it("stops the ladder when the customer replied, when it ended, and after the fifth touch", () => {
+    expect(proximoToque({ created_at: criado, followup_step: 1, respondeu: true, status: "PENDING" }).texto).toBe("respondeu");
+    expect(proximoToque({ created_at: criado, followup_step: 5, status: "LOST" }).texto).toBe("encerrado");
+    // Quinto toque dado: não há sexto.
+    expect(proximoToque({ created_at: criado, followup_step: 5, status: "PENDING" }).texto).toBe("encerrado");
+  });
+
+  it("flags an overdue touch instead of showing a negative countdown", () => {
+    expect(proximoToque({ created_at: criado, followup_step: 0, status: "PENDING" }, new Date("2026-08-10T15:00:00-03:00")))
+      .toEqual({ texto: "no próximo ciclo", tone: "amber" });
   });
 });
 

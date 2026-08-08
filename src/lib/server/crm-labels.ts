@@ -4,7 +4,7 @@ export const STATUS_LABELS_API: Record<string, string> = {
   IN_PROGRESS: "Em progresso",
   PENDING: "Pendente",
   DISPARADO: "Disparado",
-  "NAO DISPARADO": "Nao disparado",
+  "NAO DISPARADO": "Não disparado",
 };
 
 export const SEGMENT_LABELS_API: Record<string, string> = {
@@ -17,7 +17,7 @@ export const SEGMENT_LABELS_API: Record<string, string> = {
   ARCHITECT: "Construtor / Arquiteto",
   INSTALLER: "Instalador",
   RESELLER: "Revenda",
-  COBRANCA: "Cobranca",
+  COBRANCA: "Cobranças",
 };
 
 export function labelStatus(status: string | null | undefined) {

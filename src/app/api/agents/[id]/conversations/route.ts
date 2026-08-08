@@ -8,7 +8,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   try {
     const { id } = await params;
     const data = await getVendorConversations(id);
-    if (!data) return Response.json({ error: "Agente nao encontrado" }, { status: 404 });
+    if (!data) return Response.json({ error: "Agente não encontrado" }, { status: 404 });
     return Response.json(data);
   } catch (error) {
     return handleApiError(error);
