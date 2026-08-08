@@ -225,8 +225,14 @@ seguinte, com espalhamento aleatório para não disparar tudo às 8h em ponto.
 | chega boleto novo | a mensagem de boleto novo substitui o toque e zera o contador |
 | toque 5 dado sem resposta | para; cliente vai para a lista de cobrança manual |
 
-O gatilho sai do pg_cron e passa para o Python. O `FLUXO FOLLOWUP` continua montando
-e enviando a mensagem — muda só quem decide a hora.
+O `FLUXO FOLLOWUP` continua montando e enviando a mensagem em qualquer cenário. Muda
+só quem decide a hora, em duas etapas:
+
+- **Semana 1** — a função `disparar_followup_cobranca()` é reescrita com a régua acima
+  e com janela de 8h–18h. Continua no pg_cron. Desligar o job antes de existir
+  substituto deixaria a primeira semana sem follow-up nenhum.
+- **Depois** — a decisão passa para o Python, junto do resto que já sabe horário,
+  espaçamento e estado da conversa. O job 6 é desligado nesse momento.
 
 ---
 
@@ -397,7 +403,7 @@ antes de segunda-feira.
 |---|---|
 | Desativar `DISPARO COBRANÇA` | feito |
 | Corrigir o `ENCAMINHADOR HUMANO` | feito |
-| Desligar o pg_cron job 6 | pendente |
+| Reescrever `disparar_followup_cobranca()` com a régua nova e janela 8h–18h | pendente |
 | Mergear e deployar os PRs #1 e #2 do serviço | pendente |
 | `delay` `0–10`, janela `8h–18h` | pendente |
 | `gera_pix` sem `throw` | pendente |
@@ -413,7 +419,7 @@ planilha enquanto ela é construída.
 | | |
 |---|---|
 | `cobranca_boletos` + `cobranca_posicao` | a base de verdade |
-| Follow-up saindo do pg_cron para o Python | a régua com horário |
+| Follow-up saindo do pg_cron para o Python | e o job 6 desligado |
 | Lista de não-cobrados na tela | os sem telefone param de sumir |
 | Total do handoff vindo da posição | o LLM para de deduzir dinheiro |
 | `gera_pix` lendo `cobranca_empresas` | uma fonte só para o CNPJ |
