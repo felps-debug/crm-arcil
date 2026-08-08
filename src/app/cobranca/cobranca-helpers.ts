@@ -51,6 +51,56 @@ export function parseMoneyToNumber(raw: string): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+// Colunas de data do relatório do ERP. normalizeKey já removeu o "ã" de "Emissão".
+const CHAVES_DE_DATA = new Set(["prorrog", "emisso", "emissao", "vencimento", "datavcto", "vcto"]);
+
+/**
+ * Número de série do Excel → "dd/mm/aaaa".
+ *
+ * A época do Excel é 30/12/1899 e a contagem é em dias inteiros. Fazendo a conta
+ * em UTC não há horário de verão para deslocar o dia.
+ */
+export function excelSerialToBR(serial: number): string {
+  const d = new Date(Date.UTC(1899, 11, 30) + serial * 86_400_000);
+  const dia = String(d.getUTCDate()).padStart(2, "0");
+  const mes = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${dia}/${mes}/${d.getUTCFullYear()}`;
+}
+
+/**
+ * Troca o texto das colunas de data pelo valor derivado do número de série.
+ *
+ * O relatório do ERP grava as datas com o formato de célula `m/d/yy`. Lido como
+ * texto — que é o que `raw: false` faz, e ele precisa continuar assim para não
+ * corromper "530,00" em 53000 —, 10/06/2026 chega como a string "6/10/26", e daí
+ * já não dá para saber se é 10 de junho ou 6 de outubro. Era assim que o agente
+ * anunciava vencimento errado por meses.
+ *
+ * O número de série não tem essa ambiguidade: 46183 é 10/06/2026 e ponto. Por isso
+ * a planilha é lida duas vezes — texto para o dinheiro, cru para as datas.
+ *
+ * CSV não tem número de série (tudo chega string), então nada é tocado.
+ */
+export function mergeDateSerials(
+  formatadas: Record<string, unknown>[],
+  cruas: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return formatadas.map((row, i) => {
+    const crua = cruas[i];
+    if (!crua) return row;
+    const out = { ...row };
+    for (const chave of Object.keys(row)) {
+      if (!CHAVES_DE_DATA.has(normalizeKey(chave))) continue;
+      const bruto = crua[chave];
+      // Faixa de sanidade: 1955–2079. Fora dela não é data de boleto.
+      if (typeof bruto === "number" && bruto > 20_000 && bruto < 66_000) {
+        out[chave] = excelSerialToBR(bruto);
+      }
+    }
+    return out;
+  });
+}
+
 type RawBoleto = {
   numero: string;
   nome: string;

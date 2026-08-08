@@ -103,14 +103,14 @@ export default function AgentesPage() {
 
           <ConsoleCard pad={false}>
             <div className="border-b border-[var(--border)] px-4 py-3">
-              <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Metricas de Performance</h2>
+              <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Métricas de Performance</h2>
               <p className="text-[11px] text-[var(--text-muted)]">Baseadas nos dados operacionais disponiveis</p>
             </div>
             <ConsoleTable headers={["Indicador", "Valor atual", "Status"]}>
               <MetricRow icon={MessageSquare} label="Conversas iniciadas" value={data.agents.reduce((s, a) => s + a.conversations, 0)} status="Mapeado" />
               <MetricRow icon={CheckCircle2} label="Leads ativos" value={data.agents.reduce((s, a) => s + a.activeLeads, 0)} status="Bom" />
-              <MetricRow icon={Pause} label="Agentes pausados" value={data.agents.filter((a) => !a.enabled).length} status="Atencao" tone="amber" />
-              <MetricRow icon={Clock} label="Ultima atividade" value={formatDateTime(data.agents.find((a) => a.lastActivityAt)?.lastActivityAt)} status="Monitorado" />
+              <MetricRow icon={Pause} label="Agentes pausados" value={data.agents.filter((a) => !a.enabled).length} status="Atenção" tone="amber" />
+              <MetricRow icon={Clock} label="Última atividade" value={formatDateTime(data.agents.find((a) => a.lastActivityAt)?.lastActivityAt)} status="Monitorado" />
             </ConsoleTable>
           </ConsoleCard>
         </>

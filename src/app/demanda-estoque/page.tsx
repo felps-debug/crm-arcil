@@ -56,7 +56,7 @@ function DemandaEstoquePageInner() {
   const outOfStockRequests = data?.outOfStockRequests ?? [];
 
   const handleExportCsv = () => {
-    const headers = ["Produto", "Marca", "BTU", "Categoria", "Preco", "Estoque", "Disponivel"];
+    const headers = ["Produto", "Marca", "BTU", "Categoria", "Preço", "Estoque", "Disponível"];
     const rows = filteredProducts.map((p) => [p.name, p.brand, p.btu, p.category, p.price, p.stock, p.available]);
     const csv = [headers, ...rows]
       .map((row) => row.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
@@ -99,7 +99,7 @@ function DemandaEstoquePageInner() {
               />
             ))}
             <ConsoleMetric label="Categorias" value={data.breakdowns.bySource.length} helper="Segmentos comerciais" icon={Boxes} tone="violet" />
-            <ConsoleMetric label="Disponivel" value={formatNumber(products.filter((p) => (p.stock ?? 0) > 10).length)} helper="Produtos com estoque normal" icon={PackageCheck} tone="green" />
+            <ConsoleMetric label="Disponível" value={formatNumber(products.filter((p) => (p.stock ?? 0) > 10).length)} helper="Produtos com estoque normal" icon={PackageCheck} tone="green" />
           </section>
 
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -138,7 +138,7 @@ function DemandaEstoquePageInner() {
                 <span className="shrink-0 font-data text-[11px] text-[var(--text-muted)]">{filteredProducts.length} resultado{filteredProducts.length !== 1 ? "s" : ""}</span>
               )}
             </div>
-            <ConsoleTable headers={["Produto", "Marca", "BTU", "Categoria", "Preco", "Estoque", "Disponivel", "Status"]}>
+            <ConsoleTable headers={["Produto", "Marca", "BTU", "Categoria", "Preço", "Estoque", "Disponível", "Status"]}>
               {filteredProducts.map((p) => (
                 <tr key={`${p.source}-${p.id}`} className="border-b border-[var(--border)] last:border-0">
                   <td className="px-3 py-3">

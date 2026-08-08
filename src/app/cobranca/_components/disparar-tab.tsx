@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Upload, X } from
 import { ConsoleButton, ConsoleCard } from "@/components/console/console-shell";
 import { useToast } from "@/components/ui/toast";
 import { checkRedisparos } from "@/lib/supabase/queries";
-import { parseSheetLeads, parseSheetRows, type DisparoLead } from "../cobranca-helpers";
+import { mergeDateSerials, parseSheetLeads, parseSheetRows, type DisparoLead } from "../cobranca-helpers";
 
 export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
   const { toast } = useToast();
@@ -37,12 +37,21 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
     reader.onload = (ev) => {
       try {
         const wb = xlsxRead(new Uint8Array(ev.target!.result as ArrayBuffer), { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
         // raw: false → usa o texto formatado da célula (evita corromper "530,00" em 53000
-        // e datas em números de série ao ler CSV/XLSX do relatório do ERP)
-        const rows = xlsxUtils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], {
+        // ao ler CSV/XLSX do relatório do ERP)
+        const formatadas = xlsxUtils.sheet_to_json<Record<string, unknown>>(sheet, {
           defval: "",
           raw: false,
         });
+        // Segunda leitura só pelas datas: o ERP formata as células como m/d/yy, então
+        // o texto de 10/06/2026 é "6/10/26" e é impossível saber o que é dia e o que é
+        // mês. Ver mergeDateSerials().
+        const cruas = xlsxUtils.sheet_to_json<Record<string, unknown>>(sheet, {
+          defval: "",
+          raw: true,
+        });
+        const rows = mergeDateSerials(formatadas, cruas);
         const leads = parseSheetLeads(rows);
         if (!leads.length) throw new Error("Nenhum lead válido. Verifique se há coluna de telefone.");
         setPreview(leads);
@@ -80,7 +89,7 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
       const perdidos: string[] = data.missing ?? [];
       if (perdidos.length > 0) {
         toast(
-          `${data.inserted} de ${data.sent} gravados. Nao entraram: ${perdidos.join(", ")}`,
+          `${data.inserted} de ${data.sent} gravados. Não entraram: ${perdidos.join(", ")}`,
           "error"
         );
       } else {

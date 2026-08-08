@@ -12,10 +12,15 @@
   --bg-subtle:  #f0f0f2;
   --bg-inset:   #fafafa;
 
-  /* ── Text ─────────────────────────────────────────────────────── */
-  --text-primary:   #1d1d1f;
-  --text-secondary: #6e6e73;
-  --text-muted:     #aeaeb2;
+  /* ── Text ─────────────────────────────────────────────────────────
+     Contraste medido sobre --bg-surface (#fff) e --bg-base (#f5f5f7).
+     O muted era #aeaeb2: 2.21:1 sobre branco, contra os 4.5:1 que a WCAG AA
+     exige para texto normal — e ele responde por ~180 usos, então um quinto
+     da interface clara ficava ilegível. O antigo secondary desceu para muted
+     e o secondary escureceu, o que mantém os três níveis distintos. */
+  --text-primary:   #1d1d1f; /* 16.83 · 15.46 */
+  --text-secondary: #55555a; /*  7.41 ·  6.81 */
+  --text-muted:     #6e6e73; /*  5.07 ·  4.66 */
 
   /* ── Borders ──────────────────────────────────────────────────── */
   --border:        rgba(0, 0, 0, 0.08);
@@ -29,9 +34,17 @@
   --violet:  #bf5af2;
   --sky:     #32ade6;
 
-  /* ── Sidebar (azul-marinho) ──────────────────────────────────────── */
+  /* ── Sidebar (azul-marinho) ────────────────────────────────────────
+     Escura nos dois temas de propósito: é o azul da marca. As cores do texto
+     viviam fixas no JSX; aqui elas ficam controláveis pelo tema, mesmo que
+     hoje os dois temas usem o mesmo valor. Contraste: 11.15 e 10.21. */
   --sidebar-bg:       #0d1b34;
   --sidebar-border:   rgba(255,255,255,0.08);
+  --sidebar-text:     #c8d1df; /* 11.15 */
+  --sidebar-dim:      #7f8ca3; /*  5.05 */
+  --sidebar-logo:     #a9c9ff; /* 10.21 */
+  --sidebar-active:   #2d7dff;
+  --sidebar-divider:  #1f2b3d;
   --sidebar-w-closed: 64px;
   --sidebar-w-open:   220px;
 
@@ -51,15 +64,21 @@
   --bg-subtle:  #1e2733;
   --bg-inset:   #10151d;
 
-  --text-primary:   #f1f4f8;
-  --text-secondary: #a7b3c2;
-  --text-muted:     #6b7788;
+  --text-primary:   #f1f4f8; /* 15.36 · 17.97 */
+  --text-secondary: #a7b3c2; /*  7.97 ·  9.32 */
+  /* Era #6b7788: 3.73:1 sobre o card, abaixo do mínimo. */
+  --text-muted:     #8592a5; /*  5.37 ·  6.28 */
 
   --border:        #232c38;
   --border-strong: #3d4a5a;
 
   --sidebar-bg:     #070a0f;
   --sidebar-border: #1a222d;
+  --sidebar-text:   #c8d1df; /* 12.88 */
+  --sidebar-dim:    #7f8ca3; /*  5.84 */
+  --sidebar-logo:   #a9c9ff; /* 11.79 */
+  --sidebar-active: #2d7dff;
+  --sidebar-divider: #1f2b3d;
 
   --blue:    #4c93ff;
   --emerald: #4fe0a6;

@@ -3,7 +3,7 @@ import { SkeletonBlock, SkeletonTwoColumn } from "@/components/console/console-s
 
 export default function Loading() {
   return (
-    <ConsolePage title="Gerador de Imagem" subtitle="Simulacao de instalacao com IA">
+    <ConsolePage title="Gerador de Imagem" subtitle="Simulação de instalação com IA">
       <div className="flex flex-wrap gap-2">
         <SkeletonBlock className="h-10 w-36 rounded-[10px]" />
         <SkeletonBlock className="h-10 w-28 rounded-[10px]" />

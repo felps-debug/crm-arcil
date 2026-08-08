@@ -474,7 +474,7 @@ function LeadPanel({
       </div>
 
       <div className="mt-5">
-        <h3 className="mb-3 text-[12px] font-bold text-[var(--text-primary)]">Historico recente</h3>
+        <h3 className="mb-3 text-[12px] font-bold text-[var(--text-primary)]">Histórico recente</h3>
         <div className="space-y-2">
           {detail.timeline.slice(0, 6).map((item) => (
             <div key={`${item.type}-${item.id}`} className="rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] p-3">

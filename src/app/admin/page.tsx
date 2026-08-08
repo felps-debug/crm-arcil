@@ -54,11 +54,11 @@ const roleTone: Record<string, "blue" | "green" | "amber" | "red" | "violet" | "
 };
 
 const permissions = [
-  ["Super Admin", "Acesso total a todas as funcoes e configuracoes.", "blue"],
+  ["Super Admin", "Acesso total a todas as funções e configurações.", "blue"],
   ["Dono", "Controle financeiro e administrativo total da conta.", "red"],
-  ["Gerente", "Supervisao de equipes e relatorios operacionais.", "violet"],
-  ["Vendedor", "Gestao de leads do funil de vendas atribuido.", "green"],
-  ["Financeiro", "Acesso exclusivo ao faturamento e cobrancas.", "amber"],
+  ["Gerente", "Supervisão de equipes e relatórios operacionais.", "violet"],
+  ["Vendedor", "Gestão de leads do funil de vendas atribuído.", "green"],
+  ["Financeiro", "Acesso exclusivo ao faturamento e cobranças.", "amber"],
   ["Estoque", "Controle de entrada e saida de materiais.", "slate"],
 ];
 
@@ -111,7 +111,7 @@ function AdminPageInner() {
     });
     const body = await res.json();
     if (!res.ok || body.error) {
-      toast(body.error ?? "Erro ao alterar permissao.", "error");
+      toast(body.error ?? "Erro ao alterar permissão.", "error");
       return;
     }
     setReloadToken((t) => t + 1);
@@ -140,14 +140,14 @@ function AdminPageInner() {
       toast(body.error ?? "Erro ao remover usuario.", "error");
       return;
     }
-    toast("Usuario removido.", "success");
+    toast("Usuário removido.", "success");
     setReloadToken((t) => t + 1);
   }
 
   return (
     <ConsolePage
       title="Admin"
-      subtitle="Configuracoes do sistema"
+      subtitle="Configurações do sistema"
       actions={
         <ConsoleInput
           value={search}
@@ -167,13 +167,13 @@ function AdminPageInner() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
               <div className="flex items-center gap-2">
                 <Users size={15} className="text-blue-300" />
-                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Gerenciamento de Usuarios</h2>
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Gerenciamento de Usuários</h2>
               </div>
               <ConsoleButton icon={Plus} active onClick={() => setShowCreate(true)}>
                 Criar usuario
               </ConsoleButton>
             </div>
-            <ConsoleTable headers={["Nome / Email", "Cargo", "Ultimo acesso", ""]}>
+            <ConsoleTable headers={["Nome / Email", "Cargo", "Último acesso", ""]}>
               {users.map((user) => (
                 <tr key={user.id} className="border-b border-[var(--border)] last:border-0">
                   <td className="px-3 py-3">
@@ -275,7 +275,7 @@ function AdminPageInner() {
             <ConsoleCard>
               <div className="flex items-center gap-2">
                 <Shield size={15} className="text-violet-300" />
-                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Cargos e Permissoes</h2>
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Cargos e Permissões</h2>
               </div>
               <div className="mt-4 space-y-3">
                 {permissions.map(([name, description, tone]) => (
@@ -345,7 +345,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
       toast(body.error ?? "Erro ao criar usuario.", "error");
       return;
     }
-    toast("Usuario criado com sucesso.", "success");
+    toast("Usuário criado com sucesso.", "success");
     onCreated();
   }
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  excelSerialToBR,
+  mergeDateSerials,
   parseClienteField,
   parseMoneyToNumber,
   parseSheetLeads,
@@ -28,6 +30,37 @@ describe("parseMoneyToNumber", () => {
     expect(parseMoneyToNumber("17.16")).toBe(17.16); // en-US decimal
     expect(parseMoneyToNumber("")).toBeNull();
     expect(parseMoneyToNumber("abc")).toBeNull();
+  });
+});
+
+describe("excelSerialToBR", () => {
+  it("converts Excel serials to dd/mm/aaaa", () => {
+    // Valores lidos do relatório real do ERP (cobrancas phb mga 22.06.xlsx).
+    expect(excelSerialToBR(46183)).toBe("10/06/2026");
+    expect(excelSerialToBR(46153)).toBe("11/05/2026");
+    expect(excelSerialToBR(45658)).toBe("01/01/2025");
+  });
+});
+
+describe("mergeDateSerials", () => {
+  it("rebuilds the date from the serial, because the ERP formats its cells as m/d/yy", () => {
+    // O que sai de sheet_to_json com raw:false na planilha real: a célula tem
+    // formato m/d/yy, então 10/06/2026 vira a string "6/10/26" e não há como
+    // saber se é 10 de junho ou 6 de outubro.
+    const formatadas = [{ "Ser/Doc/Par": "CxPhM 921 3/3", Prorrog: "6/10/26", Receber: "313.73" }];
+    const cruas = [{ "Ser/Doc/Par": "CxPhM 921 3/3", Prorrog: 46183, Receber: 313.73 }];
+
+    const [row] = mergeDateSerials(formatadas, cruas);
+
+    expect(row.Prorrog).toBe("10/06/2026");
+    // Só as colunas de data mudam — o dinheiro continua vindo do texto formatado.
+    expect(row.Receber).toBe("313.73");
+    expect(row["Ser/Doc/Par"]).toBe("CxPhM 921 3/3");
+  });
+
+  it("leaves CSV rows alone, where every cell is already text", () => {
+    const rows = [{ Prorrog: "10/06/2026", Receber: "530,00" }];
+    expect(mergeDateSerials(rows, rows)).toEqual(rows);
   });
 });
 

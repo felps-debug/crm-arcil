@@ -3,7 +3,7 @@ import { SkeletonBlock, SkeletonMetricsRow, SkeletonTable } from "@/components/c
 
 export default function Loading() {
   return (
-    <ConsolePage title="Cobranca" subtitle="Disparos e acompanhamento em tempo real">
+    <ConsolePage title="Cobranças" subtitle="Disparos e acompanhamento em tempo real">
       <SkeletonMetricsRow count={5} />
       <div className="flex flex-wrap gap-2">
         <SkeletonBlock className="h-10 w-24 rounded-[10px]" />

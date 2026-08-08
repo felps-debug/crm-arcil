@@ -26,7 +26,7 @@ export function AccessGuard({
           <ShieldAlert size={28} className="mx-auto mb-3 text-amber-400" />
           <h2 className="text-[14px] font-bold text-[var(--text-primary)]">Acesso restrito</h2>
           <p className="mt-2 text-[12px] text-[var(--text-muted)]">
-            Voce nao tem permissao para acessar esta area. Fale com um administrador se precisar de acesso.
+            Você não tem permissão para acessar esta área. Fale com um administrador se precisar de acesso.
           </p>
         </ConsoleCard>
       </div>

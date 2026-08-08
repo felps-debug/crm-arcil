@@ -231,7 +231,9 @@ function EmptyState({ message }: { message: string }) {
 function Delta({ comparison, unit }: { comparison: ApiMetric["previous"]; unit?: string }) {
   const delta = comparison.deltaPercent;
   if (delta == null) {
-    return <div className="mt-2 h-[15px] text-[11px] text-[var(--text-muted)]">—</div>;
+    // Vazio, não um travessão: "—" no lugar de uma variação lê como dado quebrado,
+    // e ele aparecia embaixo de todos os cards. A altura continua reservada.
+    return <div className="mt-2 h-[15px]" aria-hidden />;
   }
   const positive = delta >= 0;
   const Icon = positive ? ArrowUpRight : ArrowDownRight;

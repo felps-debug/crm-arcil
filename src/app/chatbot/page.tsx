@@ -56,7 +56,7 @@ const STEPS: Step[] = [
   { key: "foto", question: "Envie uma foto da parede", type: "file" },
   { key: "modelo", question: "Qual o modelo do ar-condicionado?", type: "text" },
   { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
-  { key: "ponto_eletrico", question: "Ja existe ponto eletrico na parede?", type: "choice", options: ["Sim", "Nao"] },
+  { key: "ponto_eletrico", question: "Já existe ponto elétrico na parede?", type: "choice", options: ["Sim", "Não"] },
   { key: "unidade_externa", question: "Onde ficara a unidade externa (condensadora) e a que distancia aproximada?", type: "text" },
   { key: "nivel_condensadora", question: "A condensadora fica acima, abaixo ou no mesmo nivel do ambiente?", type: "choice", options: ["Acima do ambiente", "Abaixo do ambiente", "Mesmo nivel do ambiente"] },
   { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente", "Sem canaleta"] },
@@ -163,7 +163,7 @@ function ChatbotPageInner() {
         });
         const data = await res.json();
         if (!res.ok || data.error) {
-          toast(data.error ?? "Nao foi possivel gerar a imagem.", "error");
+          toast(data.error ?? "Não foi possível gerar a imagem.", "error");
           return;
         }
         setGeneratedImageUrl(data.imageUrl);
@@ -292,13 +292,13 @@ function ChatbotPageInner() {
   );
 
   return (
-    <ConsolePage title="Gerador de Imagem" subtitle="Simulacao de instalacao com IA">
+    <ConsolePage title="Gerador de Imagem" subtitle="Simulação de instalação com IA">
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Seções do gerador de imagem">
         <ConsoleButton icon={MessageSquare} active={tab === "chat"} onClick={() => setTab("chat")} role="tab" aria-selected={tab === "chat"}>
           Nova simulacao
         </ConsoleButton>
         <ConsoleButton icon={History} active={tab === "historico"} onClick={() => setTab("historico")} role="tab" aria-selected={tab === "historico"}>
-          Historico
+          Histórico
           {historyItems.length > 0 && <span className="font-data opacity-80">{historyItems.length}</span>}
         </ConsoleButton>
       </div>
@@ -311,7 +311,7 @@ function ChatbotPageInner() {
                 <div className="grid h-8 w-8 place-items-center rounded-full bg-violet-500/10 text-violet-300">
                   <Sparkles size={15} />
                 </div>
-                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Assistente de Instalacao</h2>
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Assistente de Instalação</h2>
               </div>
               {!done && (
                 <span className="font-data text-[11px] text-[var(--text-muted)]">{answeredSteps}/{STEPS.length}</span>
@@ -334,7 +334,7 @@ function ChatbotPageInner() {
               {done && (
                 <div className="flex justify-start">
                   <div className="max-w-[85%] rounded-[12px] rounded-tl-none border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-[13px] font-semibold text-emerald-300">
-                    Simulacao pronta! Veja o resultado ao lado.
+                    Simulação pronta! Veja o resultado ao lado.
                   </div>
                 </div>
               )}
@@ -443,7 +443,7 @@ function ChatbotPageInner() {
           </div>
         </div>
       ) : (
-        <HistoricoTab loading={historyLoading} error={historyError} items={historyItems} onSelect={setPreviewItem} />
+        <HistóricoTab loading={historyLoading} error={historyError} items={historyItems} onSelect={setPreviewItem} />
       )}
 
       {previewItem && <PreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />}
@@ -514,7 +514,7 @@ function TypingBubble({ label }: { label?: string }) {
   );
 }
 
-function HistoricoTab({
+function HistóricoTab({
   loading,
   error,
   items,
@@ -574,7 +574,7 @@ function HistoricoTab({
           <ConsoleCard pad={false} className="overflow-hidden transition-colors hover:border-blue-500/50">
             <div className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={item.generated_image_url} alt="Simulacao gerada" className="h-36 w-full object-cover" />
+              <img src={item.generated_image_url} alt="Simulação gerada" className="h-36 w-full object-cover" />
               <button
                 onClick={(e) => handleCardDownload(e, item)}
                 disabled={downloadingId === item.id}

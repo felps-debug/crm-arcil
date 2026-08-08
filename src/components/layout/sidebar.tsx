@@ -83,8 +83,8 @@ export function Sidebar() {
       <div className="flex items-center gap-3 px-6 pb-8 pt-8">
         <Image src="/logo-icon.png" alt="Arcil" width={34} height={34} className="h-[34px] w-[34px] shrink-0 object-contain" />
         <div>
-          <div className="text-[24px] font-extrabold leading-none tracking-normal text-[#a9c9ff]">ARCIL</div>
-          <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7f8ca3]">Operacional Comercial</div>
+          <div className="text-[24px] font-extrabold leading-none tracking-normal text-[var(--sidebar-logo)]">ARCIL</div>
+          <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--sidebar-dim)]">Operacional Comercial</div>
         </div>
       </div>
 
@@ -99,8 +99,8 @@ export function Sidebar() {
               className={cn(
                 "flex min-h-11 items-center gap-3 rounded-[14px] px-4 text-[14px] font-semibold transition-colors",
                 active
-                  ? "bg-[#2d7dff] text-white shadow-[0_0_30px_rgba(45,125,255,0.35)]"
-                  : "text-[#c8d1df] hover:bg-white/[0.06] hover:text-white"
+                  ? "bg-[var(--sidebar-active)] text-white shadow-[0_0_30px_rgba(45,125,255,0.35)]"
+                  : "text-[var(--sidebar-text)] hover:bg-white/[0.06] hover:text-white"
               )}
             >
               <Icon size={18} strokeWidth={1.9} />
@@ -117,17 +117,17 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-[#1f2b3d] px-3 py-5">
+      <div className="border-t border-[var(--sidebar-divider)] px-3 py-5">
         {isSuperAdmin && (
-          <Link href="/admin" className="mb-2 flex items-center gap-3 rounded-[12px] px-4 py-2.5 text-[13px] font-semibold text-[#c8d1df] hover:bg-white/[0.06]">
+          <Link href="/admin" className="mb-2 flex items-center gap-3 rounded-[12px] px-4 py-2.5 text-[13px] font-semibold text-[var(--sidebar-text)] hover:bg-white/[0.06]">
             <Settings size={17} />
-            Configuracoes
+            Configurações
           </Link>
         )}
 
         <button
           onClick={toggleTheme}
-          className="mb-5 flex w-full items-center gap-3 rounded-[12px] px-4 py-2.5 text-[13px] font-semibold text-[#c8d1df] transition-colors hover:bg-white/[0.06]"
+          className="mb-5 flex w-full items-center gap-3 rounded-[12px] px-4 py-2.5 text-[13px] font-semibold text-[var(--sidebar-text)] transition-colors hover:bg-white/[0.06]"
         >
           {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
           {theme === "dark" ? "Modo claro" : "Modo escuro"}
@@ -139,7 +139,7 @@ export function Sidebar() {
           </div>
           <div className="min-w-0">
             <div className="truncate text-[13px] font-bold text-white">{displayName}</div>
-            <div className="truncate text-[11px] text-[#7f8ca3]">{role}</div>
+            <div className="truncate text-[11px] text-[var(--sidebar-dim)]">{role}</div>
           </div>
         </div>
 
