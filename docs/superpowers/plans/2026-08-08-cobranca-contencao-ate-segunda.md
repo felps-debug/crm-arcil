@@ -92,7 +92,18 @@ HORA_INICIO_COMERCIAL=8
 HORA_FIM_COMERCIAL=18
 ```
 
-- [ ] **Passo 4: Deploy e verificar**
+- [ ] **Passo 4: Alinhar o fuso com o do Postgres**
+
+```
+TIMEZONE=America/Sao_Paulo
+```
+
+Fortaleza e São Paulo são ambos UTC−3 hoje, então nada muda na prática. Mas a
+operação é no Paraná, a função `disparar_followup_cobranca()` usa
+`America/Sao_Paulo`, e se o horário de verão voltar São Paulo observa e Fortaleza não
+— a janela comercial deslizaria uma hora só de um lado.
+
+- [ ] **Passo 5: Deploy e verificar**
 
 ```bash
 curl -s https://arcil-arcil-cobranca-py.47nukb.easypanel.host/config
@@ -101,8 +112,18 @@ curl -s https://arcil-arcil-cobranca-py.47nukb.easypanel.host/config
 Esperado:
 ```json
 {"horario_comercial":"08h–18h","delay_fluxo1_minutos":"0–10",
- "reenvio_pendentes":"10:00h","timezone":"America/Fortaleza","ddd_padrao":"44"}
+ "reenvio_pendentes":"10:00h","timezone":"America/Sao_Paulo","ddd_padrao":"44"}
 ```
+
+**Sobre o `DDD_PADRAO`:** fica em `44` e não precisa mudar — medido nas planilhas de
+22.06, **nenhuma linha vem sem DDD**, então esse valor nunca é usado. Mas é armadilha:
+a planilha de Maringá traz números com DDD 43 e 47, e a de Londrina traz 18. A praça
+não determina o DDD, logo não existe padrão correto. Se um dia vier telefone sem DDD,
+qualquer chute inventa o número de outra pessoa.
+
+O conserto é `normalizar_numero()` parar de chutar e mandar a linha para a lista de
+cobrança manual, junto com os 7 sem telefone. Entra no plano da semana de 10/08, onde
+essa lista é construída.
 
 ---
 
