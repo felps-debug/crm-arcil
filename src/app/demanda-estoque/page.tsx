@@ -33,6 +33,22 @@ function sourceLabel(source: InventoryProduct["source"]) {
   }[source];
 }
 
+/** Por id, não por posição no array: acrescentar uma métrica no meio da lista
+ *  trocava o ícone e a cor de todas as seguintes. */
+const METRIC_ICON: Record<string, typeof Package> = {
+  total_products: Package,
+  out_of_stock: PackageX,
+  erp_zerado: PackageX,
+  low_stock: AlertTriangle,
+};
+
+const METRIC_TONE: Record<string, "blue" | "red" | "amber"> = {
+  total_products: "blue",
+  out_of_stock: "red",
+  erp_zerado: "red",
+  low_stock: "amber",
+};
+
 export default function DemandaEstoquePage() {
   return (
     <AccessGuard perm="manage_estoque">
@@ -52,8 +68,9 @@ function DemandaEstoquePageInner() {
     return products.filter((p) => p.name?.toLowerCase().includes(q) || p.btu?.toLowerCase().includes(q) || p.brand?.toLowerCase().includes(q));
   }, [products, tableFilter]);
 
-  const mostRequested = useMemo(() => products.slice(0, 4), [products]);
+  const topDemanda = data?.topDemanda ?? [];
   const outOfStockRequests = data?.outOfStockRequests ?? [];
+  const estoqueSincronizado = data?.estoqueSincronizado ?? false;
 
   const handleExportCsv = () => {
     const headers = ["Produto", "Marca", "BTU", "Categoria", "Preço", "Estoque", "Disponível"];
@@ -73,7 +90,7 @@ function DemandaEstoquePageInner() {
   return (
     <ConsolePage
       title="Demanda & Estoque"
-      subtitle="Estoque sincronizado do Supabase"
+      subtitle="Catálogo do ERP e demanda registrada pelos agentes"
       actions={
         <>
           <ConsoleInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Busca global..." className="w-72" />
@@ -88,31 +105,64 @@ function DemandaEstoquePageInner() {
 
       {!loading && !error && data && (
         <>
-          <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {data.metrics.map((m, index) => (
+          {!estoqueSincronizado && (
+            <div className="flex items-start gap-2 rounded-[10px] border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-300">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>
+                <strong className="font-bold">Estoque não sincronizado.</strong> A carga do ERP traz código,
+                nome, marca e preço, mas não a quantidade — a coluna <span className="font-data">estoque</span>{" "}
+                está vazia nos {formatNumber(products.length)} produtos. Os números de estoque só passam a
+                valer quando a sincronização trouxer esse campo.
+              </span>
+            </div>
+          )}
+
+          <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {data.metrics.map((m) => (
               <ConsoleMetric
                 key={m.id}
                 label={m.label}
                 value={formatNumber(m.value)}
-                icon={[Package, PackageX, AlertTriangle][index] ?? Boxes}
-                tone={index === 0 ? "blue" : index === 1 ? "red" : "amber"}
+                icon={METRIC_ICON[m.id] ?? Boxes}
+                tone={METRIC_TONE[m.id] ?? "amber"}
               />
             ))}
             <ConsoleMetric label="Categorias" value={data.breakdowns.bySource.length} helper="Segmentos comerciais" icon={Boxes} tone="violet" />
-            <ConsoleMetric label="Disponível" value={formatNumber(products.filter((p) => (p.stock ?? 0) > 10).length)} helper="Produtos com estoque normal" icon={PackageCheck} tone="green" />
+            <ConsoleMetric
+              label="Disponível"
+              value={estoqueSincronizado ? formatNumber(products.filter((p) => (p.stock ?? 0) > 10).length) : "não sincronizado"}
+              helper="Produtos com estoque normal"
+              icon={PackageCheck}
+              tone="green"
+            />
           </section>
 
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <ConsoleCard>
-              <h2 className="mb-4 text-[13px] font-bold text-[var(--text-primary)]">Mais solicitados (top demanda)</h2>
+              <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Mais procurados e não atendidos</h2>
+              <p className="mb-4 mt-0.5 text-[12px] text-[var(--text-muted)]">
+                BTU e marca extraídos do que o cliente pediu ao agente
+              </p>
               <div className="space-y-3">
-                {mostRequested.map((p, index) => (
-                  <DemandBar key={p.id} label={p.name ?? "Produto"} value={Math.max(18, 140 - index * 26)} />
+                {topDemanda.slice(0, 8).map((t) => (
+                  <DemandBar
+                    key={`${t.tipo}-${t.termo}`}
+                    label={t.termo}
+                    value={t.total}
+                    max={topDemanda[0]?.total ?? 1}
+                    aviso={t.noCatalogo === false ? "fora do catálogo" : null}
+                  />
                 ))}
+                {!topDemanda.length && (
+                  <p className="text-[12px] text-[var(--text-muted)]">
+                    Nenhum pedido não atendido registrado ainda.
+                  </p>
+                )}
               </div>
             </ConsoleCard>
             <ConsoleCard>
-              <h2 className="mb-4 text-[13px] font-bold text-[var(--text-primary)]">Demanda nao atendida</h2>
+              <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Últimos pedidos não atendidos</h2>
+              <p className="mb-4 mt-0.5 text-[12px] text-[var(--text-muted)]">Texto exato que o cliente usou</p>
               <div className="space-y-2">
                 {outOfStockRequests.map((req) => (
                   <div key={req.id} className="flex items-center justify-between rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] p-3">
@@ -120,7 +170,7 @@ function DemandaEstoquePageInner() {
                     <ConsoleStatus tone="red">{formatDateTime(req.createdAt)}</ConsoleStatus>
                   </div>
                 ))}
-                {!outOfStockRequests.length && <p className="text-[12px] text-[var(--text-muted)]">Nenhuma solicitacao de produto sem estoque registrada.</p>}
+                {!outOfStockRequests.length && <p className="text-[12px] text-[var(--text-muted)]">Nenhum pedido sem estoque registrado.</p>}
               </div>
             </ConsoleCard>
           </section>
@@ -149,9 +199,19 @@ function DemandaEstoquePageInner() {
                   <td className="px-3 py-3 font-data text-[var(--text-secondary)]">{p.btu ?? "-"}</td>
                   <td className="px-3 py-3"><ConsoleStatus tone="slate">{p.category ?? sourceLabel(p.source)}</ConsoleStatus></td>
                   <td className="px-3 py-3 font-data font-semibold text-[var(--text-primary)]">{formatMoney(p.price)}</td>
-                  <td className="px-3 py-3 font-data">{formatNumber(p.stock ?? 0)}</td>
-                  <td className="px-3 py-3 font-data">{formatNumber(p.available ?? 0)}</td>
-                  <td className="px-3 py-3"><ConsoleStatus tone={stockTone(p.stock)}>{(p.stock ?? 0) <= 0 ? "Critico" : (p.stock ?? 0) <= 10 ? "Baixo" : "OK"}</ConsoleStatus></td>
+                  {/* `?? 0` mostrava 0 e marcava "Critico" nas 3.043 linhas, porque
+                      o ERP não sincroniza quantidade. Sem dado a célula fica vazia. */}
+                  <td className="px-3 py-3 font-data">{p.stock == null ? "—" : formatNumber(p.stock)}</td>
+                  <td className="px-3 py-3 font-data">{p.available == null ? "—" : formatNumber(p.available)}</td>
+                  <td className="px-3 py-3">
+                    {p.stock == null ? (
+                      <span className="text-[11px] text-[var(--text-muted)]">sem dado</span>
+                    ) : (
+                      <ConsoleStatus tone={stockTone(p.stock)}>
+                        {p.stock <= 0 ? "Crítico" : p.stock <= 10 ? "Baixo" : "OK"}
+                      </ConsoleStatus>
+                    )}
+                  </td>
                 </tr>
               ))}
             </ConsoleTable>
@@ -162,15 +222,36 @@ function DemandaEstoquePageInner() {
   );
 }
 
-function DemandBar({ label, value }: { label: string; value: number }) {
+/** A barra já teve o comprimento derivado da POSIÇÃO no array (140 - index*26),
+ *  com "140 solic." escrito ao lado de um produto que ninguém tinha pedido.
+ *  Agora `value` é a contagem real e a largura é proporcional ao topo da lista. */
+function DemandBar({
+  label,
+  value,
+  max,
+  aviso,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  aviso?: string | null;
+}) {
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-[11px] font-semibold">
-        <span className="truncate text-[var(--text-secondary)]">{label}</span>
-        <span className="font-data text-[var(--text-primary)]">{value} solic.</span>
+      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-semibold">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[var(--text-secondary)]">{label}</span>
+          {aviso && <ConsoleStatus tone="amber">{aviso}</ConsoleStatus>}
+        </span>
+        <span className="shrink-0 font-data text-[var(--text-primary)]">
+          {value} pedido{value !== 1 ? "s" : ""}
+        </span>
       </div>
       <div className="h-2 rounded-full bg-[var(--bg-subtle)]">
-        <div className="h-full rounded-full bg-blue-400" style={{ width: `${Math.min(100, value / 1.5)}%` }} />
+        <div
+          className="h-full rounded-full bg-blue-400"
+          style={{ width: `${Math.max(4, (value / Math.max(max, 1)) * 100)}%` }}
+        />
       </div>
     </div>
   );

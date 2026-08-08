@@ -16,6 +16,14 @@ export async function GET(request: Request) {
       search: url.searchParams.get("search"),
       unassigned: url.searchParams.get("unassigned"),
       withoutFollowup: url.searchParams.get("withoutFollowup"),
+      // Os drilldowns do dashboard mandavam estes cinco e ninguem lia: o usuario
+      // clicava em "Handoff sem aceite" e caia na lista inteira.
+      handoff: url.searchParams.get("handoff"),
+      period: url.searchParams.get("period"),
+      late: url.searchParams.get("late"),
+      respondeu: url.searchParams.get("respondeu"),
+      hasQuotes: url.searchParams.get("hasQuotes"),
+      hasSales: url.searchParams.get("hasSales"),
       limit: url.searchParams.get("limit"),
     }));
   } catch (error) {

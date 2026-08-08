@@ -56,6 +56,21 @@ function responsibleLabel(lead: LeadListItem): string {
 
 /** Enviado sem aceite é o estado que precisa saltar aos olhos: o lead parece
  * atendido e ninguém pegou. */
+/** Os filtros que o dashboard manda nos drilldowns, além de segment/status/search.
+ *  Vão direto para a API, que sabe resolver cada um. */
+const FILTROS_DA_URL = ["unassigned", "withoutFollowup", "handoff", "period", "late", "respondeu", "hasQuotes", "hasSales"] as const;
+
+const ROTULO_DO_FILTRO: Record<string, string> = {
+  unassigned: "sem responsável",
+  withoutFollowup: "sem follow-up",
+  handoff: "encaminhado sem aceite",
+  period: "últimos 30 dias",
+  late: "follow-up atrasado",
+  respondeu: "respondeu o follow-up",
+  hasQuotes: "com orçamento",
+  hasSales: "com venda",
+};
+
 function handoffState(lead: LeadListItem): { label: string; tone: "green" | "red" } | null {
   if (!lead.handoffSentAt) return null;
   if (lead.handoffAcceptedAt) return { label: "Assumido", tone: "green" };
@@ -136,8 +151,20 @@ function LeadsBoard() {
   const params = new URLSearchParams();
   if (urlStatus) params.set("status", urlStatus);
   if (search) params.set("search", search);
+  // O dashboard manda oito filtros nos drilldowns e a página lia só três. Clicar
+  // em "Handoff sem aceite" abria a lista inteira, sem marcar quais eram os
+  // encaminhados sem aceite — o card dizia um número e a tela mostrava outro.
+  for (const chave of FILTROS_DA_URL) {
+    const valor = searchParams.get(chave);
+    if (valor) params.set(chave, valor);
+  }
   params.set("limit", "300");
   if (refreshTick) params.set("_r", String(refreshTick));
+
+  const filtrosAtivos = FILTROS_DA_URL.filter((chave) => searchParams.get(chave)).map((chave) => ({
+    chave,
+    rotulo: ROTULO_DO_FILTRO[chave] ?? chave,
+  }));
 
   const leads = useApi<LeadsResponse>(`/api/leads?${params.toString()}`);
   const detail = useApi<LeadDetailResponse>(
@@ -173,10 +200,13 @@ function LeadsBoard() {
     >
       {/* Sem isto o usuário chega pelo dashboard numa lista filtrada e não tem
           como saber por quê, nem como voltar para a lista inteira. */}
-      {urlStatus && (
-        <div className="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
-          <span>Filtrado por status</span>
-          <ConsoleStatus tone={statusTone(urlStatus)}>{urlStatus}</ConsoleStatus>
+      {(urlStatus || filtrosAtivos.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--text-muted)]">
+          <span>Filtrado por</span>
+          {urlStatus && <ConsoleStatus tone={statusTone(urlStatus)}>{urlStatus}</ConsoleStatus>}
+          {filtrosAtivos.map((f) => (
+            <ConsoleStatus key={f.chave} tone="blue">{f.rotulo}</ConsoleStatus>
+          ))}
           <Link href="/leads" className="inline-flex items-center gap-1 font-semibold text-blue-300 hover:underline">
             <X size={12} /> limpar
           </Link>

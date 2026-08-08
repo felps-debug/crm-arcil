@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { allTimePeriod, countBy, defaultPeriod, isOlderThan, metric, percent } from "@/lib/server/crm-metrics";
 import { labelSegment, labelStatus } from "@/lib/server/crm-labels";
+import { agruparDemanda } from "@/lib/server/demanda";
 import type {
   ActivityLogResponse,
   AgentConversationsResponse,
@@ -161,6 +162,16 @@ type LeadFilters = {
   search?: string | null;
   unassigned?: string | null;
   withoutFollowup?: string | null;
+  /** "pending": encaminhado ao vendedor e ainda sem aceite. */
+  handoff?: string | null;
+  /** "30d": criados na janela padrão do dashboard. */
+  period?: string | null;
+  /** "true": follow-up enviado e sem resposta há mais tempo que o aceitável. */
+  late?: string | null;
+  hasQuotes?: string | null;
+  hasSales?: string | null;
+  /** "true": follow-up enviado e já respondido. */
+  respondeu?: string | null;
   limit?: string | null;
 };
 
@@ -475,7 +486,7 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
       },
       {
         id: "collections_due_today",
-        label: "Cobrancas vencem hoje",
+        label: "Cobranças vencem hoje",
         count: cobrancas.filter((c) => c.vencimento === today && !c.pagamento_confirmado).length,
         severity: "info",
         formula: "count(cobranca_log where vencimento=today and pagamento_confirmado=false)",
@@ -508,11 +519,23 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
 }
 
 export async function getLeads(filters: LeadFilters): Promise<LeadsResponse> {
-  const { leads, followups, conversations, vendors } = await fetchCore();
+  const { leads, followups, conversations, vendors, quotes, sales } = await fetchCore();
   const vendorMap = new Map(vendors.map((v) => [v.id, v]));
   const leadIdsWithFollowup = new Set(followups.map((f) => f.lead_id).filter(Boolean));
   const limit = Math.min(Number(filters.limit ?? 100) || 100, 500);
   const search = filters.search?.toLowerCase().trim();
+
+  // Um lead pode ter vários follow-ups; o que importa é se ALGUM está no estado
+  // que o card do dashboard contou.
+  const leadIdsComFollowupAtrasado = new Set(
+    followups.filter((f) => !f.respondeu && isOlderThan(f.created_at, 24)).map((f) => f.lead_id),
+  );
+  const leadIdsQueResponderam = new Set(
+    followups.filter((f) => f.followup_sent && f.respondeu).map((f) => f.lead_id),
+  );
+  const leadIdsComOrcamento = new Set(quotes.map((q) => q.lead_id).filter(Boolean));
+  const leadIdsComVenda = new Set(sales.map((s) => s.lead_id).filter(Boolean));
+  const { from: periodoDe, to: periodoAte } = previousWindow();
 
   const items = leads
     .filter((lead) => {
@@ -520,8 +543,17 @@ export async function getLeads(filters: LeadFilters): Promise<LeadsResponse> {
       if (filters.status && lead.status !== filters.status) return false;
       if (filters.city && (lead.city ?? lead.region) !== filters.city) return false;
       if (filters.origin && (lead.origem ?? lead.channel_origin) !== filters.origin) return false;
-      if (filters.unassigned === "true" && lead.owner_name) return false;
+      // Mesma fórmula do card "Leads sem responsável". Só `owner_name` deixava
+      // passar quem já foi encaminhado a um vendedor, então a contagem do card
+      // e o tamanho da lista nunca batiam.
+      if (filters.unassigned === "true" && (lead.owner_name || lead.handoff_vendor_id)) return false;
       if (filters.withoutFollowup === "true" && leadIdsWithFollowup.has(lead.id)) return false;
+      if (filters.handoff === "pending" && !(lead.handoff_sent_at && !lead.handoff_accepted_at)) return false;
+      if (filters.late === "true" && !leadIdsComFollowupAtrasado.has(lead.id)) return false;
+      if (filters.respondeu === "true" && !leadIdsQueResponderam.has(lead.id)) return false;
+      if (filters.hasQuotes === "true" && !leadIdsComOrcamento.has(lead.id)) return false;
+      if (filters.hasSales === "true" && !leadIdsComVenda.has(lead.id)) return false;
+      if (filters.period === "30d" && !inRange(lead.created_at, periodoDe, periodoAte)) return false;
       if (search) {
         const haystack = [lead.name, lead.wa_phone, lead.company, lead.city, lead.region].filter(Boolean).join(" ").toLowerCase();
         if (!haystack.includes(search)) return false;
@@ -862,7 +894,9 @@ async function fetchOutOfStockRequests(): Promise<InventorySummaryResponse["outO
     .from("out_of_stock_requests")
     .select("id,product_name,created_at")
     .order("created_at", { ascending: false })
-    .limit(50);
+    // Era 50, e o card "Sem estoque" contava o tamanho desta lista — a partir da
+    // 51ª solicitação ele travaria em 50 sem avisar ninguém.
+    .limit(1000);
   if (error) throw error;
   return (data ?? []).map((r) => ({ id: r.id, productName: r.product_name, createdAt: r.created_at }));
 }
@@ -876,10 +910,32 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
     return [p.name, p.brand, p.category, p.btu, p.voltage, p.erpCode].filter(Boolean).join(" ").toLowerCase().includes(q);
   });
   const outOfStock = outOfStockRequests.length;
-  const lowStock = products.filter((p) => (p.stock ?? 0) > 0 && (p.stock ?? 0) <= 10).length;
+
+  // O ERP não sincroniza quantidade. Hoje `estoque` é null nas 3.043 linhas das
+  // quatro tabelas de produto — a coluna existe, ninguém escreve nela, e
+  // products_builder_architect nem tem a coluna. Contar sobre isso devolve 0, e
+  // "0 produtos com estoque baixo" se lê como "está tudo abastecido", que é o
+  // oposto de "não medimos". Enquanto não houver dado, os cards dizem isso.
+  const comEstoqueConhecido = products.filter((p) => p.stock != null);
+  const estoqueSincronizado = comEstoqueConhecido.length > 0;
+  const SEM_DADO = "não sincronizado";
+
+  const lowStock = estoqueSincronizado
+    ? comEstoqueConhecido.filter((p) => p.stock! > 0 && p.stock! <= 10).length
+    : SEM_DADO;
+  const zerados = estoqueSincronizado
+    ? comEstoqueConhecido.filter((p) => p.stock === 0).length
+    : SEM_DADO;
+
+  const topDemanda = agruparDemanda(
+    outOfStockRequests,
+    products.map((p) => p.brand).filter((m): m is string => Boolean(m)),
+  );
 
   return {
     generatedAt: nowIso(),
+    estoqueSincronizado,
+    topDemanda,
     metrics: [
       metric({
         id: "total_products",
@@ -891,10 +947,20 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
       }),
       metric({
         id: "out_of_stock",
-        label: "Sem estoque",
+        label: "Pedidos não atendidos",
         value: outOfStock,
         formula: "count(out_of_stock_requests)",
-        tooltip: "Solicitações de produtos que os agentes não conseguiram atender por falta de estoque.",
+        tooltip:
+          "Vezes em que o agente não conseguiu atender um pedido — produto que a ARCIL não revende, ou que revende e estava sem estoque.",
+        drilldown: { href: "/demanda-estoque", filters: { stock: "out" } },
+      }),
+      metric({
+        id: "erp_zerado",
+        label: "Zerados no ERP",
+        value: zerados,
+        formula: "count(products where estoque = 0)",
+        tooltip:
+          "Produtos cadastrados no ERP com estoque zero. Depende da sincronização trazer a quantidade, o que hoje não acontece.",
         drilldown: { href: "/demanda-estoque", filters: { stock: "out" } },
       }),
       metric({
@@ -910,7 +976,12 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
     outOfStockRequests,
     breakdowns: {
       bySource: countBy(products, (p) => p.source),
-      lowStockBySource: countBy(products.filter((p) => (p.stock ?? 0) <= 10), (p) => p.source),
+      // Mesmo critério do card `low_stock`. Antes o card exigia estoque > 0 e
+      // este não, então com `estoque` null o card dizia 0 e o breakdown 3.043.
+      lowStockBySource: countBy(
+        products.filter((p) => p.stock != null && p.stock > 0 && p.stock <= 10),
+        (p) => p.source,
+      ),
     },
   };
 }

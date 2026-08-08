@@ -1,3 +1,5 @@
+import type { TermoDemanda } from "@/lib/server/demanda";
+
 export type ApiDrilldown = {
   href: string;
   filters: Record<string, string>;
@@ -218,6 +220,12 @@ export type OutOfStockRequest = {
 
 export type InventorySummaryResponse = {
   generatedAt: string;
+  /** false enquanto o ERP não trouxer quantidade — hoje `estoque` é null em
+   *  todas as linhas de produto. A tela usa isso para não afirmar zero. */
+  estoqueSincronizado: boolean;
+  /** Demanda não atendida agrupada por BTU e marca, extraída do texto livre que
+   *  o agente grava em out_of_stock_requests. Maior primeiro. */
+  topDemanda: TermoDemanda[];
   metrics: ApiMetric[];
   products: InventoryProduct[];
   outOfStockRequests: OutOfStockRequest[];

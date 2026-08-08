@@ -53,8 +53,15 @@ src/
 
 - **Projeto ID:** `swcqvrowqwylcegrcesu`
 - **URL:** `https://swcqvrowqwylcegrcesu.supabase.co`
-- **Tabelas principais:** `leads`, `followups`, `cobranca_log`, `products_cache`, `vendors`, `conversations`, `messages`, `user_profiles`
+- **Tabelas principais:** `leads`, `followups`, `cobranca_log`, `cobranca_empresas`, `vendors`, `conversations`, `messages`, `user_profiles`
+- **Produtos:** não existe `products_cache`. O catálogo vive em quatro tabelas por segmento — `products_consumer`, `products_reseller`, `products_installer`, `products_builder_architect` — e o CRM as unifica em `fetchProducts()`.
 - **Buckets:** `chatbot-images` (fotos da parede), `PDF` (imagens geradas)
+
+### Estoque
+
+A carga do ERP traz `id_erp`, `nome`, `marca`, `grupo`, `subgrupo`, `sku`, `ean` e `preco` — **não traz quantidade**. A coluna `estoque` existe nas tabelas de produto e está `null` em todas as linhas; `products_builder_architect` nem tem a coluna.
+
+Enquanto isso não mudar, a tela `/demanda-estoque` mostra "não sincronizado" em vez de zero, e o sinal de demanda vem de `out_of_stock_requests`, que o agente preenche quando não consegue atender um pedido.
 
 ### Tabela `user_profiles`
 Colunas: `id` (FK auth.users), `email`, `full_name`, `role` (enum), `permissions` (jsonb), `created_at`, `updated_at`
