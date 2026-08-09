@@ -5,7 +5,21 @@ import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Upload, X } from
 import { ConsoleButton, ConsoleCard } from "@/components/console/console-shell";
 import { useToast } from "@/components/ui/toast";
 import { checkRedisparos } from "@/lib/supabase/queries";
-import { mergeDateSerials, parseSheetLeads, parseSheetRows, type DisparoLead } from "../cobranca-helpers";
+import {
+  mergeDateSerials,
+  normalizarDatasTexto,
+  parseSheetLeads,
+  parseSheetRecusados,
+  parseSheetRows,
+  type DisparoLead,
+  type LinhaRecusada,
+} from "../cobranca-helpers";
+
+const MOTIVO_LABEL: Record<LinhaRecusada["motivo"], string> = {
+  fixo: "telefone fixo",
+  vazio: "sem telefone",
+  invalido: "número inválido",
+};
 
 export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
   const { toast } = useToast();
@@ -14,6 +28,9 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
   // O preview mostra um cliente por linha; o disparo manda um BOLETO por linha.
   // Agrupar antes de enviar apagava os boletos extras — ver parseSheetRows().
   const [linhasDisparo, setLinhasDisparo] = useState<DisparoLead[]>([]);
+  // Linhas que nao podem ser disparadas. Antes eram descartadas em silencio e a
+  // carteira encolhia sem ninguem ver — num relatorio real sao 6 dos 26 clientes.
+  const [recusados, setRecusados] = useState<LinhaRecusada[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [dispatching, setDispatching] = useState(false);
@@ -29,6 +46,7 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
     setParseError(null);
     setPreview([]);
     setLinhasDisparo([]);
+    setRecusados([]);
     setDispatchResult(null);
     setFileName(file.name);
     setRedisparoWarnings([]);
@@ -44,18 +62,27 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
           defval: "",
           raw: false,
         });
-        // Segunda leitura só pelas datas: o ERP formata as células como m/d/yy, então
-        // o texto de 10/06/2026 é "6/10/26" e é impossível saber o que é dia e o que é
-        // mês. Ver mergeDateSerials().
-        const cruas = xlsxUtils.sheet_to_json<Record<string, unknown>>(sheet, {
-          defval: "",
-          raw: true,
-        });
-        const rows = mergeDateSerials(formatadas, cruas);
+
+        // As datas do ERP resolvem de formas opostas conforme o formato do arquivo.
+        //
+        // No .xlsx a célula é numérica com formato m/d/yy: o texto vira "6/10/26" e
+        // perde a ordem, mas o número de série (46183) é exato — é ele que vale.
+        //
+        // No .csv não existe célula numérica. Se pedirmos o valor cru, quem inventa
+        // o número é o SheetJS, lendo "10/6/26" como 6 de outubro. Aí o texto é que
+        // vale, e só falta completar "26" para "2026".
+        const ehPlanilha = /\.(xlsx|xls)$/i.test(file.name);
+        const rows = ehPlanilha
+          ? mergeDateSerials(
+              formatadas,
+              xlsxUtils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: true }),
+            )
+          : normalizarDatasTexto(formatadas);
         const leads = parseSheetLeads(rows);
         if (!leads.length) throw new Error("Nenhum lead válido. Verifique se há coluna de telefone.");
         setPreview(leads);
         setLinhasDisparo(parseSheetRows(rows));
+        setRecusados(parseSheetRecusados(rows));
         checkRedisparos(leads.map((l) => l.numero).filter(Boolean)).then(setRedisparoWarnings);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Erro ao processar arquivo.";
@@ -81,6 +108,7 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
       setDispatchResult({ ok: true, inserted: data.inserted });
       setPreview([]);
       setLinhasDisparo([]);
+    setRecusados([]);
       setFileName(null);
       onDispatched();
       // O serviço de cobrança responde 200 mesmo descartando lead. Antes o CRM
@@ -145,6 +173,34 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
           </div>
         )}
 
+        {recusados.length > 0 && (
+          <div className="rounded-[10px] border border-amber-500/25 bg-amber-500/10 px-4 py-3">
+            <p className="flex items-center gap-2 text-[13px] font-bold text-amber-300">
+              <AlertTriangle size={14} />
+              {recusados.length} boleto{recusados.length !== 1 ? "s" : ""} para cobrança manual
+            </p>
+            <p className="mt-1 text-[12px] text-amber-200/80">
+              Não vão ser disparados. Telefone fixo não existe no WhatsApp, e mandar um número
+              incompleto pode entregar o débito a outra pessoa.
+            </p>
+            <div className="mt-3 max-h-40 overflow-y-auto">
+              <table className="w-full text-left text-[12px]">
+                <tbody>
+                  {recusados.map((r, i) => (
+                    <tr key={`${r.documento}-${i}`} className="border-t border-amber-500/15 first:border-0">
+                      <td className="py-1.5 pr-3 font-semibold text-amber-100">{r.nome || "—"}</td>
+                      <td className="py-1.5 pr-3 font-data text-amber-200/70">{r.telefone || "sem telefone"}</td>
+                      <td className="py-1.5 pr-3 font-data text-amber-200/70">{r.documento || "—"}</td>
+                      <td className="py-1.5 font-data text-amber-200/70">{r.valor || "—"}</td>
+                      <td className="py-1.5 pl-3 text-amber-300">{MOTIVO_LABEL[r.motivo]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {preview.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -156,6 +212,7 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
                 onClick={() => {
                   setPreview([]);
                   setLinhasDisparo([]);
+    setRecusados([]);
                   setFileName(null);
                 }}
                 className="flex items-center gap-1 text-[12px] text-[var(--text-muted)] transition-colors hover:text-red-400"

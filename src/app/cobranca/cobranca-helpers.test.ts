@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   excelSerialToBR,
   mergeDateSerials,
+  normalizarDataBR,
+  normalizarDatasTexto,
+  normalizarTelefone,
+  parseSheetRecusados,
   parseClienteField,
   parseMoneyToNumber,
   parseSheetLeads,
@@ -75,6 +79,71 @@ describe("proximoToque", () => {
   });
 });
 
+describe("normalizarTelefone", () => {
+  it("keeps a phone that is already in the current format", () => {
+    expect(normalizarTelefone("(44) 99171-8337")).toBe("5544991718337");
+    expect(normalizarTelefone("(11) 95208-3574")).toBe("5511952083574");
+  });
+
+  it("restores the ninth digit on the ERP's old 8-digit mobiles", () => {
+    // Casos reais do relatorio-conta-receber-cobranca. O ERP traz a mesma linha
+    // nas duas formas — Telefone (44) 9171-8337 e Celular (44) 99171-8337 —,
+    // então a correção é acrescentar o 9.
+    expect(normalizarTelefone("(44) 9171-8337")).toBe("5544991718337");
+    expect(normalizarTelefone("(43) 9604-8570")).toBe("5543996048570");
+    expect(normalizarTelefone("(44) 9925-7839")).toBe("5544999257839");
+    expect(normalizarTelefone("(44) 9840-7636")).toBe("5544998407636");
+  });
+
+  it("refuses a landline instead of guessing, because it will never be on WhatsApp", () => {
+    // BANDELAJES e GUILHERME SCUIRA, do relatório real.
+    expect(normalizarTelefone("(43) 3253-1641")).toEqual({ motivo: "fixo", original: "(43) 3253-1641" });
+    expect(normalizarTelefone("(42) 3646-4042")).toEqual({ motivo: "fixo", original: "(42) 3646-4042" });
+  });
+
+  it("refuses empty and malformed input", () => {
+    expect(normalizarTelefone("")).toEqual({ motivo: "vazio", original: "" });
+    expect(normalizarTelefone("1234-5678")).toEqual({ motivo: "invalido", original: "1234-5678" });
+  });
+
+  it("does not double the country code when the export already carries it", () => {
+    expect(normalizarTelefone("5544991718337")).toBe("5544991718337");
+  });
+});
+
+describe("normalizarDataBR", () => {
+  it("completes the two-digit year and pads, so the agent never says 6/6/26", () => {
+    // Os dois formatos convivem na mesma coluna do CSV real.
+    expect(normalizarDataBR("30/07/26")).toBe("30/07/2026");
+    expect(normalizarDataBR("6/6/26")).toBe("06/06/2026");
+    expect(normalizarDataBR("10/06/2026")).toBe("10/06/2026");
+  });
+
+  it("leaves anything that is not a date untouched", () => {
+    expect(normalizarDataBR("")).toBe("");
+    expect(normalizarDataBR("a combinar")).toBe("a combinar");
+  });
+});
+
+describe("parseSheetRecusados", () => {
+  it("surfaces the rows that cannot be dispatched instead of dropping them", () => {
+    const rows = [
+      { Celular: "(44) 99171-8337", Cliente: "761 - WILLIAN", Receber: "404,13", "Ser/Doc/Par": "CxPhM 991 1/1" },
+      { Telefone: "(43) 3253-1641", Cliente: "14889 - BANDELAJES LTDA", Receber: "500,00", "Ser/Doc/Par": "CxPhL 1 1/1" },
+      { Telefone: "", Celular: "", Cliente: "999 - SEM CONTATO", Receber: "100,00", "Ser/Doc/Par": "CxPhL 2 1/1" },
+    ];
+
+    const recusados = parseSheetRecusados(rows);
+
+    expect(recusados).toHaveLength(2);
+    expect(recusados.map((r) => r.motivo)).toEqual(["fixo", "vazio"]);
+    expect(recusados[0].nome).toBe("BANDELAJES LTDA");
+    expect(recusados[0].documento).toBe("CxPhL 1 1/1");
+    // O boleto do WILLIAN continua disparável.
+    expect(parseSheetLeads(rows)).toHaveLength(1);
+  });
+});
+
 describe("excelSerialToBR", () => {
   it("converts Excel serials to dd/mm/aaaa", () => {
     // Valores lidos do relatório real do ERP (cobrancas phb mga 22.06.xlsx).
@@ -100,9 +169,28 @@ describe("mergeDateSerials", () => {
     expect(row["Ser/Doc/Par"]).toBe("CxPhM 921 3/3");
   });
 
+  it("ignores a fractional serial, which only SheetJS invents from ambiguous text", () => {
+    // Caso real do CSV: a coluna diz "10/6/26". Pedindo o valor cru, o SheetJS
+    // lê no padrão americano e devolve 46301,99967 — 6 de outubro. Ele faz isso
+    // só com as datas ambíguas: "15/07/26" ele deixa string, porque 15 não pode
+    // ser mês. Uma célula de data do ERP é sempre inteira.
+    const [row] = mergeDateSerials([{ Prorrog: "10/6/26" }], [{ Prorrog: 46301.99967592592 }]);
+    expect(row.Prorrog).toBe("10/06/2026");
+  });
+
   it("leaves CSV rows alone, where every cell is already text", () => {
     const rows = [{ Prorrog: "10/06/2026", Receber: "530,00" }];
     expect(mergeDateSerials(rows, rows)).toEqual(rows);
+  });
+});
+
+describe("normalizarDatasTexto", () => {
+  it("is the CSV path: the text wins, never a serial SheetJS guessed", () => {
+    const rows = [{ Prorrog: "10/6/26", "Emissão": "17/04/26", Receber: "180,87" }];
+    const [row] = normalizarDatasTexto(rows);
+    expect(row.Prorrog).toBe("10/06/2026");
+    expect(row["Emissão"]).toBe("17/04/2026");
+    expect(row.Receber).toBe("180,87");
   });
 });
 

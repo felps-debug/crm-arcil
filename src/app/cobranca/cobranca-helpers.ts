@@ -51,6 +51,45 @@ export function parseMoneyToNumber(raw: string): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+/* ── Telefone ───────────────────────────────────────────────────────
+   O ERP mantém a coluna `Telefone` no formato antigo, de 8 dígitos, e só
+   preenche `Celular` em parte das linhas. Num relatório real de 46 boletos,
+   6 dos 26 clientes vinham só com o campo antigo.
+
+   Mandar 8 dígitos para o WhatsApp não é apenas "não cobrar": um número sem
+   o nono dígito pode ser o WhatsApp válido de OUTRA pessoa, e aí o débito de
+   um cliente — com nome e valor — chega a um estranho. Por isso celular
+   antigo é corrigido e fixo é recusado, em vez de tentar a sorte. */
+
+export type TelefoneRecusado = { motivo: "vazio" | "fixo" | "invalido"; original: string };
+
+/** Celular brasileiro começa com 6, 7, 8 ou 9 depois do DDD. Fixo começa com 2 a 5. */
+const PRIMEIRO_DIGITO_CELULAR = /^[6-9]/;
+
+export function normalizarTelefone(raw: string): string | TelefoneRecusado {
+  let digitos = (raw ?? "").replace(/\D/g, "");
+  if (!digitos) return { motivo: "vazio", original: raw };
+
+  // Algumas exportações já trazem o país. Sem isto viraria 55 55 44 ...
+  if (digitos.length > 11 && digitos.startsWith("55")) digitos = digitos.slice(2);
+
+  const ddd = digitos.slice(0, 2);
+  const assinante = digitos.slice(2);
+
+  // Formato atual: DDD + 9 dígitos.
+  if (assinante.length === 9 && PRIMEIRO_DIGITO_CELULAR.test(assinante)) return `55${ddd}${assinante}`;
+
+  // Formato antigo: DDD + 8 dígitos. O ERP mostra os dois lados na mesma linha
+  // — Telefone (44) 9171-8337 e Celular (44) 99171-8337 —, então a correção é
+  // exatamente acrescentar o 9 na frente.
+  if (assinante.length === 8 && PRIMEIRO_DIGITO_CELULAR.test(assinante)) return `55${ddd}9${assinante}`;
+
+  // DDD + 8 começando em 2–5 é telefone fixo: não existe no WhatsApp.
+  if (assinante.length === 8) return { motivo: "fixo", original: raw };
+
+  return { motivo: "invalido", original: raw };
+}
+
 /* ── Régua de follow-up ─────────────────────────────────────────────
    Horas desde `followups.created_at` até cada toque. Espelha o `case` de
    disparar_followup_cobranca() no Postgres — mudou lá, muda aqui, senão a
@@ -123,6 +162,23 @@ export function proximoToque(
 const CHAVES_DE_DATA = new Set(["prorrog", "emisso", "emissao", "vencimento", "datavcto", "vcto"]);
 
 /**
+ * Data em texto do relatório → "dd/mm/aaaa".
+ *
+ * O CSV do ERP não tem número de série, e mistura os formatos na mesma coluna:
+ * "30/07/26" ao lado de "6/6/26". A ordem é sempre dia/mês — os "30" e "31"
+ * provam —, então não há ambiguidade a resolver, só o ano de dois dígitos e o
+ * zero à esquerda. Sem isto o agente diz ao cliente "vence 6/6/26".
+ */
+export function normalizarDataBR(texto: string): string {
+  const t = (texto ?? "").trim();
+  const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!m) return t;
+  const [, dia, mes, ano] = m;
+  const anoCheio = ano.length === 2 ? `20${ano}` : ano;
+  return `${dia.padStart(2, "0")}/${mes.padStart(2, "0")}/${anoCheio}`;
+}
+
+/**
  * Número de série do Excel → "dd/mm/aaaa".
  *
  * A época do Excel é 30/12/1899 e a contagem é em dias inteiros. Fazendo a conta
@@ -147,7 +203,12 @@ export function excelSerialToBR(serial: number): string {
  * O número de série não tem essa ambiguidade: 46183 é 10/06/2026 e ponto. Por isso
  * a planilha é lida duas vezes — texto para o dinheiro, cru para as datas.
  *
- * CSV não tem número de série (tudo chega string), então nada é tocado.
+ * SÓ VALE PARA .xlsx/.xls. Num CSV o número de série não vem do ERP — quem o
+ * inventa é o próprio SheetJS, lendo o texto no padrão americano, e só nas datas
+ * ambíguas: "15/07/26" ele deixa string porque 15 não pode ser mês, mas
+ * "10/6/26" ele converte para 6 de outubro. Confiar nesse serial reintroduz o
+ * bug pelo outro lado, silenciosamente e só nos dias até 12. Para CSV use
+ * normalizarDatasTexto().
  */
 export function mergeDateSerials(
   formatadas: Record<string, unknown>[],
@@ -160,10 +221,25 @@ export function mergeDateSerials(
     for (const chave of Object.keys(row)) {
       if (!CHAVES_DE_DATA.has(normalizeKey(chave))) continue;
       const bruto = crua[chave];
-      // Faixa de sanidade: 1955–2079. Fora dela não é data de boleto.
-      if (typeof bruto === "number" && bruto > 20_000 && bruto < 66_000) {
+      // Faixa de sanidade: 1955–2079. E inteiro: célula de data do ERP não tem
+      // fração de dia; o que o SheetJS inventa a partir de texto tem.
+      if (typeof bruto === "number" && Number.isInteger(bruto) && bruto > 20_000 && bruto < 66_000) {
         out[chave] = excelSerialToBR(bruto);
+      } else {
+        out[chave] = normalizarDataBR(String(row[chave] ?? ""));
       }
+    }
+    return out;
+  });
+}
+
+/** Datas de um CSV: o texto é a verdade, só falta completar o ano e o zero. */
+export function normalizarDatasTexto(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.map((row) => {
+    const out = { ...row };
+    for (const chave of Object.keys(row)) {
+      if (!CHAVES_DE_DATA.has(normalizeKey(chave))) continue;
+      out[chave] = normalizarDataBR(String(row[chave] ?? ""));
     }
     return out;
   });
@@ -181,10 +257,23 @@ type RawBoleto = {
   item: BoletoItem;
 };
 
+/** Linha que não pode ser disparada. Vai para cobrança manual em vez de sumir. */
+export type LinhaRecusada = {
+  nome: string;
+  telefone: string;
+  documento: string;
+  valor: string;
+  motivo: TelefoneRecusado["motivo"];
+};
+
 // Uma linha da planilha = um boleto. O agrupamento por cliente acontece depois,
 // e só para a tela: quem dispara precisa dos boletos separados.
-function parseRawBoletos(rows: Record<string, unknown>[]): RawBoleto[] {
+function parseRawBoletos(rows: Record<string, unknown>[]): {
+  boletos: RawBoleto[];
+  recusados: LinhaRecusada[];
+} {
   const rawBoletos: RawBoleto[] = [];
+  const recusados: LinhaRecusada[] = [];
 
   for (const row of rows) {
     const original: Record<string, string> = {};
@@ -193,11 +282,27 @@ function parseRawBoletos(rows: Record<string, unknown>[]): RawBoleto[] {
     const n: Record<string, string> = {};
     for (const [k, v] of Object.entries(original)) n[normalizeKey(k)] = v;
 
+    let nomeParaRecusa = n["nome"] ?? "";
+    if (!nomeParaRecusa) {
+      const chave = Object.keys(n).find((k) => k.includes("cliente"));
+      if (chave) nomeParaRecusa = parseClienteField(n[chave]).nome;
+    }
+
     // Telefone: prioriza celular (mais provável de ser WhatsApp)
     const rawPhone = n["celular"] || n["telefone"] || n["fone"] || n["whatsapp"] || n["numero"] || "";
-    const digits = rawPhone.replace(/\D/g, "");
-    const numero = digits ? `55${digits}` : "";
-    if (!/^55\d{10,11}$/.test(numero)) continue;
+    const telefone = normalizarTelefone(rawPhone);
+    if (typeof telefone !== "string") {
+      // Descartar em silêncio é o que fazia a carteira encolher sem ninguém ver.
+      recusados.push({
+        nome: nomeParaRecusa,
+        telefone: rawPhone,
+        documento: n["serdocpar"] ?? n["documento"] ?? "",
+        valor: n["receber"] ?? "",
+        motivo: telefone.motivo,
+      });
+      continue;
+    }
+    const numero = telefone;
 
     let nome = n["nome"] ?? "";
     let codigoCliente = "";
@@ -247,7 +352,12 @@ function parseRawBoletos(rows: Record<string, unknown>[]): RawBoleto[] {
     });
   }
 
-  return rawBoletos;
+  return { boletos: rawBoletos, recusados };
+}
+
+/** Linhas que não podem ser disparadas — telefone fixo, vazio ou ilegível. */
+export function parseSheetRecusados(rows: Record<string, unknown>[]): LinhaRecusada[] {
+  return parseRawBoletos(rows).recusados;
 }
 
 function agruparPorTelefone(rawBoletos: RawBoleto[]): RawBoleto[][] {
@@ -272,7 +382,7 @@ function agruparPorTelefone(rawBoletos: RawBoleto[]): RawBoleto[][] {
  * já faz isso em agrupar_leads() e monta o array de boletos corretamente.
  */
 export function parseSheetRows(rows: Record<string, unknown>[]): DisparoLead[] {
-  const grupos = agruparPorTelefone(parseRawBoletos(rows));
+  const grupos = agruparPorTelefone(parseRawBoletos(rows).boletos);
 
   return grupos.flatMap((group) => {
     const totalReceber = group.reduce((s, b) => s + b.receberNum, 0);
@@ -303,7 +413,7 @@ export function parseSheetRows(rows: Record<string, unknown>[]): DisparoLead[] {
 
 /** Um lead por cliente, com total e boletos agrupados. Só para o preview da tela. */
 export function parseSheetLeads(rows: Record<string, unknown>[]): DisparoLead[] {
-  return agruparPorTelefone(parseRawBoletos(rows)).map((group) => {
+  return agruparPorTelefone(parseRawBoletos(rows).boletos).map((group) => {
     const first = group[0];
     const totalReceber = group.reduce((s, b) => s + b.receberNum, 0);
     const boletoCount = group.length;
