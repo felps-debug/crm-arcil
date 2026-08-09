@@ -56,6 +56,13 @@ function statusTone(status: string | null): "green" | "red" | "amber" {
   return "amber";
 }
 
+/** Por que este boleto não saiu. Gravado pelo /api/cobranca/disparo quando o
+ *  telefone da planilha é fixo, vazio ou ilegível. */
+function motivoNaoDisparo(log: CobrancaLog): string | null {
+  const texto = log.metadata?.["motivo_texto"];
+  return typeof texto === "string" && texto ? texto : null;
+}
+
 export function MonitoramentoTab({
   logs,
   loading,
@@ -391,6 +398,12 @@ export function MonitoramentoTab({
                     <td className="px-3 py-2.5 text-[var(--text-secondary)]">{log.vencimento ?? "—"}</td>
                     <td className="px-3 py-2.5">
                       <ConsoleStatus tone={statusTone(log.status_disparo)}>{log.status_disparo}</ConsoleStatus>
+                      {/* Sem o motivo, "NAO DISPARADO" não diz o que fazer a
+                          respeito. Com ele, quem subiu a planilha sabe que
+                          precisa achar o celular certo deste cliente. */}
+                      {motivoNaoDisparo(log) && (
+                        <p className="mt-1 text-[10px] leading-tight text-[var(--text-muted)]">{motivoNaoDisparo(log)}</p>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">
                       {log.respondeu ? <CheckCircle2 size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}

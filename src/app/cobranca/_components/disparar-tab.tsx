@@ -101,7 +101,7 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
       const res = await fetch("/api/cobranca/disparo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leads: linhasDisparo }),
+        body: JSON.stringify({ leads: linhasDisparo, recusados }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Erro ao disparar");
@@ -121,7 +121,8 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
           "error"
         );
       } else {
-        toast(`${data.inserted} leads inseridos — acompanhe no Monitoramento`, "success");
+        const extra = data.recusados > 0 ? ` · ${data.recusados} para cobrança manual` : "";
+        toast(`${data.inserted} leads inseridos${extra} — acompanhe no Monitoramento`, "success");
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro";

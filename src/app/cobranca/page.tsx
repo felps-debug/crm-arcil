@@ -84,6 +84,7 @@ function CobrancaPageInner() {
       total: logs.length,
       pendentes: logs.filter((l) => l.status_disparo === "PENDENTE").length,
       disparados: logs.filter((l) => l.status_disparo === "DISPARADO").length,
+      naoDisparados: logs.filter((l) => l.status_disparo === "NAO DISPARADO").length,
       responderam: logs.filter((l) => l.respondeu).length,
       pagos: logs.filter((l) => l.pagamento_confirmado).length,
     }),
@@ -111,15 +112,25 @@ function CobrancaPageInner() {
 
   return (
     <ConsolePage title="Cobranças" subtitle="Disparos e acompanhamento em tempo real">
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {loadingLogs ? (
-          <div className="xl:col-span-5"><ConsoleLoading /></div>
+          <div className="xl:col-span-3"><ConsoleLoading /></div>
         ) : errorLogs ? (
-          <div className="xl:col-span-5"><ConsoleError message={errorLogs} /></div>
+          <div className="xl:col-span-3"><ConsoleError message={errorLogs} /></div>
         ) : (
           <>
             <ConsoleMetric label="Total disparados" value={stats.total} helper={`${stats.disparados} enviados`} icon={Send} tone="blue" />
             <ConsoleMetric label="Pendentes" value={stats.pendentes} helper="aguardando" icon={Clock} tone="amber" />
+            {/* Telefone fixo, vazio ou ilegível na planilha. Alguém precisa
+                achar o celular certo — por isso o card fica ao lado dos outros
+                e não escondido atrás de um filtro. */}
+            <ConsoleMetric
+              label="Cobrança manual"
+              value={stats.naoDisparados}
+              helper="sem telefone válido"
+              icon={ShieldAlert}
+              tone="red"
+            />
             <ConsoleMetric
               label="Responderam"
               value={stats.responderam}

@@ -4,6 +4,76 @@ import { requireApiPermission } from "@/lib/server/api-auth";
 
 type DisparoLead = Record<string, string>;
 
+/** Linha que o CRM recusou antes de despachar — ver normalizarTelefone(). */
+type LinhaRecusada = {
+  nome: string;
+  telefone: string;
+  documento: string;
+  valor: string;
+  motivo: "vazio" | "fixo" | "invalido";
+};
+
+const MOTIVO_TEXTO: Record<LinhaRecusada["motivo"], string> = {
+  fixo: "Telefone fixo — não existe no WhatsApp",
+  vazio: "Sem telefone na planilha",
+  invalido: "Número em formato inválido",
+};
+
+/**
+ * Grava quem não pôde ser disparado como NAO DISPARADO na própria cobranca_log.
+ *
+ * O aviso no preview do upload some assim que a tela troca, e aí ninguém mais
+ * sabe que aqueles boletos ficaram de fora. Na tabela eles entram no filtro
+ * "NAO DISPARADO", no CSV e no PDF que já existem, e quem subiu a planilha tem
+ * onde ir atrás do número certo.
+ */
+async function gravarRecusados(
+  admin: ReturnType<typeof createAdminClient>,
+  recusados: LinhaRecusada[]
+): Promise<number> {
+  if (!recusados.length) return 0;
+
+  // Um cliente pode ter vários boletos recusados: vira uma linha só, somada,
+  // que é como a tabela trata todo o resto.
+  const porCliente = new Map<string, LinhaRecusada[]>();
+  for (const r of recusados) {
+    const chave = r.telefone || r.nome || "sem-identificacao";
+    if (!porCliente.has(chave)) porCliente.set(chave, []);
+    porCliente.get(chave)!.push(r);
+  }
+
+  const agora = new Date().toISOString();
+  const linhas = [...porCliente.values()].map((grupo) => {
+    const total = grupo.reduce((s, r) => {
+      const n = Number(String(r.valor).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", "."));
+      return s + (Number.isFinite(n) ? n : 0);
+    }, 0);
+    return {
+      telefone: grupo[0].telefone || "",
+      nome: grupo[0].nome || null,
+      valor: total > 0 ? total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : null,
+      documento: grupo.map((r) => r.documento).filter(Boolean).join(" | ") || null,
+      boleto_count: grupo.length,
+      status_disparo: "NAO DISPARADO",
+      created_at: agora,
+      data_disparo: agora,
+      metadata: {
+        motivo_nao_disparo: grupo[0].motivo,
+        motivo_texto: MOTIVO_TEXTO[grupo[0].motivo],
+        telefone_planilha: grupo[0].telefone,
+      },
+    };
+  });
+
+  try {
+    await admin.from("cobranca_log").insert(linhas);
+    return linhas.length;
+  } catch (err) {
+    console.error("[DISPARO] Falha ao gravar os recusados:", err);
+    return 0;
+  }
+}
+
 const PYTHON_COBRANCA_URL = (process.env.PYTHON_COBRANCA_URL || "https://arcil-arcil-cobranca-py.47nukb.easypanel.host/cobranca").trim().replace(/^﻿/, "");
 
 const MAX_LEADS_PER_DISPARO = 1000;
@@ -61,7 +131,7 @@ export async function POST(req: NextRequest) {
   const { user, response } = await requireApiPermission("manage_cobranca");
   if (response) return response;
 
-  const { leads }: { leads: DisparoLead[] } = await req.json();
+  const { leads, recusados = [] }: { leads: DisparoLead[]; recusados?: LinhaRecusada[] } = await req.json();
   if (!leads?.length) return Response.json({ error: "Nenhum lead fornecido" }, { status: 400 });
 
   const validationError = validateLeads(leads);
@@ -154,6 +224,10 @@ export async function POST(req: NextRequest) {
     console.error("[DISPARO] Falha ao corrigir valor/boletos na cobranca_log:", err);
   }
 
+  // Só depois do Python aceitar: se o disparo falhou, quem subiu vai tentar de
+  // novo, e gravar antes deixaria os recusados duplicados na tabela.
+  const recusadosGravados = await gravarRecusados(admin, recusados);
+
   await admin.from("activity_log").insert({
     entity_type: "cobranca_disparo",
     entity_id: crypto.randomUUID(),
@@ -162,6 +236,7 @@ export async function POST(req: NextRequest) {
       count: leads.length,
       confirmed: confirmedPhones.length,
       missing: missingPhones,
+      recusados: recusadosGravados,
       valoresCorrigidos,
       pythonStatus,
       actor_id: user!.id,
@@ -171,6 +246,7 @@ export async function POST(req: NextRequest) {
 
   return Response.json({
     ok: true,
+    recusados: recusadosGravados,
     // `inserted` passa a ser o que existe na tabela, não o que foi enviado.
     // Ambos contam CLIENTES: `leads` agora chega com uma linha por boleto, e um
     // cliente com três boletos continua sendo um disparo só.
