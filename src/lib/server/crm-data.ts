@@ -92,6 +92,15 @@ type CobrancaRow = {
   pagamento_confirmado: boolean | null;
   data_disparo: string | null;
   created_at: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+type FinancialHandoffDecisionRow = {
+  empresa: string | null;
+  documento: string | null;
+  status: "pago" | "renegociado" | null;
+  note: string | null;
+  recorded_at: string | null;
 };
 
 type SheetSourceRow = {
@@ -255,6 +264,42 @@ function toNumber(value: unknown): number | null {
   if (typeof value !== "string") return null;
   const parsed = Number(value.replace(/[^\d,.-]/g, "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function phoneTail(phone: string | null | undefined) {
+  const normalized = String(phone ?? "").replace(/\D/g, "");
+  return normalized.length >= 8 ? normalized.slice(-8) : null;
+}
+
+function parseCobrancaMoney(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return 0;
+  const clean = value.replace(/[^\d,.-]/g, "");
+  const normalized = clean.includes(",")
+    ? clean.replace(/\./g, "").replace(",", ".")
+    : clean;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseSnapshotBoletos(metadata: Record<string, unknown> | null) {
+  const boletos = metadata?.boletos;
+  if (!Array.isArray(boletos)) return [];
+  return boletos.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const boleto = value as Record<string, unknown>;
+    const empresa = typeof boleto.emp === "string" ? boleto.emp.trim() : "";
+    const documento = typeof boleto.documento === "string" ? boleto.documento.trim() : "";
+    if (!empresa || !documento) return [];
+    return [{
+      empresa,
+      documento,
+      valor: parseCobrancaMoney(boleto.valor),
+      vencimento: typeof boleto.vencimento === "string" ? boleto.vencimento : null,
+      status: typeof boleto.status === "string" ? boleto.status : null,
+      observacao: typeof boleto.observacao === "string" ? boleto.observacao : null,
+    }];
+  });
 }
 
 async function fetchCore() {
@@ -586,7 +631,8 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
 
   const leadConversations = conversations.filter((c) => c.lead_id === id);
   const conversationIds = leadConversations.map((c) => c.id);
-  const [messagesRes, imagesRes, crmImagesRes] = await Promise.all([
+  const isCobranca = lead.segment === "COBRANCA";
+  const [messagesRes, imagesRes, crmImagesRes, handoffDecisionsRes] = await Promise.all([
     conversationIds.length
       ? supabase.from("messages").select("*").in("conversation_id", conversationIds).order("created_at", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
@@ -598,11 +644,15 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
     // O timeline só lia a primeira, que está vazia, então imagem gerada dentro
     // do CRM nunca aparecia no prontuário do lead.
     supabase.from("image_generations").select("*").eq("lead_id", id).order("created_at", { ascending: false }),
+    isCobranca
+      ? supabase.from("cobranca_handoff_boleto_decisions").select("empresa,documento,status,note,recorded_at").eq("lead_id", id).is("superseded_at", null).order("recorded_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   if (messagesRes.error) throw messagesRes.error;
   if (imagesRes.error) throw imagesRes.error;
   if (crmImagesRes.error) throw crmImagesRes.error;
+  if (handoffDecisionsRes.error) throw handoffDecisionsRes.error;
 
   const messages = (messagesRes.data ?? []) as MessageRow[];
   const images = (imagesRes.data ?? []) as GeneratedImageRow[];
@@ -612,6 +662,21 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
   const leadQuotes = quotes.filter((q) => q.lead_id === id);
   const leadSales = sales.filter((s) => s.lead_id === id);
   const vendorMap = new Map(vendors.map((v) => [v.id, v]));
+  const currentPhoneTail = phoneTail(lead.wa_phone);
+  const latestCobranca = currentPhoneTail
+    ? cobrancas.find((c) => phoneTail(c.telefone) === currentPhoneTail && parseSnapshotBoletos(c.metadata).length > 0) ?? null
+    : null;
+  const financialHandoff = isCobranca
+    ? {
+        eligible: Boolean(lead.handoff_accepted_at),
+        cobrancaLogId: latestCobranca?.id ?? null,
+        boletos: latestCobranca ? parseSnapshotBoletos(latestCobranca.metadata) : [],
+        activeDecisions: ((handoffDecisionsRes.data ?? []) as FinancialHandoffDecisionRow[])
+          .flatMap((decision) => decision.empresa && decision.documento && decision.status && decision.recorded_at
+            ? [{ empresa: decision.empresa, documento: decision.documento, status: decision.status, note: decision.note, recordedAt: decision.recorded_at }]
+            : []),
+      }
+    : null;
 
   const timeline: LeadTimelineItem[] = [
     {
@@ -703,6 +768,7 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
     },
     nextAction,
     timeline,
+    financialHandoff,
   };
 }
 

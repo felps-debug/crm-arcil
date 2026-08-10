@@ -17,6 +17,7 @@ import {
 import { formatDateTime, useApi } from "@/lib/client-api";
 import { createClient } from "@/lib/supabase/client";
 import type { LeadDetailResponse, LeadListItem, LeadsResponse } from "@/types/api";
+import { FinancialHandoffCard } from "./_components/financial-handoff-card";
 
 type ViewMode = "table" | "kanban" | "cards";
 
@@ -244,6 +245,7 @@ function LeadsBoard() {
               loading={detail.loading && !!selectedId}
               detail={selectedId ? detail.data : null}
               onClose={() => setSelectedId(null)}
+              onSaved={() => setRefreshTick((tick) => tick + 1)}
             />
           )}
         </div>
@@ -266,6 +268,7 @@ function LeadsBoard() {
               loading={detail.loading}
               detail={detail.data}
               onClose={() => setSelectedId(null)}
+              onSaved={() => setRefreshTick((tick) => tick + 1)}
             />
           </div>
         </div>
@@ -462,10 +465,12 @@ function LeadPanel({
   detail,
   loading,
   onClose,
+  onSaved,
 }: {
   detail: LeadDetailResponse | null;
   loading: boolean;
   onClose: () => void;
+  onSaved: () => void;
 }) {
   if (loading) return <ConsoleLoading />;
   if (!detail) {
@@ -502,6 +507,8 @@ function LeadPanel({
         <MiniStat label="Follow-ups" value={detail.summary.followups} />
         <MiniStat label="Imagens" value={detail.summary.generatedImages} />
       </div>
+
+      <FinancialHandoffCard detail={detail} onSaved={onSaved} />
 
       <div className="mt-5">
         <h3 className="mb-3 text-[12px] font-bold text-[var(--text-primary)]">Histórico recente</h3>

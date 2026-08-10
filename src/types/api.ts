@@ -137,6 +137,25 @@ export type LeadDetailResponse = {
   };
   nextAction: LeadTimelineItem | null;
   timeline: LeadTimelineItem[];
+  financialHandoff: {
+    eligible: boolean;
+    cobrancaLogId: string | null;
+    boletos: {
+      empresa: string;
+      documento: string;
+      valor: number;
+      vencimento: string | null;
+      status: string | null;
+      observacao: string | null;
+    }[];
+    activeDecisions: {
+      empresa: string;
+      documento: string;
+      status: "pago" | "renegociado";
+      note: string | null;
+      recordedAt: string;
+    }[];
+  } | null;
 };
 
 export type AgentSummaryItem = {
