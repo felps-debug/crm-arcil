@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# isolated agent workspaces
+/.worktrees/
+
 # production
 /build
 
