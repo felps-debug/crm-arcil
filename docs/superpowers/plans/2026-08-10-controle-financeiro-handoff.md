@@ -10,6 +10,24 @@
 
 ---
 
+## Revisão aprovada: fonte atual dos boletos
+
+O banco de produção ainda não possui `cobranca_boletos` nem `cobranca_posicao`.
+O dado disponível e usado nesta implementação é o último `cobranca_log` do telefone,
+cujo `metadata.boletos` contém `emp`, `documento`, `valor`, `vencimento`, `status` e
+`observacao` por boleto. Trata-se de um snapshot do disparo, não de uma baixa do ERP.
+
+As decisões manuais serão associadas a `cobranca_log_id`, `empresa` e `documento`.
+Elas suprimem o documento para a IA imediatamente; uma carga posterior de cobrança,
+identificada por outro `cobranca_log_id`, passa a ser a posição atual. Esta revisão
+substitui todas as leituras de `cobranca_boletos` descritas abaixo.
+
+O cartão do CRM só oferece boletos do snapshot mais recente para o telefone. A API
+seleciona a linha mais recente por `data_disparo`, com fallback em `created_at`, e
+normaliza os telefones pelos últimos oito dígitos antes de comparar.
+
+---
+
 ## File map
 
 | Path | Responsibility |
