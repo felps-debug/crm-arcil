@@ -5,6 +5,8 @@ export const SUPABASE_ANON_KEY   = clean(process.env.NEXT_PUBLIC_SUPABASE_ANON_K
 export const SUPABASE_SERVICE_KEY = clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 export const OPENAI_API_KEY      = clean(process.env.OPENAI_API_KEY);
 export const N8N_CHATBOT_WEBHOOK = clean(process.env.N8N_CHATBOT_WEBHOOK);
+export const N8N_FINANCIAL_HANDOFF_WEBHOOK = clean(process.env.N8N_FINANCIAL_HANDOFF_WEBHOOK);
+export const N8N_FINANCIAL_HANDOFF_SECRET = clean(process.env.N8N_FINANCIAL_HANDOFF_SECRET);
 
 // Chatwoot Application API (agent-authenticated) — powers /atendimento.
 // Optional at boot: reading these here never throws. The Chatwoot client
