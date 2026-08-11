@@ -74,18 +74,41 @@ export default function OperacoesCobrancaPage() {
   };
 
   const handleAction = async (action: string) => {
+    if (!selectedBill) return;
     setActionLoading(true);
-    setTimeout(() => {
-      if (action === "pay") {
-        alert(`✓ Cobrança de R$ ${formatMoney(selectedBill?.value || 0)} marcada como PAGA`);
-      } else if (action === "remind") {
-        alert(`✓ Lembrete enviado para ${selectedBill?.name}`);
-      } else if (action === "reschedule") {
-        alert(`✓ Vencimento remarcado para 14 dias`);
+
+    try {
+      const webhook = process.env.NEXT_PUBLIC_N8N_COBRANCA_WEBHOOK;
+      if (webhook) {
+        await fetch(webhook, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            billId: selectedBill.id,
+            billName: selectedBill.name,
+            value: selectedBill.value,
+            status: selectedBill.status,
+            timestamp: new Date().toISOString(),
+          }),
+        });
       }
+
+      if (action === "pay") {
+        alert(`✓ Cobrança de R$ ${formatMoney(selectedBill.value)} marcada como PAGA\n✓ Webhook n8n disparado`);
+      } else if (action === "remind") {
+        alert(`✓ Lembrete enviado para ${selectedBill.name}\n✓ Webhook n8n disparado`);
+      } else if (action === "reschedule") {
+        alert(`✓ Vencimento remarcado para 14 dias\n✓ Webhook n8n disparado`);
+      }
+
+      setRefreshTick((t) => t + 1);
       setSelectedBill(null);
+    } catch (err) {
+      alert(`✗ Erro: ${err instanceof Error ? err.message : "Desconhecido"}`);
+    } finally {
       setActionLoading(false);
-    }, 500);
+    }
   };
 
   return (
