@@ -325,7 +325,6 @@ body {
 
 .sidebar-root {
   width: var(--sidebar-w-closed);
-  transition: width 300ms cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
 }
 
@@ -361,36 +360,31 @@ body {
   border-radius: 18px 18px 4px 18px;
 }
 
-/* ARCIL Operational Console v3 */
+/* ARCIL Broadcast Operations System */
 .dark {
-  --bg-base: #050b14;
-  --bg-surface: #0d1624;
-  --bg-subtle: #121e2f;
-  --bg-inset: #09111d;
-  --text-primary: #f4f7fb;
-  --text-secondary: #c4cede;
-  --text-muted: #7d8a9f;
-  --border: #223047;
-  --border-strong: #34445f;
-  --blue: #2f80ff;
-  --emerald: #2de59a;
-  --amber: #ffb83d;
-  --red: #ff5e5e;
-  --violet: #a879ff;
-  --sky: #70a8ff;
-  --shadow-card: 0 10px 34px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  --bg-base: #071321;
+  --bg-surface: #0b1d2f;
+  --bg-subtle: #102842;
+  --bg-inset: #091827;
+  --text-primary: #f0f5fb;
+  --text-secondary: #c1d0df;
+  --text-muted: #91a7bc;
+  --border: #203c56;
+  --border-strong: #3d6688;
+  --blue: #5b9cf3;
+  --emerald: #62c779;
+  --amber: #efb332;
+  --red: #ed7a68;
+  --violet: #b58aff;
+  --sky: #46cddd;
+  --shadow-card: 0 14px 30px rgba(1, 8, 15, 0.22);
 }
 
 .dark body {
-  background:
-    radial-gradient(circle at 78% 10%, rgba(47, 128, 255, 0.08), transparent 30%),
-    linear-gradient(180deg, #050b14 0%, #030710 100%);
+  background: #071321;
 }
 
 .console-grid-bg {
-  background-image:
-    linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
-  background-size: 28px 28px;
+  background: var(--bg-base);
 }
 
