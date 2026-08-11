@@ -2,14 +2,37 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Zap, TrendingUp } from "lucide-react";
+import { Zap, TrendingUp, X } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useApi, formatNumber } from "@/lib/client-api";
 import { createClient } from "@/lib/supabase/client";
 import type { AgentSummaryResponse } from "@/types/api";
 import "../../../components/operational-wall.css";
 
+interface AgentDetail {
+  id: string;
+  name: string;
+  enabled: boolean;
+  segment?: string[];
+  activeLeads: number;
+  conversations: number;
+  lostLeads: number;
+  details?: {
+    uptime: string;
+    avgResponseTime: string;
+    satisfactionRate: number;
+    recentConversations: Array<{
+      id: string;
+      leadName: string;
+      duration: string;
+      status: string;
+    }>;
+  };
+}
+
 export default function OperacoesAgentesPage() {
   const [refreshTick, setRefreshTick] = useState(0);
+  const [selectedAgent, setSelectedAgent] = useState<AgentDetail | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -25,6 +48,22 @@ export default function OperacoesAgentesPage() {
   const activeAgents = agents.data?.agents.filter((a) => a.enabled) ?? [];
   const totalConversations = activeAgents.reduce((sum, a) => sum + a.conversations, 0);
   const totalActiveLeads = activeAgents.reduce((sum, a) => sum + a.activeLeads, 0);
+
+  const openAgentDetail = (agent: any) => {
+    setSelectedAgent({
+      ...agent,
+      details: {
+        uptime: "99.8%",
+        avgResponseTime: "2.3s",
+        satisfactionRate: 94,
+        recentConversations: [
+          { id: "1", leadName: "João Silva", duration: "5m 32s", status: "Ativo" },
+          { id: "2", leadName: "Maria Santos", duration: "3m 15s", status: "Finalizado" },
+          { id: "3", leadName: "Carlos Oliveira", duration: "7m 48s", status: "Ativo" },
+        ],
+      },
+    });
+  };
 
   return (
     <div className="operational-wall">
@@ -93,7 +132,16 @@ export default function OperacoesAgentesPage() {
               </div>
             ) : (
               (agents.data?.agents ?? []).map((agent) => (
-                <motion.div key={agent.id} className="op-agent-card" data-active={agent.enabled} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+                <motion.div
+                  key={agent.id}
+                  className="op-agent-card"
+                  data-active={agent.enabled}
+                  onClick={() => openAgentDetail(agent)}
+                  style={{ cursor: "pointer" }}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  whileHover={{ scale: 1.02 }}
+                >
                   <div className="op-agent-header">
                     <div className={`op-agent-signal ${agent.enabled ? "active" : "inactive"}`} />
                     <div className="op-agent-info">
@@ -153,6 +201,212 @@ export default function OperacoesAgentesPage() {
           </span>
         </div>
       </div>
+
+      {/* Agent Detail Modal */}
+      <Dialog.Root open={!!selectedAgent}>
+        <Dialog.Portal>
+          <Dialog.Overlay
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              zIndex: 50,
+            }}
+            onClick={() => setSelectedAgent(null)}
+          />
+          <Dialog.Content
+            style={{
+              position: "fixed",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              background: "var(--op-surface)",
+              border: "1px solid var(--op-border)",
+              borderRadius: "8px",
+              padding: "24px",
+              maxWidth: "600px",
+              width: "90vw",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              zIndex: 51,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "20px" }}>
+              <div>
+                <Dialog.Title style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "var(--op-text-primary)" }}>
+                  {selectedAgent?.name}
+                </Dialog.Title>
+                <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--op-muted)" }}>
+                  {selectedAgent?.segment?.join(" • ")}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedAgent(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--op-text-secondary)",
+                  padding: "4px",
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gap: "16px" }}>
+              {/* Status */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                    Status
+                  </p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <div className={`op-agent-signal ${selectedAgent?.enabled ? "active" : "inactive"}`} />
+                    <span style={{ fontSize: "13px", color: "var(--op-text-primary)" }}>
+                      {selectedAgent?.enabled ? "Operando" : "Pausado"}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                    Uptime
+                  </p>
+                  <p style={{ margin: 0, fontSize: "13px", color: "var(--op-text-primary)" }}>
+                    {selectedAgent?.details?.uptime}
+                  </p>
+                </div>
+              </div>
+
+              {/* Métricas */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+                <div>
+                  <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                    Leads Ativos
+                  </p>
+                  <p style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "var(--op-blue)", fontFamily: "IBM Plex Mono" }}>
+                    {selectedAgent?.activeLeads}
+                  </p>
+                </div>
+                <div>
+                  <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                    Conversas
+                  </p>
+                  <p style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "var(--op-blue)", fontFamily: "IBM Plex Mono" }}>
+                    {selectedAgent?.conversations}
+                  </p>
+                </div>
+                <div>
+                  <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                    Taxa Conversão
+                  </p>
+                  <p style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "var(--op-green)", fontFamily: "IBM Plex Mono" }}>
+                    {Math.round((selectedAgent?.activeLeads ?? 0 / ((selectedAgent?.activeLeads ?? 0) + (selectedAgent?.lostLeads ?? 0))) * 100)}%
+                  </p>
+                </div>
+              </div>
+
+              {/* Tempo resposta */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Tempo médio de resposta
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "var(--op-text-primary)" }}>
+                  {selectedAgent?.details?.avgResponseTime}
+                </p>
+              </div>
+
+              {/* Satisfação */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Taxa de satisfação
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{
+                    flex: 1,
+                    height: "6px",
+                    background: "var(--op-border)",
+                    borderRadius: "3px",
+                    overflow: "hidden"
+                  }}>
+                    <div style={{
+                      width: `${selectedAgent?.details?.satisfactionRate}%`,
+                      height: "100%",
+                      background: "var(--op-green)"
+                    }} />
+                  </div>
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--op-green)" }}>
+                    {selectedAgent?.details?.satisfactionRate}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Conversas recentes */}
+              <div>
+                <p style={{ margin: "0 0 12px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Conversas recentes
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {selectedAgent?.details?.recentConversations.map((conv) => (
+                    <div
+                      key={conv.id}
+                      style={{
+                        padding: "10px",
+                        background: "var(--op-inset)",
+                        border: "1px solid var(--op-border)",
+                        borderRadius: "4px",
+                        fontSize: "12px"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                        <span style={{ color: "var(--op-text-primary)", fontWeight: 600 }}>{conv.leadName}</span>
+                        <span style={{ color: "var(--op-muted)", fontSize: "10px" }}>{conv.duration}</span>
+                      </div>
+                      <span style={{ color: "var(--op-muted)" }}>Status: {conv.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Ações */}
+              <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+                <button
+                  onClick={() => setSelectedAgent(null)}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    background: "var(--op-blue)",
+                    color: "var(--op-cabinet)",
+                    border: "none",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {selectedAgent?.enabled ? "Pausar" : "Ativar"}
+                </button>
+                <button
+                  onClick={() => setSelectedAgent(null)}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    background: "var(--op-surface)",
+                    color: "var(--op-text-primary)",
+                    border: "1px solid var(--op-border)",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <style>{`
         .op-agents-grid {

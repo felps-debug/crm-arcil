@@ -2,14 +2,32 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, X } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useApi, formatMoney } from "@/lib/client-api";
 import { createClient } from "@/lib/supabase/client";
 import type { PendingCenterResponse } from "@/types/api";
 import "../../../components/operational-wall.css";
 
+interface BillingDetail {
+  id: number;
+  name: string;
+  value: number;
+  status: "overdue" | "pending" | "paid";
+  daysLate?: number;
+  daysToDue?: number;
+  details?: {
+    document?: string;
+    dueDate?: string;
+    lastReminder?: string;
+    notes?: string;
+  };
+}
+
 export default function OperacoesCobrancaPage() {
   const [refreshTick, setRefreshTick] = useState(0);
+  const [selectedBill, setSelectedBill] = useState<BillingDetail | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -29,11 +47,46 @@ export default function OperacoesCobrancaPage() {
     paid: 93,
   };
 
+  const bills: BillingDetail[] = [
+    { id: 1, name: "João Silva", value: 2500, status: "overdue", daysLate: 5, details: { document: "123.456.789-10", dueDate: "05/08/2026", lastReminder: "2 dias atrás" } },
+    { id: 2, name: "Maria Santos", value: 1800, status: "pending", daysToDue: 2, details: { document: "987.654.321-00", dueDate: "13/08/2026", lastReminder: "Nunca" } },
+    { id: 3, name: "Carlos Oliveira", value: 3200, status: "pending", daysToDue: 7, details: { document: "555.666.777-88", dueDate: "18/08/2026", lastReminder: "1 semana atrás" } },
+    { id: 4, name: "Ana Costa", value: 950, status: "overdue", daysLate: 12, details: { document: "111.222.333-44", dueDate: "30/07/2026", lastReminder: "3 dias atrás" } },
+    { id: 5, name: "Pedro Lima", value: 4100, status: "pending", daysToDue: 3, details: { document: "444.555.666-77", dueDate: "14/08/2026", lastReminder: "5 dias atrás" } },
+  ];
+
   const billingStatus = [
     { id: "pending", label: "Pendente", count: stats.pending, icon: Clock, color: "#ffc14c" },
     { id: "overdue", label: "Vencido", count: stats.overdue, icon: AlertTriangle, color: "#ff7465" },
     { id: "paid", label: "Pago", count: stats.paid, icon: CheckCircle2, color: "#70d8a1" },
   ];
+
+  const openBillDetail = (bill: BillingDetail) => {
+    setSelectedBill({
+      ...bill,
+      details: {
+        ...bill.details,
+        notes: bill.status === "overdue"
+          ? "Cliente com pagamentos atrasados. Aguardando contato urgente."
+          : "Boleto enviado via email. Cliente confirmou recebimento."
+      }
+    });
+  };
+
+  const handleAction = async (action: string) => {
+    setActionLoading(true);
+    setTimeout(() => {
+      if (action === "pay") {
+        alert(`✓ Cobrança de R$ ${formatMoney(selectedBill?.value || 0)} marcada como PAGA`);
+      } else if (action === "remind") {
+        alert(`✓ Lembrete enviado para ${selectedBill?.name}`);
+      } else if (action === "reschedule") {
+        alert(`✓ Vencimento remarcado para 14 dias`);
+      }
+      setSelectedBill(null);
+      setActionLoading(false);
+    }, 500);
+  };
 
   return (
     <div className="operational-wall">
@@ -89,18 +142,20 @@ export default function OperacoesCobrancaPage() {
               <p className="op-panel-label">PRÓXIMOS PASSOS</p>
               <h2>Ações financeiras</h2>
             </div>
-            <span className="op-panel-count">12</span>
+            <span className="op-panel-count">{bills.length}</span>
           </div>
 
           <div className="op-queue-list">
-            {[
-              { id: 1, name: "João Silva", value: 2500, status: "overdue", daysLate: 5 },
-              { id: 2, name: "Maria Santos", value: 1800, status: "pending", daysToDue: 2 },
-              { id: 3, name: "Carlos Oliveira", value: 3200, status: "pending", daysToDue: 7 },
-              { id: 4, name: "Ana Costa", value: 950, status: "overdue", daysLate: 12 },
-              { id: 5, name: "Pedro Lima", value: 4100, status: "pending", daysToDue: 3 },
-            ].map((bill) => (
-              <motion.div key={bill.id} className="op-queue-row" data-severity={bill.status === "overdue" ? "danger" : "warning"} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}>
+            {bills.map((bill) => (
+              <motion.div
+                key={bill.id}
+                className="op-queue-row"
+                data-severity={bill.status === "overdue" ? "danger" : "warning"}
+                onClick={() => openBillDetail(bill)}
+                style={{ cursor: "pointer" }}
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+              >
                 <div className="op-queue-label">
                   <div style={{ fontSize: "11px", fontWeight: 600 }}>{bill.name}</div>
                   <div style={{ fontSize: "10px", color: "var(--op-muted)", marginTop: "2px" }}>
@@ -135,6 +190,207 @@ export default function OperacoesCobrancaPage() {
           <span className="op-ledger-value" style={{ color: "#ff7465" }}>{formatMoney(stats.overdue * 1200)}</span>
         </div>
       </div>
+
+      {/* Bill Detail Modal */}
+      <Dialog.Root open={!!selectedBill}>
+        <Dialog.Portal>
+          <Dialog.Overlay
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              zIndex: 50,
+            }}
+            onClick={() => setSelectedBill(null)}
+          />
+          <Dialog.Content
+            style={{
+              position: "fixed",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              background: "var(--op-surface)",
+              border: "1px solid var(--op-border)",
+              borderRadius: "8px",
+              padding: "24px",
+              maxWidth: "500px",
+              width: "90vw",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              zIndex: 51,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "20px" }}>
+              <div>
+                <Dialog.Title style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "var(--op-text-primary)" }}>
+                  {selectedBill?.name}
+                </Dialog.Title>
+              </div>
+              <button
+                onClick={() => setSelectedBill(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--op-text-secondary)",
+                  padding: "4px",
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gap: "16px" }}>
+              {/* Valor */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Valor
+                </p>
+                <p style={{ margin: 0, fontSize: "24px", fontWeight: 700, color: "var(--op-cyan)", fontFamily: "IBM Plex Mono" }}>
+                  {formatMoney(selectedBill?.value || 0)}
+                </p>
+              </div>
+
+              {/* Status */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Status
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background:
+                        selectedBill?.status === "overdue"
+                          ? "#ff7465"
+                          : selectedBill?.status === "pending"
+                            ? "#ffc14c"
+                            : "#70d8a1",
+                    }}
+                  />
+                  <span style={{ fontSize: "13px", color: "var(--op-text-primary)" }}>
+                    {selectedBill?.status === "overdue"
+                      ? `Vencido há ${selectedBill.daysLate} dias`
+                      : `Vence em ${selectedBill?.daysToDue} dias`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Documento */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  CPF/CNPJ
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "var(--op-text-primary)", fontFamily: "IBM Plex Mono" }}>
+                  {selectedBill?.details?.document}
+                </p>
+              </div>
+
+              {/* Data vencimento */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Data de vencimento
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "var(--op-text-primary)" }}>
+                  {selectedBill?.details?.dueDate}
+                </p>
+              </div>
+
+              {/* Último lembrete */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Último lembrete
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "var(--op-text-primary)" }}>
+                  {selectedBill?.details?.lastReminder}
+                </p>
+              </div>
+
+              {/* Notas */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Notas
+                </p>
+                <p style={{ margin: 0, fontSize: "12px", color: "var(--op-text-secondary)", lineHeight: 1.5 }}>
+                  {selectedBill?.details?.notes}
+                </p>
+              </div>
+
+              {/* Ações */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "12px" }}>
+                <button
+                  onClick={() => handleAction("pay")}
+                  disabled={actionLoading}
+                  style={{
+                    padding: "10px",
+                    background: "var(--op-green)",
+                    color: "#000",
+                    border: "none",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: actionLoading ? "default" : "pointer",
+                    opacity: actionLoading ? 0.7 : 1,
+                  }}
+                >
+                  {actionLoading ? "Processando..." : "✓ Marcar como pago"}
+                </button>
+                <button
+                  onClick={() => handleAction("remind")}
+                  disabled={actionLoading}
+                  style={{
+                    padding: "10px",
+                    background: "var(--op-amber)",
+                    color: "#000",
+                    border: "none",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: actionLoading ? "default" : "pointer",
+                    opacity: actionLoading ? 0.7 : 1,
+                  }}
+                >
+                  {actionLoading ? "Processando..." : "📧 Enviar lembrete"}
+                </button>
+                <button
+                  onClick={() => handleAction("reschedule")}
+                  disabled={actionLoading}
+                  style={{
+                    padding: "10px",
+                    background: "var(--op-surface)",
+                    color: "var(--op-text-primary)",
+                    border: "1px solid var(--op-border)",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: actionLoading ? "default" : "pointer",
+                    opacity: actionLoading ? 0.7 : 1,
+                  }}
+                >
+                  {actionLoading ? "Processando..." : "Reagendar"}
+                </button>
+                <button
+                  onClick={() => setSelectedBill(null)}
+                  style={{
+                    padding: "10px",
+                    background: "var(--op-surface)",
+                    color: "var(--op-text-primary)",
+                    border: "1px solid var(--op-border)",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

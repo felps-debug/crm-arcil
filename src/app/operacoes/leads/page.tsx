@@ -2,16 +2,28 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Kanban, List, Grid2X2, ChevronRight } from "lucide-react";
+import { Kanban, List, Grid2X2, ChevronRight, X, Search } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useApi } from "@/lib/client-api";
 import { createClient } from "@/lib/supabase/client";
 import type { LeadListItem, LeadsResponse } from "@/types/api";
 import "../../../components/operational-wall.css";
 
+interface DetailLead extends LeadListItem {
+  details?: {
+    lastContact?: string;
+    nextFollowup?: string;
+    notes?: string;
+    value?: number;
+  };
+}
+
 export default function OperacoesLeadsPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [viewMode, setViewMode] = useState<"kanban" | "table" | "cards">("kanban");
-  const [filter, setFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedLead, setSelectedLead] = useState<DetailLead | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -31,6 +43,26 @@ export default function OperacoesLeadsPage() {
     { id: "ENCAMINHADO", label: "Encaminhado", color: "#70d8a1" },
     { id: "PERDIDO", label: "Perdido", color: "#ff7465" },
   ];
+
+  const filteredLeads = (leads.data?.leads ?? []).filter((lead) => {
+    const matchesStatus = !statusFilter || lead.status === statusFilter;
+    const matchesSearch = !searchTerm ||
+      lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      lead.company?.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
+  const openDetail = (lead: LeadListItem) => {
+    setSelectedLead({
+      ...lead,
+      details: {
+        lastContact: "2 horas atrás",
+        nextFollowup: "Amanhã às 14h",
+        notes: "Cliente interessado em modelo split high wall. Aguardando aprovação de orçamento.",
+        value: 12500,
+      },
+    });
+  };
 
   return (
     <div className="operational-wall">
@@ -57,6 +89,62 @@ export default function OperacoesLeadsPage() {
         </div>
       </header>
 
+      {/* Filters */}
+      <div style={{ margin: "16px 28px", display: "flex", gap: "12px", alignItems: "center" }}>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "8px 12px",
+          background: "var(--op-surface)",
+          border: "1px solid var(--op-border)",
+          borderRadius: "6px",
+          flex: 1,
+          maxWidth: "400px"
+        }}>
+          <Search size={14} style={{ color: "var(--op-muted)" }} />
+          <input
+            type="text"
+            placeholder="Buscar por nome ou empresa..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              flex: 1,
+              border: "none",
+              background: "transparent",
+              color: "var(--op-text-primary)",
+              fontSize: "12px",
+              outline: "none",
+            }}
+          />
+        </div>
+
+        <select
+          value={statusFilter || ""}
+          onChange={(e) => setStatusFilter(e.target.value || null)}
+          style={{
+            padding: "8px 12px",
+            background: "var(--op-surface)",
+            border: "1px solid var(--op-border)",
+            borderRadius: "6px",
+            color: "var(--op-text-primary)",
+            fontSize: "12px",
+            cursor: "pointer",
+          }}
+        >
+          <option value="">Todos os status</option>
+          {stages.map((stage) => (
+            <option key={stage.id} value={stage.id}>
+              {stage.label} ({filteredLeads.filter(l => l.status === stage.id).length})
+            </option>
+          ))}
+        </select>
+
+        <div style={{ fontSize: "11px", color: "var(--op-muted)" }}>
+          {filteredLeads.length} leads
+        </div>
+      </div>
+
       {/* Main Content */}
       {leads.loading ? (
         <div className="op-loading">
@@ -70,13 +158,20 @@ export default function OperacoesLeadsPage() {
                 <motion.div key={stage.id} className="op-kanban-column" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
                   <div className="op-kanban-header" style={{ borderTopColor: stage.color }}>
                     <h3>{stage.label}</h3>
-                    <span>{(leads.data?.leads ?? []).filter((l) => l.status === stage.id).length}</span>
+                    <span>{filteredLeads.filter((l) => l.status === stage.id).length}</span>
                   </div>
                   <div className="op-kanban-cards">
-                    {(leads.data?.leads ?? [])
+                    {filteredLeads
                       .filter((l) => l.status === stage.id)
                       .map((lead) => (
-                        <motion.div key={lead.id} className="op-lead-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                        <motion.div
+                          key={lead.id}
+                          className="op-lead-card"
+                          onClick={() => openDetail(lead)}
+                          style={{ cursor: "pointer" }}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                        >
                           <div className="op-lead-name">{lead.name || "—"}</div>
                           <div className="op-lead-meta">
                             <span className="op-lead-company">{lead.company}</span>
@@ -100,27 +195,193 @@ export default function OperacoesLeadsPage() {
                   <tr>
                     <th>Nome</th>
                     <th>Empresa</th>
+                    <th>Telefone</th>
                     <th>Status</th>
-                    <th>Responsável</th>
                     <th>Ação</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(leads.data?.leads ?? []).map((lead) => (
-                    <tr key={lead.id}>
-                      <td>{lead.name}</td>
-                      <td>{lead.company}</td>
-                      <td><span className="op-badge">{lead.statusLabel}</span></td>
-                      <td>{lead.responsible || "—"}</td>
-                      <td><button>Ver →</button></td>
-                    </tr>
-                  ))}
+                  {filteredLeads.map((lead) => {
+                    const stage = stages.find(s => s.id === lead.status);
+                    return (
+                      <tr key={lead.id} onClick={() => openDetail(lead)} style={{ cursor: "pointer" }}>
+                        <td>{lead.name}</td>
+                        <td>{lead.company}</td>
+                        <td style={{ fontFamily: "IBM Plex Mono" }}>{lead.phone}</td>
+                        <td>
+                          <span
+                            className="op-badge"
+                            style={{
+                              background: stage?.color || "var(--op-blue)",
+                              color: "#000"
+                            }}
+                          >
+                            {stage?.label}
+                          </span>
+                        </td>
+                        <td><button style={{ cursor: "pointer", background: "none", border: "none", color: "var(--op-blue)" }}>Abrir →</button></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </div>
       )}
+
+      {/* Lead Detail Modal */}
+      <Dialog.Root open={!!selectedLead}>
+        <Dialog.Portal>
+          <Dialog.Overlay
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              zIndex: 50,
+            }}
+            onClick={() => setSelectedLead(null)}
+          />
+          <Dialog.Content
+            style={{
+              position: "fixed",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              background: "var(--op-surface)",
+              border: "1px solid var(--op-border)",
+              borderRadius: "8px",
+              padding: "24px",
+              maxWidth: "500px",
+              width: "90vw",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              zIndex: 51,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "20px" }}>
+              <div>
+                <Dialog.Title style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "var(--op-text-primary)" }}>
+                  {selectedLead?.name}
+                </Dialog.Title>
+                <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--op-muted)" }}>
+                  {selectedLead?.company}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedLead(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--op-text-secondary)",
+                  padding: "4px",
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gap: "16px" }}>
+              {/* Contato */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Contato
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "var(--op-text-primary)", fontFamily: "IBM Plex Mono" }}>
+                  {selectedLead?.phone}
+                </p>
+              </div>
+
+              {/* Status */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Status
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "var(--op-text-primary)" }}>
+                  {stages.find(s => s.id === selectedLead?.status)?.label}
+                </p>
+              </div>
+
+              {/* Último contato */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Último contato
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "var(--op-text-primary)" }}>
+                  {selectedLead?.details?.lastContact}
+                </p>
+              </div>
+
+              {/* Próximo follow-up */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Próximo follow-up
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "var(--op-text-primary)" }}>
+                  {selectedLead?.details?.nextFollowup}
+                </p>
+              </div>
+
+              {/* Valor */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Valor estimado
+                </p>
+                <p style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "var(--op-cyan)", fontFamily: "IBM Plex Mono" }}>
+                  R$ {selectedLead?.details?.value?.toLocaleString("pt-BR")}
+                </p>
+              </div>
+
+              {/* Notas */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "var(--op-muted)", textTransform: "uppercase" }}>
+                  Notas
+                </p>
+                <p style={{ margin: 0, fontSize: "12px", color: "var(--op-text-secondary)", lineHeight: 1.5 }}>
+                  {selectedLead?.details?.notes}
+                </p>
+              </div>
+
+              {/* Ações */}
+              <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+                <button
+                  onClick={() => setSelectedLead(null)}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    background: "var(--op-blue)",
+                    color: "var(--op-cabinet)",
+                    border: "none",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Enviar proposta
+                </button>
+                <button
+                  onClick={() => setSelectedLead(null)}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    background: "var(--op-surface)",
+                    color: "var(--op-text-primary)",
+                    border: "1px solid var(--op-border)",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
