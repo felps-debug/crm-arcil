@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-11T00:00:00-03:00",
+  "title": "Design System: ARCIL Broadcast Operations System",
+  "extensions": {
+    "colorMeta": {
+      "ink-base": { "role": "neutral", "displayName": "Ink Base", "tonalRamp": ["#03080e", "#071321", "#0b1d2f", "#102842", "#203c56", "#3d6688", "#91a7bc", "#f0f5fb"] },
+      "lane-surface": { "role": "neutral", "displayName": "Lane Surface", "tonalRamp": ["#03080e", "#071321", "#0b1d2f", "#102842", "#203c56", "#3d6688", "#91a7bc", "#f0f5fb"] },
+      "rail-inset": { "role": "neutral", "displayName": "Rail Inset", "tonalRamp": ["#03080e", "#071321", "#091827", "#102842", "#203c56", "#3d6688", "#91a7bc", "#f0f5fb"] },
+      "hover-surface": { "role": "neutral", "displayName": "Hover Surface", "tonalRamp": ["#03080e", "#071321", "#0b1d2f", "#102842", "#203c56", "#3d6688", "#91a7bc", "#f0f5fb"] },
+      "porcelain-data": { "role": "neutral", "displayName": "Porcelain Data", "tonalRamp": ["#071321", "#203c56", "#3d6688", "#6d849a", "#91a7bc", "#c1d0df", "#e4edf5", "#f0f5fb"] },
+      "operational-muted": { "role": "neutral", "displayName": "Operational Muted", "tonalRamp": ["#122334", "#294158", "#49657e", "#68859d", "#91a7bc", "#b7c8d6", "#d7e2eb", "#f0f5fb"] },
+      "structural-border": { "role": "neutral", "displayName": "Structural Border", "tonalRamp": ["#071321", "#102842", "#203c56", "#3d6688", "#6386a5", "#91a7bc", "#c1d0df", "#f0f5fb"] },
+      "broadcast-blue": { "role": "primary", "displayName": "Broadcast Blue", "tonalRamp": ["#071c3d", "#0d3268", "#174b98", "#2d6fca", "#5b9cf3", "#86b8fa", "#b9d6fd", "#e8f3ff"] },
+      "signal-green": { "role": "secondary", "displayName": "Signal Green", "tonalRamp": ["#0a3024", "#105138", "#1c784f", "#3b9e67", "#62c779", "#91dd9d", "#bdecc4", "#e7f8e9"] },
+      "attention-amber": { "role": "tertiary", "displayName": "Attention Amber", "tonalRamp": ["#352200", "#5b3d05", "#875d0e", "#b4831c", "#efb332", "#f5ce70", "#f9e3a8", "#fff6dc"] },
+      "exception-red": { "role": "tertiary", "displayName": "Exception Red", "tonalRamp": ["#3c1715", "#64231f", "#91372f", "#c45347", "#ed7a68", "#f5a394", "#fac7bd", "#ffebe7"] },
+      "automation-violet": { "role": "secondary", "displayName": "Automation Violet", "tonalRamp": ["#271445", "#43236f", "#62379e", "#8860cb", "#b58aff", "#cfb0ff", "#e4d2ff", "#f5efff"] },
+      "service-cyan": { "role": "secondary", "displayName": "Service Cyan", "tonalRamp": ["#07333a", "#0d5662", "#147987", "#259fac", "#46cddd", "#7ae1e9", "#afeff2", "#e4fbfc"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Broadcast Display", "purpose": "Masthead and primary page state." },
+      "title": { "displayName": "Lane Title", "purpose": "Operational domain names and compact high-priority labels." },
+      "body": { "displayName": "Operational Body", "purpose": "Supporting detail, guidance, and activity labels." },
+      "label": { "displayName": "Console Label", "purpose": "Live states, headers, and compact uppercase metadata." },
+      "data": { "displayName": "Operational Data", "purpose": "Metrics, time, amounts, counts, and change values." }
+    },
+    "shadows": [
+      { "name": "broadcast-card", "value": "0 14px 30px rgba(1, 8, 15, 0.22)", "purpose": "Low-contrast lift for dark dashboard surfaces." },
+      { "name": "primary-glow", "value": "0 0 16px rgba(76,147,255,0.25)", "purpose": "Active primary state only." }
+    ],
+    "motion": [
+      { "name": "lane-hover", "value": "transform 0.22s ease, border-color 0.22s ease, background 0.22s ease", "purpose": "Confirms a status lane is an actionable destination." },
+      { "name": "activity-hover", "value": "background 0.18s ease", "purpose": "Quiet confirmation on activity rows." },
+      { "name": "reduced-motion", "value": "0.01ms duration", "purpose": "Global prefers-reduced-motion override." }
+    ],
+    "breakpoints": [
+      { "name": "stage-stack", "value": "1180px" },
+      { "name": "compact-lane", "value": "760px" },
+      { "name": "mobile-shell", "value": "768px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Shared primary action for a deliberate operational command.",
+      "html": "<button class=\"ds-btn-primary\">CONFIRMAR</button>",
+      "css": ".ds-btn-primary { padding: 8px 16px; border: 0; border-radius: 12px; background: linear-gradient(135deg, #5b9cf3, #2f6fe0); color: #fff; font: 500 14px Montserrat, sans-serif; transition: transform .2s ease, box-shadow .2s ease; } .ds-btn-primary:hover { box-shadow: 0 0 16px rgba(76,147,255,.25); } .ds-btn-primary:active { transform: scale(.98); } .ds-btn-primary:focus-visible { outline: 2px solid #5b9cf3; outline-offset: 2px; }"
+    },
+    {
+      "name": "Live Badge",
+      "kind": "chip",
+      "refersTo": "live-badge",
+      "description": "Compact freshness marker for data connected in real time.",
+      "html": "<span class=\"ds-live-badge\"><i></i>AO VIVO</span>",
+      "css": ".ds-live-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 11px; border: 1px solid #3474b5; border-radius: 6px; background: #143861; color: #eff6ff; font: 800 11px Montserrat, sans-serif; letter-spacing: .08em; } .ds-live-badge i { width: 7px; height: 7px; border-radius: 50%; background: #4de0a1; box-shadow: 0 0 0 4px rgba(77,224,161,.12); }"
+    },
+    {
+      "name": "Attention Ribbon",
+      "kind": "custom",
+      "refersTo": "attention-critical",
+      "description": "Top-level active exception with direct path to the responsible operation.",
+      "html": "<section class=\"ds-attention\"><span class=\"ds-attention-icon\">!</span><span><strong>3 follow-ups exigem atenção</strong><small>A fila precisa de uma decisão.</small></span><a href=\"#\">Ver operação →</a></section>",
+      "css": ".ds-attention { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 17px; min-height: 74px; padding: 14px 18px; border: 1px solid #c98b1b; border-radius: 12px; background: #3d2a0b; color: #f0f5fb; font-family: Montserrat, sans-serif; } .ds-attention-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 8px; background: rgba(255,198,64,.12); color: #ffc853; font-weight: 800; } .ds-attention strong, .ds-attention small { display: block; } .ds-attention strong { font-size: 14px; } .ds-attention small { margin-top: 4px; color: #b6c4d4; font-size: 12px; } .ds-attention a { color: #f8fbff; font-size: 12px; font-weight: 800; text-decoration: none; } .ds-attention a:focus-visible { outline: 2px solid #5b9cf3; outline-offset: 2px; }"
+    },
+    {
+      "name": "Operational Lane",
+      "kind": "card",
+      "refersTo": "lane",
+      "description": "Actionable domain row combining metric, trend, and next destination.",
+      "html": "<a class=\"ds-lane\" href=\"#\"><span class=\"ds-lane-icon\">L</span><span><strong>Leads</strong><small>base comercial</small></span><span class=\"ds-metric\">124<small>+8%</small></span><span class=\"ds-next\">Abrir visão detalhada →</span></a>",
+      "css": ".ds-lane { display: grid; grid-template-columns: 46px minmax(120px,1fr) minmax(112px,.75fr) minmax(170px,.8fr); align-items: center; min-height: 92px; overflow: hidden; border: 1px solid #203c56; border-radius: 12px; background: #0b1d2f; color: #edf5fd; text-decoration: none; font-family: Montserrat, sans-serif; transition: transform .22s ease, border-color .22s ease, background .22s ease; } .ds-lane:hover { transform: translateX(4px); border-color: #4d88be; background: #0e263d; } .ds-lane:focus-visible { outline: 2px solid #5b9cf3; outline-offset: 2px; } .ds-lane-icon { display: grid; place-items: center; width: 38px; height: 38px; margin-left: 15px; border-radius: 8px; background: rgba(91,156,243,.13); color: #5b9cf3; font-weight: 800; } .ds-lane strong, .ds-lane small { display: block; } .ds-lane strong { font-size: 17px; letter-spacing: -.025em; } .ds-lane small { margin-top: 4px; color: #9eb1c5; font-size: 10px; font-weight: 700; } .ds-metric { color: #fff; font: 800 28px 'IBM Plex Mono', monospace; letter-spacing: -.06em; } .ds-next { padding: 0 16px; color: #aebdcd; font-size: 11px; font-weight: 700; }"
+    },
+    {
+      "name": "Activity Rail Item",
+      "kind": "custom",
+      "refersTo": "activity-rail",
+      "description": "Compact timestamped event in the quieter activity rail.",
+      "html": "<a class=\"ds-activity\" href=\"#\"><i></i><span><strong>Novo lead recebido</strong><small>Origem: WhatsApp</small></span><time>agora</time></a>",
+      "css": ".ds-activity { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; gap: 9px; align-items: start; padding: 13px 14px; border-bottom: 1px solid rgba(63,91,117,.5); color: #dce7f2; background: #091827; font-family: Montserrat, sans-serif; text-decoration: none; transition: background .18s ease; } .ds-activity:hover { background: #102842; } .ds-activity:focus-visible { outline: 2px solid #5b9cf3; outline-offset: -2px; } .ds-activity i { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: #56a4ff; } .ds-activity strong, .ds-activity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-activity strong { font-size: 12px; } .ds-activity small { margin-top: 3px; color: #8299b0; font-size: 10px; } .ds-activity time { color: #75a9e3; font: 10px 'IBM Plex Mono', monospace; }"
+    },
+    {
+      "name": "Operational Badge",
+      "kind": "chip",
+      "refersTo": "badge-warning",
+      "description": "Shared compact category or state label; its dot reinforces but does not replace text.",
+      "html": "<span class=\"ds-badge\"><i></i>Pendente</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border: 1px solid rgba(239,179,50,.2); border-radius: 6px; background: rgba(239,179,50,.12); color: #ffdc7a; font: 600 11.5px Montserrat, sans-serif; letter-spacing: .02em; } .ds-badge i { width: 6px; height: 6px; border-radius: 50%; background: #efb332; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Live Operations Rundown",
+    "overview": "ARCIL is a dense, dark operational console whose visual hierarchy works at close range and on an owner’s TV. The baseline is ink-blue and porcelain rather than neutral dashboard gray: it reads as an active control desk, with precise data and clear destinations instead of a generic card grid. The system treats every domain as a live line in a broadcast rundown. A domain’s state, trend, and next destination are visible in one horizontal scan; a single attention ribbon owns the exception state. This keeps normal information calm while making a real issue unmistakable.",
+    "keyCharacteristics": ["Ink-blue tonal layering, separated by restrained blue structural borders.", "Montserrat carries labels and decisions; IBM Plex Mono carries quantities, timestamps, and live data.", "Color identifies a domain or an active state; it never carries the meaning alone.", "Compact, flat panels and horizontal lanes favor scanning over decoration."],
+    "rules": [{ "name": "The Reserved Attention Rule", "body": "Amber and red communicate an active state that needs recognition; do not use them for decoration, arbitrary categories, or a routine primary action.", "section": "colors" }],
+    "dos": ["Do lead every operational surface with the state that changes a person’s next action.", "Do pair a color signal with copy, an icon, a metric, or another non-color cue.", "Do use the mono face for values that users compare across rows or over time.", "Do preserve visible focus treatment and the reduced-motion behavior defined globally.", "Do favor dense rows, dividers, and meaningful labels over decorative charts or illustrations."],
+    "donts": ["Don't replace the dark rundown system with a pastel dashboard or a generic grid of floating cards.", "Don't make amber, red, or glow a normal decorative accent.", "Don't hide the only metric or only exception indicator behind hover, tooltip, or interaction.", "Don't use large soft shadows, oversized pills, or gradients as a substitute for operational hierarchy.", "Don't invent severity for activity events when the data contract only provides event type and time."]
+  }
+}
