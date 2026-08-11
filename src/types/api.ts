@@ -9,14 +9,17 @@ export interface LeadListItem {
   statusLabel?: string;
   responsible?: string;
   handoffSentAt?: string;
+  handoffAcceptedAt?: string;
   awaitingFollowup?: boolean;
   hasConversation?: boolean;
   handoffVendor?: string;
   aiAgent?: string;
+  [key: string]: any;
 }
 
 export interface LeadsResponse {
-  leads: LeadListItem[];
+  leads?: LeadListItem[];
+  items?: LeadListItem[];
   total: number;
 }
 
