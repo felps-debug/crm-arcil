@@ -1,8 +1,6 @@
 import { getFinancialHandoffBoard } from "@/lib/server/crm-data";
 import { requireApiPermission } from "@/lib/server/api-auth";
 
-export const dynamic = "force-dynamic";
-
 export async function GET() {
   const { response } = await requireApiPermission("manage_cobranca");
   if (response) return response;
