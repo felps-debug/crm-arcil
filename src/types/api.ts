@@ -23,6 +23,10 @@ export interface AgentItem {
   activeLeads: number;
   conversations: number;
   lostLeads: number;
+  waPhone?: string;
+  totalLeads?: number;
+  chatwootInboxId?: string;
+  lastActivityAt?: string;
 }
 
 export interface AgentSummaryResponse {
@@ -45,10 +49,16 @@ export interface DashboardSummaryResponse {
 }
 
 export interface InventorySummaryResponse {
-  totalProducts: number;
-  inStock: number;
-  lowStock: number;
-  outOfStock: number;
+  totalProducts?: number;
+  inStock?: number;
+  lowStock?: number;
+  outOfStock?: number;
+  products?: InventoryProduct[];
+  topDemanda?: any[];
+  outOfStockRequests?: any[];
+  estoqueSincronizado?: boolean;
+  breakdowns?: any[];
+  metrics?: Array<{ id?: string; name?: string; label?: string; value?: number }>;
 }
 
 export interface PendingCenterResponse {
@@ -85,11 +95,20 @@ export interface LeadDetailResponse extends LeadListItem {
   segmentLabel?: string;
   lastContactAt?: string;
   awaitingSince?: string;
+  financialHandoff?: any;
+  lead?: { id: string; [key: string]: any };
 }
 
 export interface InventoryProduct {
-  id: string;
-  name: string;
-  sku: string;
-  price: number;
+  id?: string;
+  name?: string;
+  sku?: string;
+  price?: number;
+  source?: string;
+  quantity?: number;
+  estoque?: number;
+  grupo?: string;
+  marca?: string;
+  btu?: number;
+  [key: string]: any;
 }

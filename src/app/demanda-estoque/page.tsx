@@ -30,7 +30,7 @@ function sourceLabel(source: InventoryProduct["source"]) {
     reseller: "Revenda",
     installer: "Instalador",
     builder_architect: "Construtor",
-  }[source];
+  }[source as string] || "—";
 }
 
 /** Por id, não por posição no array: acrescentar uma métrica no meio da lista
@@ -65,7 +65,7 @@ function DemandaEstoquePageInner() {
   const filteredProducts = useMemo(() => {
     const q = tableFilter.trim().toLowerCase();
     if (!q) return products;
-    return products.filter((p) => p.name?.toLowerCase().includes(q) || p.btu?.toLowerCase().includes(q) || p.brand?.toLowerCase().includes(q));
+    return products.filter((p) => p.name?.toLowerCase().includes(q) || String(p.btu).toLowerCase().includes(q) || p.brand?.toLowerCase().includes(q));
   }, [products, tableFilter]);
 
   const topDemanda = data?.topDemanda ?? [];
@@ -118,16 +118,16 @@ function DemandaEstoquePageInner() {
           )}
 
           <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {data.metrics.map((m) => (
+            {data.metrics?.map((m) => (
               <ConsoleMetric
                 key={m.id}
-                label={m.label}
-                value={formatNumber(m.value)}
-                icon={METRIC_ICON[m.id] ?? Boxes}
-                tone={METRIC_TONE[m.id] ?? "amber"}
+                label={m.label || m.name || ""}
+                value={formatNumber(m.value ?? 0)}
+                icon={METRIC_ICON[((m.id as string) || "default")] ?? Boxes}
+                tone={METRIC_TONE[((m.id as string) || "default")] ?? "amber"}
               />
             ))}
-            <ConsoleMetric label="Categorias" value={data.breakdowns.bySource.length} helper="Segmentos comerciais" icon={Boxes} tone="violet" />
+            <ConsoleMetric label="Categorias" value={Array.isArray(data.breakdowns) ? data.breakdowns.length : 0} helper="Segmentos comerciais" icon={Boxes} tone="violet" />
             <ConsoleMetric
               label="Disponível"
               value={estoqueSincronizado ? formatNumber(products.filter((p) => (p.stock ?? 0) > 10).length) : "não sincronizado"}

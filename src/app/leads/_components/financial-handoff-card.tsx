@@ -45,7 +45,7 @@ export function FinancialHandoffCard({ detail, onSaved }: FinancialHandoffCardPr
   }, [handoff]);
 
   const visibleHandoff = handoff?.eligible ? handoff : null;
-  const invalidRenegotiation = useMemo(() => visibleHandoff?.boletos.some((boleto) => {
+  const invalidRenegotiation = useMemo(() => visibleHandoff?.boletos.some((boleto: any) => {
     const key = boletoKey(boleto.empresa, boleto.documento);
     return choices[key] === "renegociado" && !notes[key]?.trim();
   }) ?? false, [choices, notes, visibleHandoff]);
@@ -58,7 +58,7 @@ export function FinancialHandoffCard({ detail, onSaved }: FinancialHandoffCardPr
     setSaving(true);
     setError(null);
 
-    const decisions = handoffToSubmit.boletos.flatMap((boleto) => {
+    const decisions = handoffToSubmit.boletos.flatMap((boleto: any) => {
       const key = boletoKey(boleto.empresa, boleto.documento);
       const status = choices[key];
       return status === "pago" || status === "renegociado"
@@ -67,7 +67,7 @@ export function FinancialHandoffCard({ detail, onSaved }: FinancialHandoffCardPr
     });
 
     try {
-      const response = await fetch(`/api/leads/${detail.lead.id}/financial-handoff`, {
+      const response = await fetch(`/api/leads/${detail.lead?.id}/financial-handoff`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cobrancaLogId: handoffToSubmit.cobrancaLogId, destination, decisions }),
@@ -104,7 +104,7 @@ export function FinancialHandoffCard({ detail, onSaved }: FinancialHandoffCardPr
       ) : (
         <>
           <div className="mt-4 space-y-3">
-            {visibleHandoff.boletos.map((boleto) => {
+            {visibleHandoff.boletos.map((boleto: any) => {
               const key = boletoKey(boleto.empresa, boleto.documento);
               const choice = choices[key] ?? "em_aberto";
               return (
