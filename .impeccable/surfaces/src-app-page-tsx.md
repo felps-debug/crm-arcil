@@ -21,22 +21,22 @@ Show real operational state across Leads, Agentes IA, Cobranças, Follow-ups, Es
 
 ## Chosen direction
 
-Live newsroom rundown wall. Six operational domains appear as horizontal status lanes. A prominent attention ribbon interrupts the normal flow only for critical issues. The live queue and event ticker make automation and human action legible as one continuous operation.
+Operational split-flap wall. Every queue, domain state, agent and recent event is exposed as a fixed-column board, with no card-grid summary and no need to click to discover active work. Matte charcoal, warm display data, restrained blue for live state, amber for factual attention and red for actual exception.
 
 ## Approved composition
 
-`.impeccable/mocks/central-operacional-lanes.png`
+`.impeccable/mocks/operacao-agora-split-flap.png` (generated direction reference; the shipping surface uses only real CRM data).
 
 ## Component grammar and inventory
 
 | Ingredient | Commitment | Medium |
 | --- | --- | --- |
 | Navigation | narrow icon rail, ordered vertically, compact on TV | semantic HTML + Lucide |
-| Top status | title + live state + full-width attention ribbon | semantic HTML/CSS |
-| Operational lanes | six dense horizontal rows; domain marker, primary state, microtrend, next event | semantic HTML/CSS/SVG |
-| Priority queue | narrow right rail with timestamps and severity | semantic HTML/CSS |
-| Event ticker | persistent bottom strip for changes across automation and people | semantic HTML/CSS |
-| Data marks | mini bars and lines, no decorative illustration | inline SVG |
-| Alert treatment | amber or red only for active attention, supported by icon and copy | semantic HTML/CSS + Lucide |
+| Top status | time, live state and a dominant factual attention signal | semantic HTML/CSS |
+| Central agenda | six fixed-column rows: domain, state, responsible, last signal and next step | semantic HTML/CSS |
+| Open queues | all available pending categories and all registered agents, without a visual truncation cap | semantic HTML/CSS |
+| Event stream | complete recent activity list with source and timestamp | semantic HTML/CSS |
+| Footer ledger | always-visible operational totals and ERP state | semantic HTML/CSS |
+| Alert treatment | amber only for factual attention; red only for actual exception | semantic HTML/CSS |
 
 No comp imagery is required in the shipped dashboard; generated comp is a layout and material reference, not a user-facing asset.

@@ -32,11 +32,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="pt-BR" className={`dark h-full ${montserrat.variable} ${ibmPlexMono.variable}`}>
       <body className="h-full flex overflow-hidden" style={{ background: "var(--bg-base)" }}>
         {/*
-          THESIS: ARCIL is a live operational rundown, not a generic dashboard grid.
-          OWN-WORLD: Ink-blue broadcast desk, porcelain data, broadcast-blue section bars, and amber or red reserved for active attention.
-          STORY: The owner sees every operating domain and the exception that needs attention; each team can enter its focused surface from the same signal.
-          FIRST VIEWPORT: A live masthead and attention ribbon lead into six horizontal operation lanes, a priority rail, and a bottom event rundown.
-          FORM: Redação em tempo real; assigned direction seed 87b65c94.
+          THESIS: ARCIL is an open operational wall, not a dashboard that hides work behind cards and destinations.
+          OWN-WORLD: Matte split-flap board, warm off-white type, steel dividers, restrained blue live data, amber for attention and red only for an actual exception.
+          STORY: The owner reads every queue, domain state, agent and event at once from a TV; the team reads the same factual state before acting elsewhere.
+          FIRST VIEWPORT: A broadcast masthead sits above open queues, a central operations agenda, a continuous event stream, and a bottom status ledger.
+          FORM: Operational split-flap board; direction seed 560c4a34.
           FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
         */}
         <Providers>
