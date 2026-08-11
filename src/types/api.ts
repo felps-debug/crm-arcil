@@ -8,6 +8,11 @@ export interface LeadListItem {
   status: string;
   statusLabel?: string;
   responsible?: string;
+  handoffSentAt?: string;
+  awaitingFollowup?: boolean;
+  hasConversation?: boolean;
+  handoffVendor?: string;
+  aiAgent?: string;
 }
 
 export interface LeadsResponse {
