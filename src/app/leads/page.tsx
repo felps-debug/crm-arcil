@@ -487,8 +487,8 @@ function LeadPanel({
     <ConsoleCard className="min-h-[520px]">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[16px] font-bold text-[var(--text-primary)]">{detail.lead.name ?? "Sem nome"}</h2>
-          <p className="mt-1 text-[12px] text-[var(--text-muted)]">{detail.lead.company ?? detail.lead.phone ?? "-"}</p>
+          <h2 className="text-[16px] font-bold text-[var(--text-primary)]">{detail.lead?.name ?? "Sem nome"}</h2>
+          <p className="mt-1 text-[12px] text-[var(--text-muted)]">{detail.lead?.company ?? detail.lead?.phone ?? "-"}</p>
         </div>
         <ConsoleButton onClick={onClose} aria-label="Fechar prontuario">
           <ChevronRight size={14} />
