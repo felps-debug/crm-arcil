@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Radio } from "lucide-react";
+import { Activity, ArrowUpRight, Bot, CircleAlert, RefreshCw, Tv, Users } from "lucide-react";
 import { ConsoleError, ConsoleLoading } from "@/components/console/console-shell";
 import { formatMoney, formatNumber, useApi } from "@/lib/client-api";
 import { useSupabase } from "@/hooks/use-supabase";
@@ -10,8 +10,6 @@ import { getRecentActivity, getUrgentFollowupsCount } from "@/lib/supabase/queri
 import type { AgentSummaryResponse, ApiMetric, DashboardSummaryResponse, InventorySummaryResponse, PendingCenterResponse } from "@/types/api";
 import styles from "./central-operational.module.css";
 
-type BoardRow = { id: string; domain: string; state: string; owner: string; lastEvent: string; nextAction: string; tone: "blue" | "amber" | "green" | "violet" | "cyan" | "red" };
-
 function metricValue(metric: ApiMetric | undefined, fallback = "—") {
   if (!metric) return fallback;
   if (metric.unit === "BRL") return formatMoney(metric.value);
@@ -19,13 +17,11 @@ function metricValue(metric: ApiMetric | undefined, fallback = "—") {
   return formatNumber(metric.value);
 }
 
-function firstBreakdown(items: DashboardSummaryResponse["breakdowns"]["leadsByStatus"]) {
-  return items.length ? items.slice(0, 2).map((item) => `${item.label}: ${item.value}`).join(" · ") : "Sem distribuição registrada";
-}
-
 export default function DashboardPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [urgentFollowups, setUrgentFollowups] = useState(0);
+  const [realtimeState, setRealtimeState] = useState<"connecting" | "live" | "paused">("connecting");
+  const [tvMode, setTvMode] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -35,54 +31,34 @@ export default function DashboardPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, refresh)
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") setRealtimeState("live");
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setRealtimeState("paused");
+      });
     return () => { supabase.removeChannel(channel); };
   }, []);
 
   useEffect(() => { getUrgentFollowupsCount().then(setUrgentFollowups); }, [refreshTick]);
 
   const summary = useApi<DashboardSummaryResponse>(`/api/dashboard/summary${refreshTick ? `?_r=${refreshTick}` : ""}`);
-  const pending = useApi<PendingCenterResponse>(`/api/dashboard/pending-center${refreshTick ? `?_r=${refreshTick}` : ""}`);
   const agents = useApi<AgentSummaryResponse>(`/api/agents/summary${refreshTick ? `?_r=${refreshTick}` : ""}`);
+  const pending = useApi<PendingCenterResponse>(`/api/dashboard/pending-center${refreshTick ? `?_r=${refreshTick}` : ""}`);
   const inventory = useApi<InventorySummaryResponse>(`/api/inventory/summary?limit=1${refreshTick ? `&_r=${refreshTick}` : ""}`);
   const { data: activity, loading: loadingActivity } = useSupabase(() => getRecentActivity(), [refreshTick]);
   const metrics = useMemo(() => new Map((summary.data?.metrics ?? []).map((metric) => [metric.id, metric])), [summary.data]);
+  const activeAgents = agents.data?.agents.filter((agent) => agent.enabled) ?? [];
+  const leadMetric = metrics.get("total_leads");
+  const openQueue = pending.data?.items.reduce((total, item) => total + item.count, 0) ?? 0;
   const now = summary.data?.generatedAt ? new Date(summary.data.generatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--:--:--";
+  const funnelMax = Math.max(...(summary.data?.commercialFunnel ?? []).map((item) => item.value), 1);
 
-  const rows = useMemo<BoardRow[]>(() => {
-    const leadMetric = metrics.get("total_leads");
-    const agentMetric = metrics.get("agents_enabled");
-    const revenueMetric = metrics.get("potential_revenue");
-    const followupMetric = metrics.get("followup_response_rate");
-    const stockMetric = inventory.data?.metrics.find((metric) => metric.id === "total_products");
-    return [
-      { id: "leads", domain: "Leads", state: `${metricValue(leadMetric, "0")} na base`, owner: "Comercial", lastEvent: firstBreakdown(summary.data?.breakdowns.leadsByStatus ?? []), nextAction: "Acompanhar distribuição", tone: "blue" },
-      { id: "agents", domain: "Agentes IA", state: `${metricValue(agentMetric, "0")} habilitados`, owner: "Automação", lastEvent: `${agents.data?.agents.filter((agent) => agent.enabled).length ?? 0} agentes ativos no cadastro`, nextAction: "Monitorar conversas", tone: "violet" },
-      { id: "billing", domain: "Cobranças", state: metricValue(revenueMetric, "R$ 0,00"), owner: "Financeiro", lastEvent: urgentFollowups ? `${urgentFollowups} follow-up(s) aguardando decisão` : "Sem follow-up urgente", nextAction: urgentFollowups ? "Tratar fila pendente" : "Acompanhar carteira", tone: urgentFollowups ? "amber" : "green" },
-      { id: "followups", domain: "Follow-ups", state: `${metricValue(followupMetric, "0")}% responderam`, owner: "Automação", lastEvent: `${pending.data?.items.find((item) => item.id === "followups_overdue")?.count ?? 0} fora do prazo`, nextAction: "Ver contatos em espera", tone: "cyan" },
-      { id: "stock", domain: "Estoque", state: inventory.data?.estoqueSincronizado ? `${metricValue(stockMetric, "0")} produtos` : "ERP sem quantidade", owner: "ERP", lastEvent: inventory.data?.estoqueSincronizado ? "Saldo sincronizado" : "Aguardando saldo do ERP", nextAction: "Conferir demanda", tone: "green" },
-      { id: "service", domain: "Atendimento", state: `${activity?.length ?? 0} eventos recentes`, owner: "IA + humano", lastEvent: activity?.[0]?.label ?? "Sem evento recente", nextAction: "Acompanhar conversas", tone: "red" },
-    ];
-  }, [activity, agents.data?.agents, inventory.data, metrics, pending.data?.items, summary.data?.breakdowns.leadsByStatus, urgentFollowups]);
-
-  return <main className={styles.page}>
-    <header className={styles.header}><div className={styles.brand}>ARCIL</div><h1>Operação agora</h1><div className={styles.clock}><time>{now}</time><span><i /> AO VIVO</span></div></header>
-    {summary.loading && <ConsoleLoading />}{summary.error && <ConsoleError message={summary.error} />}
-    {!summary.loading && !summary.error && <>
-      <section className={styles.attention} data-active={urgentFollowups > 0} aria-live="polite">
-        <span>{urgentFollowups > 0 ? "ATENÇÃO OPERACIONAL" : "SITUAÇÃO OPERACIONAL"}</span>
-        <b>{urgentFollowups > 0 ? `${urgentFollowups} follow-up(s) urgente(s) exigem decisão antes do próximo contato automático.` : "Nenhum follow-up urgente sinalizado neste momento."}</b>
-        <small>{urgentFollowups > 0 ? "A fila abaixo mostra o volume por tipo de pendência." : "O quadro abaixo permanece atualizado enquanto a operação acontece."}</small>
-      </section>
-      <div className={styles.wall}>
-        <aside className={styles.queues} aria-label="Filas abertas">
-          <section><div className={styles.sectionHeading}><span>Filas abertas</span><strong>{pending.data?.items.reduce((total, item) => total + item.count, 0) ?? 0}</strong></div><div className={styles.queueRows}>{(pending.data?.items ?? []).map((item) => <div className={styles.queueRow} key={item.id} data-severity={item.severity}><span>{item.label}</span><b>{item.count}</b></div>)}{!pending.data?.items.length && <p className={styles.empty}>Carregando filas…</p>}</div></section>
-          <section><div className={styles.sectionHeading}><span>Agentes no quadro</span><strong>{agents.data?.agents.length ?? 0}</strong></div><div className={styles.agentRows}>{(agents.data?.agents ?? []).map((agent) => <div className={styles.agentRow} key={agent.id}><i data-enabled={agent.enabled} /><span><b>{agent.name}</b><small>{agent.activeLeads} lead(s) ativos · {agent.conversations} conversa(s)</small></span></div>)}{!agents.data?.agents.length && <p className={styles.empty}>Nenhum agente cadastrado.</p>}</div></section>
-        </aside>
-        <section className={styles.board} aria-label="Agenda operacional"><div className={styles.boardHeading}><span>Agenda operacional</span><div>Estado atual <b>·</b> Responsável <b>·</b> Último sinal <b>·</b> Próximo passo</div></div><div className={styles.boardColumns} aria-hidden="true"><span>Domínio</span><span>Estado atual</span><span>Responsável</span><span>Último sinal</span><span>Próximo passo</span></div><div className={styles.boardRows}>{rows.map((row) => <div className={styles.boardRow} data-tone={row.tone} key={row.id}><span className={styles.domain}>{row.domain}</span><span className={styles.state}>{row.state}</span><span className={styles.owner}>{row.owner}</span><span className={styles.event}>{row.lastEvent}</span><span className={styles.action}>{row.nextAction}</span></div>)}</div><div className={styles.boardFoot}><Radio size={14} /> Atualização automática por Supabase, n8n, Chatwoot e ERP quando houver dados disponíveis.</div></section>
-        <aside className={styles.stream} aria-label="Fluxo de eventos"><div className={styles.sectionHeading}><span>Fluxo de eventos</span><strong>{activity?.length ?? 0}</strong></div><div className={styles.streamLabels}><span>Hora</span><span>Origem</span><span>Evento</span></div>{loadingActivity ? <p className={styles.empty}>Carregando eventos…</p> : (activity ?? []).map((item, index) => <div className={styles.streamRow} data-type={item.type} key={`${item.id}-${index}`}><time>{item.date ? new Date(item.date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}</time><span>{item.type}</span><b>{item.label}{item.sub ? ` · ${item.sub}` : ""}</b></div>)}{!loadingActivity && !activity?.length && <p className={styles.empty}>Nenhuma atividade recente.</p>}</aside>
-      </div>
-      <section className={styles.footerBoard} aria-label="Resumo operacional"><div><span>Situação</span><b data-ok={urgentFollowups === 0}>{urgentFollowups ? "atenção" : "estável"}</b></div><div><span>Follow-ups urgentes</span><b>{urgentFollowups}</b></div><div><span>Leads qualificados</span><b>{summary.data?.commercialFunnel.find((item) => item.id === "qualified")?.value ?? 0}</b></div><div><span>Propostas</span><b>{summary.data?.commercialFunnel.find((item) => item.id === "quoted")?.value ?? 0}</b></div><div><span>Vendas fechadas</span><b>{summary.data?.commercialFunnel.find((item) => item.id === "closed")?.value ?? 0}</b></div><div><span>Estoque</span><b>{inventory.data?.estoqueSincronizado ? "sincronizado" : "aguardando ERP"}</b></div></section>
+  return <main className={styles.page} data-mode={tvMode ? "tv" : "standard"}>
+    <header className={styles.header}><div className={styles.headerIdentity}><span className={styles.brand}>ARCIL</span><div><p className={styles.eyebrow}>AGENTES IA · LEADS · OPERAÇÃO COMERCIAL</p><h1>O que está acontecendo com os leads?</h1><p className={styles.subtitle}>Acompanhe quem está atendendo, quantas oportunidades estão em movimento e onde a equipe precisa agir.</p></div></div><div className={styles.headerActions}><div className={styles.time}><time>{now}</time><span data-state={realtimeState}><i /> {realtimeState === "live" ? "AO VIVO" : realtimeState === "paused" ? "PAUSADO" : "CONECTANDO"}</span></div><button className={styles.iconButton} type="button" onClick={() => setRefreshTick((tick) => tick + 1)} aria-label="Atualizar painel"><RefreshCw size={16} /></button><button className={styles.modeButton} type="button" onClick={() => setTvMode((mode) => !mode)} aria-pressed={tvMode}><Tv size={15} /> {tvMode ? "Sair do modo TV" : "Modo TV"}</button></div></header>
+    {summary.loading || agents.loading ? <ConsoleLoading /> : null}{summary.error && <ConsoleError message={summary.error} />}{!summary.loading && !agents.loading && !summary.error && <>
+      <section className={styles.hero} aria-labelledby="hero-title"><div className={styles.heroCopy}><div className={styles.heroLabel}><Bot size={15} /> AGENTES IA EM OPERAÇÃO</div><h2 id="hero-title">A inteligência está trabalhando na sua carteira.</h2><p>{activeAgents.length} agentes ativos acompanham {metricValue(leadMetric, "0")} leads na base. Veja abaixo onde a operação está avançando e quais conversas pedem atenção.</p><div className={styles.heroStatus}><span className={styles.statusDot} /> {realtimeState === "live" ? "Dados atualizados em tempo real" : "Atualização aguardando conexão"}</div></div><div className={styles.heroNumbers}><div><span>AGENTES ATIVOS</span><strong>{activeAgents.length}</strong></div><div><span>LEADS NA BASE</span><strong>{metricValue(leadMetric, "0")}</strong></div><div><span>CONVERSAS</span><strong>{formatNumber(activeAgents.reduce((total, agent) => total + agent.conversations, 0))}</strong></div></div></section>
+      <div className={styles.mainGrid}><section className={styles.agentsPanel} aria-labelledby="agents-title"><div className={styles.panelHeader}><div><p className={styles.eyebrow}>MONITORAMENTO DOS AGENTES</p><h2 id="agents-title">Quem está trabalhando agora</h2></div><span className={styles.panelMeta}>{agents.data?.agents.length ?? 0} cadastrados</span></div><div className={styles.agentGrid}>{(agents.data?.agents ?? []).map((agent) => <div className={styles.agentCard} data-active={agent.enabled} key={agent.id}><div className={styles.agentTop}><span className={styles.agentSignal} /><div><h3>{agent.name}</h3><p>{agent.segment?.join(" · ") || "Segmento não definido"}</p></div><span className={styles.agentState}>{agent.enabled ? "ATIVO" : "PAUSADO"}</span></div><div className={styles.agentStats}><div><b>{agent.activeLeads}</b><span>leads ativos</span></div><div><b>{agent.conversations}</b><span>conversas</span></div><div><b>{agent.lostLeads}</b><span>perdidos</span></div></div><div className={styles.agentAction}>Ver carteira do agente <ArrowUpRight size={14} /></div></div>)}</div></section><aside className={styles.sideColumn}><section className={styles.leadsPanel} aria-labelledby="leads-title"><div className={styles.panelHeader}><div><p className={styles.eyebrow}>RESULTADO DA IA</p><h2 id="leads-title">Leads no funil</h2></div><Users size={17} /></div><div className={styles.funnel}>{(summary.data?.commercialFunnel ?? []).map((item) => <div className={styles.funnelRow} key={item.id}><div><span>{item.label}</span><b>{formatNumber(item.value)}</b></div><div className={styles.funnelTrack}><i style={{ width: `${Math.max((item.value / funnelMax) * 100, item.value ? 8 : 0)}%` }} /></div></div>)}</div></section><section className={styles.billingPanel} aria-labelledby="billing-title"><div className={styles.panelHeader}><div><p className={styles.eyebrow}>SINAL FINANCEIRO</p><h2 id="billing-title">Cobranças</h2></div><span className={styles.smallSignal}>{urgentFollowups}</span></div><div className={styles.billingValue}>{metricValue(metrics.get("potential_revenue"), "R$ 0,00")}</div><p>{urgentFollowups ? `${urgentFollowups} follow-up(s) urgente(s)` : "Sem cobrança urgente agora"}</p></section></aside></div>
+      <div className={styles.bottomGrid}><section className={styles.priorityPanel} aria-labelledby="priority-title"><div className={styles.panelHeader}><div><p className={styles.eyebrow}>FILA DE TRABALHO</p><h2 id="priority-title">Onde os leads precisam de ação</h2></div><CircleAlert size={17} /></div><div className={styles.priorityList}>{(pending.data?.items ?? []).filter((item) => item.count > 0).slice(0, 6).map((item) => <div className={styles.priorityRow} key={item.id}><span>{item.label}</span><b data-severity={item.severity}>{formatNumber(item.count)}</b><small>abrir fila <ArrowUpRight size={13} /></small></div>)}{!openQueue && <p className={styles.empty}>Nenhuma fila pendente.</p>}</div></section><section className={styles.eventsPanel} aria-labelledby="events-title"><div className={styles.panelHeader}><div><p className={styles.eyebrow}>TEMPO REAL</p><h2 id="events-title">Últimos movimentos</h2></div><span className={styles.panelMeta}>{activity?.length ?? 0} eventos</span></div>{loadingActivity ? <p className={styles.empty}>Carregando eventos…</p> : (activity ?? []).slice(0, 5).map((item, index) => <div className={styles.eventRow} data-type={item.type} key={`${item.id}-${index}`}><time>{item.date ? new Date(item.date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}</time><span>{item.type}</span><b>{item.label}{item.sub ? ` · ${item.sub}` : ""}</b></div>)}{!loadingActivity && !activity?.length && <p className={styles.empty}>Nenhuma atividade recente.</p>}</section></div>
+      <section className={styles.ledger} aria-label="Resumo do negócio"><div><span>LEADS QUALIFICADOS</span><b>{summary.data?.commercialFunnel.find((item) => item.id === "qualified")?.value ?? 0}</b></div><div><span>PROPOSTAS</span><b>{summary.data?.commercialFunnel.find((item) => item.id === "quoted")?.value ?? 0}</b></div><div><span>VENDAS FECHADAS</span><b>{summary.data?.commercialFunnel.find((item) => item.id === "closed")?.value ?? 0}</b></div><div><span>ESTOQUE</span><b>{inventory.data?.estoqueSincronizado ? "sincronizado" : "aguardando ERP"}</b></div></section>
     </>}
   </main>;
 }

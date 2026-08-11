@@ -8,20 +8,20 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants = {
   primary:
-    "bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-600/25 active:shadow-sm active:scale-[0.98] dark:bg-gradient-to-br dark:from-[var(--dsc-primary)] dark:to-[var(--dsc-primary-2)] dark:shadow-none dark:hover:shadow-[var(--glow-primary)]",
+    "bg-[var(--blue)] hover:brightness-110 text-white shadow-sm hover:shadow-md active:scale-[0.98]",
   secondary:
-    "bg-[var(--bg-surface)] hover:bg-[var(--bg-subtle)] text-[var(--text-primary)] ring-1 ring-[var(--border-strong)] shadow-sm hover:shadow-md active:scale-[0.98] dark:hover:shadow-[0_0_10px_rgba(76,147,255,0.12)]",
+    "bg-[var(--bg-surface)] hover:bg-[var(--bg-subtle)] text-[var(--text-primary)] ring-1 ring-[var(--border-strong)] shadow-sm hover:shadow-md active:scale-[0.98]",
   ghost:
     "hover:bg-[var(--bg-subtle)] text-[var(--text-secondary)] active:bg-[var(--bg-subtle)] active:scale-[0.98]",
   danger:
-    "bg-gradient-to-b from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-md shadow-red-500/20 hover:shadow-lg hover:shadow-red-600/25 active:shadow-sm active:scale-[0.98] dark:bg-gradient-to-br dark:from-[var(--dsc-error)] dark:to-[#c94a3a] dark:shadow-none dark:hover:shadow-[var(--glow-error)]",
+    "bg-[var(--red)] hover:brightness-110 text-white shadow-sm hover:shadow-md active:scale-[0.98]",
 };
 
 const sizes = {
-  xs: "px-2.5 py-1 text-[11px] rounded-lg",
-  sm: "px-3.5 py-2.5 text-xs rounded-xl",
-  md: "px-4 py-2 text-sm rounded-xl",
-  lg: "px-5 py-2.5 text-sm rounded-2xl",
+  xs: "px-2.5 py-1 text-[11px] rounded-md",
+  sm: "px-3.5 py-2.5 text-xs rounded-lg",
+  md: "px-4 py-2 text-sm rounded-lg",
+  lg: "px-5 py-2.5 text-sm rounded-xl",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(

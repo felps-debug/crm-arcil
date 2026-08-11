@@ -97,9 +97,9 @@ export function Sidebar() {
               key={href}
               href={href}
               className={cn(
-                "flex min-h-11 items-center gap-3 rounded-[14px] px-4 text-[14px] font-semibold transition-colors",
+                "flex min-h-11 items-center gap-3 rounded-[8px] px-4 text-[13px] font-semibold transition-all",
                 active
-                  ? "bg-[var(--sidebar-active)] text-white shadow-[0_0_30px_rgba(45,125,255,0.35)]"
+                  ? "bg-[var(--sidebar-active)] text-white shadow-[0_8px_18px_rgba(23,41,89,0.32)]"
                   : "text-[var(--sidebar-text)] hover:bg-white/[0.06] hover:text-white"
               )}
             >
