@@ -2,6 +2,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { allTimePeriod, countBy, defaultPeriod, isOlderThan, metric, percent } from "@/lib/server/crm-metrics";
 import { labelSegment, labelStatus } from "@/lib/server/crm-labels";
 import { agruparDemanda } from "@/lib/server/demanda";
+import {
+  classifyFinancialHandoff,
+  type FinancialBoardItem,
+  type FinancialHandoffBoleto,
+  type FinancialHandoffDecision,
+} from "@/lib/server/financial-handoff";
 import type {
   ActivityLogResponse,
   AgentConversationsResponse,
@@ -101,6 +107,27 @@ type FinancialHandoffDecisionRow = {
   status: "pago" | "renegociado" | null;
   note: string | null;
   recorded_at: string | null;
+};
+
+type FinancialHandoffResolutionRow = {
+  id: string;
+  lead_id: string;
+  destination: "devolver_ao_bot" | "sem_retorno";
+  recorded_at: string;
+  followup_at: string | null;
+  followup_status: string | null;
+  n8n_status: "pending" | "delivered" | "failed";
+};
+
+type FinancialPositionRow = {
+  cobranca_log_id: string;
+  telefone: string | null;
+  empresa: string | null;
+  documento: string | null;
+  valor: number | string | null;
+  vencimento: string | null;
+  status: string | null;
+  observacao: string | null;
 };
 
 type SheetSourceRow = {
@@ -621,6 +648,88 @@ export async function getLeads(filters: LeadFilters): Promise<LeadsResponse> {
     },
     items,
   };
+}
+
+export async function getFinancialHandoffBoard(): Promise<FinancialBoardItem[]> {
+  const supabase = createAdminClient();
+  const [leadsRes, snapshotsRes, decisionsRes, resolutionsRes, positionRes] = await Promise.all([
+    supabase.from("leads").select(LEAD_SELECT).eq("segment", "COBRANCA"),
+    supabase.from("cobranca_log").select("id,telefone,nome,valor,vencimento,status_disparo,respondeu,pagamento_confirmado,data_disparo,created_at,metadata").order("data_disparo", { ascending: false }),
+    supabase.from("cobranca_handoff_boleto_decisions").select("lead_id,empresa,documento,status,note,recorded_at").is("superseded_at", null).order("recorded_at", { ascending: false }),
+    supabase.from("financial_handoff_resolutions").select("id,lead_id,destination,recorded_at,followup_at,followup_status,n8n_status").order("recorded_at", { ascending: false }),
+    supabase.from("cobranca_handoff_posicao_atual").select("cobranca_log_id,telefone,empresa,documento,valor,vencimento,status,observacao"),
+  ]);
+
+  for (const result of [leadsRes, snapshotsRes, decisionsRes, resolutionsRes, positionRes]) {
+    if (result.error) throw result.error;
+  }
+
+  const leads = (leadsRes.data ?? []) as LeadRow[];
+  const snapshots = (snapshotsRes.data ?? []) as CobrancaRow[];
+  const positions = (positionRes.data ?? []) as FinancialPositionRow[];
+  const decisions = (decisionsRes.data ?? []) as (FinancialHandoffDecisionRow & { lead_id: string })[];
+  const resolutions = (resolutionsRes.data ?? []) as FinancialHandoffResolutionRow[];
+  const latestSnapshotByPhone = new Map<string, CobrancaRow>();
+  for (const snapshot of snapshots) {
+    const tail = phoneTail(snapshot.telefone);
+    if (tail && parseSnapshotBoletos(snapshot.metadata).length && !latestSnapshotByPhone.has(tail)) latestSnapshotByPhone.set(tail, snapshot);
+  }
+
+  const positionByPhone = new Map<string, FinancialHandoffBoleto[]>();
+  for (const row of positions) {
+    const tail = phoneTail(row.telefone);
+    if (!tail || !row.empresa || !row.documento) continue;
+    const boletos = positionByPhone.get(tail) ?? [];
+    boletos.push({
+      empresa: row.empresa,
+      documento: row.documento,
+      valor: Number(row.valor ?? 0),
+      vencimento: row.vencimento,
+      status: row.status,
+      observacao: row.observacao,
+    });
+    positionByPhone.set(tail, boletos);
+  }
+
+  const decisionsByLead = new Map<string, FinancialHandoffDecision[]>();
+  for (const decision of decisions) {
+    if (!decision.empresa || !decision.documento || !decision.status) continue;
+    const current = decisionsByLead.get(decision.lead_id) ?? [];
+    current.push({ empresa: decision.empresa, documento: decision.documento, status: decision.status, note: decision.note });
+    decisionsByLead.set(decision.lead_id, current);
+  }
+  const latestResolutionByLead = new Map<string, FinancialHandoffResolutionRow>();
+  for (const resolution of resolutions) {
+    if (!latestResolutionByLead.has(resolution.lead_id)) latestResolutionByLead.set(resolution.lead_id, resolution);
+  }
+
+  return leads.flatMap((lead) => {
+    const tail = phoneTail(lead.wa_phone);
+    if (!tail || !lead.wa_phone) return [];
+    const snapshot = latestSnapshotByPhone.get(tail) ?? null;
+    const boletos = positionByPhone.get(tail) ?? [];
+    const resolution = latestResolutionByLead.get(lead.id) ?? null;
+    const column = classifyFinancialHandoff({
+      handoffAcceptedAt: lead.handoff_accepted_at ?? null,
+      resolution: resolution ? { destination: resolution.destination, recordedAt: resolution.recorded_at, followupStatus: resolution.followup_status } : null,
+      openBoletoCount: boletos.length,
+    });
+    return [{
+      leadId: lead.id,
+      name: lead.name,
+      phone: lead.wa_phone,
+      cobrancaLogId: snapshot?.id ?? null,
+      openBoletoCount: boletos.length,
+      openAmount: boletos.reduce((sum, boleto) => sum + boleto.valor, 0),
+      handoffAcceptedAt: lead.handoff_accepted_at ?? null,
+      column,
+      followupAt: resolution?.followup_at ?? null,
+      resolutionId: resolution?.id ?? null,
+      n8nStatus: resolution?.n8n_status ?? null,
+      boletos,
+      activeDecisions: decisionsByLead.get(lead.id) ?? [],
+    }];
+  }).sort((a, b) => (a.followupAt ?? "9999").localeCompare(b.followupAt ?? "9999"));
 }
 
 export async function getLeadDetail(id: string): Promise<LeadDetailResponse | null> {

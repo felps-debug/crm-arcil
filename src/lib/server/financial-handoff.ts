@@ -15,6 +15,54 @@ export type FinancialHandoffPayload = {
   decisions: FinancialHandoffDecision[];
 };
 
+export type FinancialBoardColumn = "awaiting_response" | "human" | "awaiting_return" | "resolved";
+
+export type FinancialHandoffBoleto = {
+  empresa: string;
+  documento: string;
+  valor: number;
+  vencimento: string | null;
+  status: string | null;
+  observacao: string | null;
+};
+
+export type FinancialBoardItem = {
+  leadId: string;
+  name: string | null;
+  phone: string;
+  cobrancaLogId: string | null;
+  openBoletoCount: number;
+  openAmount: number;
+  handoffAcceptedAt: string | null;
+  column: FinancialBoardColumn;
+  followupAt: string | null;
+  resolutionId: string | null;
+  n8nStatus: "pending" | "delivered" | "failed" | null;
+  boletos: FinancialHandoffBoleto[];
+  activeDecisions: FinancialHandoffDecision[];
+};
+
+export type FinancialBoardResolution = {
+  destination: FinancialHandoffDestination;
+  recordedAt: string;
+  followupStatus: string | null;
+};
+
+export function classifyFinancialHandoff(input: {
+  handoffAcceptedAt: string | null;
+  resolution: FinancialBoardResolution | null;
+  openBoletoCount: number;
+}): FinancialBoardColumn {
+  if (input.openBoletoCount === 0) return "resolved";
+  if (input.resolution?.destination === "sem_retorno" && ["scheduled", "processing"].includes(input.resolution.followupStatus ?? "")) {
+    return "awaiting_return";
+  }
+  if (input.handoffAcceptedAt && (!input.resolution || new Date(input.handoffAcceptedAt).getTime() > new Date(input.resolution.recordedAt).getTime())) {
+    return "human";
+  }
+  return "awaiting_response";
+}
+
 export class FinancialHandoffValidationError extends Error {
   constructor(message: string) {
     super(message);

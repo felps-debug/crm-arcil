@@ -27,9 +27,10 @@ import { getCobrancaLog, getFollowupsByType } from "@/lib/supabase/queries";
 import type { CobrancaLog, Followup } from "@/types";
 import { DispararTab } from "./_components/disparar-tab";
 import { MonitoramentoTab } from "./_components/monitoramento-tab";
+import { FinancialHandoffBoard } from "./_components/financial-handoff-board";
 import { parseMoneyToNumber, proximoToque } from "./cobranca-helpers";
 
-type Tab = "disparar" | "logs" | "followups" | "tecnico";
+type Tab = "disparar" | "logs" | "financial" | "followups" | "tecnico";
 
 export default function CobrancaPage() {
   return (
@@ -106,6 +107,7 @@ function CobrancaPageInner() {
   const TABS: { id: Tab; label: string; count?: number; adminOnly?: boolean }[] = [
     { id: "disparar", label: "Disparar" },
     { id: "logs", label: "Monitoramento", count: logs.length },
+    { id: "financial", label: "Atendimentos financeiros" },
     { id: "followups", label: "Follow-ups", count: followups?.length },
     { id: "tecnico", label: "Logs Técnicos", count: logs.length, adminOnly: true },
   ];
@@ -182,6 +184,12 @@ function CobrancaPageInner() {
               isManagerOrAbove={isManagerOrAbove}
               onSelectLog={setSelectedLog}
             />
+          </motion.div>
+        )}
+
+        {tab === "financial" && (
+          <motion.div key="financial" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+            <FinancialHandoffBoard />
           </motion.div>
         )}
 
