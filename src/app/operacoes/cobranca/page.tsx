@@ -38,7 +38,7 @@ export default function OperacoesCobrancaPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const cobranca = useApi<PendingCenterResponse>(`/api/dashboard/pending-center?_r=${refreshTick}`, [refreshTick]);
+  const cobranca = useApi<PendingCenterResponse>(`/api/dashboard/pending-center?_r=${refreshTick}`);
 
   const stats = {
     total: 150,

@@ -43,7 +43,7 @@ export default function OperacoesAgentesPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const agents = useApi<AgentSummaryResponse>(`/api/agents/summary?_r=${refreshTick}`, [refreshTick]);
+  const agents = useApi<AgentSummaryResponse>(`/api/agents/summary?_r=${refreshTick}`);
 
   const activeAgents = agents.data?.agents.filter((a) => a.enabled) ?? [];
   const totalConversations = activeAgents.reduce((sum, a) => sum + a.conversations, 0);

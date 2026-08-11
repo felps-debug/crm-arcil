@@ -34,7 +34,7 @@ export default function OperacoesLeadsPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const leads = useApi<LeadsResponse>(`/api/leads?_r=${refreshTick}`, [refreshTick]);
+  const leads = useApi<LeadsResponse>(`/api/leads?_r=${refreshTick}`);
 
   const stages = [
     { id: "NOVO", label: "Novo", color: "#ffc14c" },

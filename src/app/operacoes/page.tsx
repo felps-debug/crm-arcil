@@ -33,12 +33,12 @@ export default function OperacoesPage() {
     };
   }, []);
 
-  const summary = useApi<DashboardSummaryResponse>(`/api/dashboard/summary?_r=${refreshTick}`, [refreshTick]);
-  const agents = useApi<AgentSummaryResponse>(`/api/agents/summary?_r=${refreshTick}`, [refreshTick]);
-  const pending = useApi<PendingCenterResponse>(`/api/dashboard/pending-center?_r=${refreshTick}`, [refreshTick]);
-  const inventory = useApi<InventorySummaryResponse>(`/api/inventory/summary?_r=${refreshTick}`, [refreshTick]);
+  const summary = useApi<DashboardSummaryResponse>(`/api/dashboard/summary?_r=${refreshTick}`);
+  const agents = useApi<AgentSummaryResponse>(`/api/agents/summary?_r=${refreshTick}`);
+  const pending = useApi<PendingCenterResponse>(`/api/dashboard/pending-center?_r=${refreshTick}`);
+  const inventory = useApi<InventorySummaryResponse>(`/api/inventory/summary?_r=${refreshTick}`);
 
-  const [realtimeState, setRealtimeState] = useState("connected");
+  const [realtimeState, setRealtimeState] = useState<"connected" | "connecting" | "disconnected">("connected");
 
   return (
     <OperationalWall

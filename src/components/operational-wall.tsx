@@ -7,10 +7,10 @@ import type { DashboardSummaryResponse, AgentSummaryResponse, PendingCenterRespo
 import "./operational-wall.css";
 
 interface OperationalWallProps {
-  summary?: DashboardSummaryResponse;
-  agents?: AgentSummaryResponse;
-  pending?: PendingCenterResponse;
-  inventory?: InventorySummaryResponse;
+  summary?: DashboardSummaryResponse | null;
+  agents?: AgentSummaryResponse | null;
+  pending?: PendingCenterResponse | null;
+  inventory?: InventorySummaryResponse | null;
   realtimeState?: "connected" | "connecting" | "disconnected";
 }
 
