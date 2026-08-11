@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFinancialHandoffPayload } from "./financial-handoff";
+import { classifyFinancialHandoff, parseFinancialHandoffPayload } from "./financial-handoff";
 
 describe("parseFinancialHandoffPayload", () => {
   it("rejects a destination outside the two explicit return paths", () => {
@@ -28,5 +28,27 @@ describe("parseFinancialHandoffPayload", () => {
       destination: "devolver_ao_bot",
       decisions: [{ empresa: "PHBLd", documento: "", status: "pago" }],
     })).toThrow("Boleto inválido");
+  });
+});
+
+describe("classifyFinancialHandoff", () => {
+  it("prioritizes resolved when no boleto remains open", () => {
+    expect(classifyFinancialHandoff({ handoffAcceptedAt: "2026-08-10T10:00:00Z", resolution: null, openBoletoCount: 0 })).toBe("resolved");
+  });
+
+  it("keeps sem retorno in awaiting return until the scheduler finishes it", () => {
+    expect(classifyFinancialHandoff({
+      handoffAcceptedAt: "2026-08-10T10:00:00Z",
+      resolution: { destination: "sem_retorno", recordedAt: "2026-08-10T11:00:00Z", followupStatus: "scheduled" },
+      openBoletoCount: 1,
+    })).toBe("awaiting_return");
+  });
+
+  it("shows an accepted handoff as human work when it is newer than the last resolution", () => {
+    expect(classifyFinancialHandoff({
+      handoffAcceptedAt: "2026-08-10T12:00:00Z",
+      resolution: { destination: "devolver_ao_bot", recordedAt: "2026-08-10T11:00:00Z", followupStatus: "not_applicable" },
+      openBoletoCount: 1,
+    })).toBe("human");
   });
 });
