@@ -1,0 +1,721 @@
+/* Operational Wall — Amazon Logistics-inspired design system */
+/* ARCIL brand colors + real-time monitoring aesthetic */
+
+:root {
+  --op-graphite: #161719;
+  --op-cabinet: #151618;
+  --op-charcoal: #202123;
+  --op-ivory: #f0ede4;
+  --op-blue: #4ea7ff;
+  --op-green: #70d8a1;
+  --op-amber: #ffc14c;
+  --op-red: #ff7465;
+  --op-violet: #c29bff;
+  --op-cyan: #67d7e6;
+
+  --op-bg-base: var(--op-cabinet);
+  --op-surface: #1e2128;
+  --op-inset: #0f1217;
+  --op-border: #2a3139;
+  --op-text-primary: var(--op-ivory);
+  --op-text-secondary: #a8b3c1;
+  --op-muted: #6b7684;
+  --op-queue-text: #8b95a6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.operational-wall {
+  min-height: 100vh;
+  overflow-y: auto;
+  background: var(--op-graphite);
+  color: var(--op-ivory);
+  font-family: var(--op-font-sans);
+  padding: 0;
+}
+
+.operational-wall.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.error-state {
+  text-align: center;
+  color: var(--op-red);
+}
+
+.error-state svg {
+  margin-bottom: 16px;
+}
+
+/* ====================================================================
+   HEADER
+   ==================================================================== */
+
+.op-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 28px;
+  border-bottom: 1px solid var(--op-border);
+  background: linear-gradient(180deg, var(--op-header-black) 0%, var(--op-graphite) 100%);
+}
+
+.op-header-left {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex: 1;
+}
+
+.op-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.op-brand-text {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--op-blue);
+  font-family: var(--op-font-mono);
+}
+
+.op-brand-sub {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+  font-family: var(--op-font-mono);
+}
+
+.op-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.op-headline h1 {
+  margin: 0;
+  font-size: clamp(24px, 2.5vw, 36px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--op-ivory);
+  line-height: 1.1;
+}
+
+.op-headline p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--op-queue-text);
+  line-height: 1.4;
+}
+
+.op-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.op-time {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.op-time time {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--op-font-mono);
+  color: var(--op-ivory);
+  letter-spacing: -0.03em;
+}
+
+.op-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: var(--op-font-mono);
+}
+
+.op-status-live {
+  color: var(--op-blue);
+}
+
+.op-status-paused {
+  color: var(--op-amber);
+}
+
+.op-status-connecting {
+  color: var(--op-muted);
+}
+
+.op-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: op-pulse 2s ease-in-out infinite;
+}
+
+.op-status-connecting .op-dot {
+  animation: op-pulse-slow 3s ease-in-out infinite;
+}
+
+@keyframes op-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes op-pulse-slow {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.1; }
+}
+
+.op-refresh {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--op-border);
+  background: var(--op-cabinet);
+  color: var(--op-queue-text);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.op-refresh:hover {
+  border-color: var(--op-blue);
+  color: var(--op-blue);
+  background: var(--op-surface);
+}
+
+/* ====================================================================
+   LOADING STATE
+   ==================================================================== */
+
+.op-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 300px;
+  color: var(--op-muted);
+}
+
+.op-spinner {
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--op-border);
+  border-top-color: var(--op-blue);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ====================================================================
+   HERO SECTION
+   ==================================================================== */
+
+.op-hero {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 1px;
+  margin: 24px 28px;
+  border: 1px solid var(--op-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--op-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.op-hero-copy {
+  padding: 28px 32px;
+  background: var(--op-surface);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.op-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--op-blue);
+  font-family: var(--op-font-mono);
+  margin-bottom: 12px;
+}
+
+.op-hero-text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--op-queue-text);
+  margin: 0 0 16px;
+}
+
+.op-hero-signal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--op-queue-text);
+  font-family: var(--op-font-mono);
+}
+
+.op-signal-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--op-muted);
+}
+
+.op-signal-dot.live {
+  background: var(--op-green);
+  animation: op-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 8px rgba(112, 216, 161, 0.3);
+}
+
+.op-signal-dot.paused {
+  background: var(--op-amber);
+}
+
+.op-hero-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--op-border);
+}
+
+/* ====================================================================
+   METRIC BOX
+   ==================================================================== */
+
+.op-metric-box {
+  padding: 20px 16px;
+  background: var(--op-inset);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 100px;
+}
+
+.op-metric-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+  font-family: var(--op-font-mono);
+  margin-bottom: 8px;
+}
+
+.op-metric-value {
+  font-size: clamp(22px, 2.2vw, 36px);
+  font-weight: 700;
+  color: var(--op-blue);
+  font-family: var(--op-font-mono);
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+/* ====================================================================
+   MAIN GRID (Agents, Queue, Inventory)
+   ==================================================================== */
+
+.op-main-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 0 28px 16px;
+}
+
+.op-panel {
+  border: 1px solid var(--op-border);
+  border-radius: 12px;
+  background: var(--op-surface);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.op-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--op-border);
+}
+
+.op-panel-header h2 {
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--op-ivory);
+}
+
+.op-panel-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+  font-family: var(--op-font-mono);
+}
+
+.op-panel-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--op-blue);
+  font-family: var(--op-font-mono);
+  min-width: 32px;
+  text-align: right;
+}
+
+/* ====================================================================
+   AGENTS LIST
+   ==================================================================== */
+
+.op-agents-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.op-agent-row {
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--op-gridline);
+  transition: background 0.2s ease;
+}
+
+.op-agent-row:hover {
+  background: var(--op-inset);
+}
+
+.op-agent-row[data-active="false"] {
+  opacity: 0.5;
+}
+
+.op-agent-signal {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--op-muted);
+  transition: all 0.2s ease;
+}
+
+.op-agent-signal.active {
+  background: var(--op-green);
+  box-shadow: 0 0 8px rgba(112, 216, 161, 0.4);
+}
+
+.op-agent-signal.inactive {
+  background: var(--op-amber);
+  opacity: 0.5;
+}
+
+.op-agent-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.op-agent-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--op-ivory);
+}
+
+.op-agent-segment {
+  font-size: 9px;
+  color: var(--op-muted);
+  font-family: var(--op-font-mono);
+}
+
+.op-agent-metrics {
+  display: flex;
+  gap: 12px;
+}
+
+.op-metric-mini {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.op-metric-mini span:first-child {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--op-blue);
+  font-family: var(--op-font-mono);
+}
+
+.op-metric-mini .label {
+  font-size: 8px;
+  color: var(--op-muted);
+  font-family: var(--op-font-mono);
+}
+
+/* ====================================================================
+   QUEUE
+   ==================================================================== */
+
+.op-queue-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.op-queue-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--op-gridline);
+  transition: background 0.2s ease;
+}
+
+.op-queue-row:hover {
+  background: var(--op-inset);
+}
+
+.op-queue-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--op-queue-text);
+}
+
+.op-queue-count {
+  min-width: 32px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  font-family: var(--op-font-mono);
+}
+
+.severity-info {
+  background: rgba(70, 162, 255, 0.15);
+  color: var(--op-blue);
+}
+
+.severity-warning {
+  background: rgba(255, 193, 76, 0.15);
+  color: var(--op-amber);
+  animation: op-pulse 2s ease-in-out infinite;
+}
+
+.severity-danger {
+  background: rgba(255, 116, 101, 0.15);
+  color: var(--op-red);
+  animation: op-pulse 2s ease-in-out infinite;
+}
+
+/* ====================================================================
+   INVENTORY
+   ==================================================================== */
+
+.op-inventory-status {
+  padding: 20px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.op-sync-badge {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--op-font-mono);
+}
+
+.op-sync-badge.synced {
+  background: rgba(112, 216, 161, 0.1);
+  color: var(--op-green);
+  border: 1px solid rgba(112, 216, 161, 0.3);
+}
+
+.op-sync-badge.pending {
+  background: rgba(255, 193, 76, 0.1);
+  color: var(--op-amber);
+  border: 1px solid rgba(255, 193, 76, 0.3);
+  animation: op-pulse 2s ease-in-out infinite;
+}
+
+/* ====================================================================
+   BOTTOM GRID (Events + Ledger)
+   ==================================================================== */
+
+.op-bottom-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  margin: 0 28px 28px;
+}
+
+.op-events-panel {
+  min-height: 200px;
+}
+
+.op-events-list {
+  padding: 20px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.op-empty {
+  color: var(--op-muted);
+  font-size: 11px;
+  margin: 0;
+  text-align: center;
+}
+
+/* ====================================================================
+   LEDGER (Summary)
+   ==================================================================== */
+
+.op-ledger {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  border: 1px solid var(--op-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--op-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.op-ledger-cell {
+  padding: 16px 18px;
+  background: var(--op-inset);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 90px;
+}
+
+.op-ledger-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+  font-family: var(--op-font-mono);
+  margin-bottom: 8px;
+}
+
+.op-ledger-value {
+  font-size: clamp(16px, 1.8vw, 26px);
+  font-weight: 700;
+  color: var(--op-blue);
+  font-family: var(--op-font-mono);
+  letter-spacing: -0.02em;
+}
+
+/* ====================================================================
+   RESPONSIVE
+   ==================================================================== */
+
+@media (max-width: 1200px) {
+  .op-main-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .op-agents-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .op-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .op-header-left {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .op-header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .op-hero {
+    grid-template-columns: 1fr;
+    margin: 16px 16px;
+  }
+
+  .op-main-grid {
+    grid-template-columns: 1fr;
+    margin: 0 16px 12px;
+  }
+
+  .op-bottom-grid {
+    grid-template-columns: 1fr;
+    margin: 0 16px 16px;
+  }
+
+  .op-ledger {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ====================================================================
+   TV MODE
+   ==================================================================== */
+
+@media (min-width: 1920px) {
+  .operational-wall {
+    font-size: 18px;
+  }
+
+  .op-headline h1 {
+    font-size: 48px;
+  }
+
+  .op-metric-value {
+    font-size: 44px;
+  }
+
+  .op-ledger-value {
+    font-size: 32px;
+  }
+}

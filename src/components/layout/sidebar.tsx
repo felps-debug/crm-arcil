@@ -28,11 +28,12 @@ import { getUrgentFollowupsCount } from "@/lib/supabase/queries";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/", label: "Dashboard", icon: Gauge },
-  { href: "/leads", label: "Leads", icon: Users, badge: true },
-  { href: "/agentes", label: "Agentes IA", icon: Bot },
+  { href: "/operacoes", label: "Operações", icon: Gauge },
+  { href: "/operacoes/leads", label: "Leads", icon: Users, badge: true },
+  { href: "/operacoes/agentes", label: "Agentes IA", icon: Bot },
+  { href: "/operacoes/cobranca", label: "Cobranças", icon: CreditCard, perm: "manage_cobranca" },
+  { href: "/", label: "Dashboard (Old)", icon: Gauge },
   { href: "/demanda-estoque", label: "Demanda & Estoque", icon: Boxes, perm: "manage_estoque" },
-  { href: "/cobranca", label: "Cobranças", icon: CreditCard, perm: "manage_cobranca" },
   { href: "/chatbot", label: "Gerador de Imagem", icon: ImageIcon, perm: "manage_gerador_imagem" },
   { href: "/atendimento", label: "Atendimento", icon: Headset, perm: "manage_atendimento" },
   { href: "/cerebro", label: "Cerebro Arcil", icon: Brain },
