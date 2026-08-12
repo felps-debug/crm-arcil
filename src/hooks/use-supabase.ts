@@ -23,16 +23,24 @@ export function useSupabase<T>(
   const [error, setError] = useState<string | null>(null);
 
   const fetch = useCallback(async () => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
     try {
       setLoading(true);
       setError(null);
-      const result = await queryFn();
+      const result = await Promise.race([
+        queryFn(),
+        new Promise<never>((_, reject) => {
+          controller.signal.addEventListener("abort", () => reject(new Error("A consulta demorou mais que 15 segundos.")), { once: true });
+        }),
+      ]);
       setData(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao carregar dados";
       setError(message);
       console.error("[useSupabase]", message);
     } finally {
+      window.clearTimeout(timeout);
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -20,7 +20,10 @@ export function useApi<T>(url: string | null) {
       setError(null);
     });
 
-    fetch(url, { cache: "no-store" })
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+
+    fetch(url, { cache: "no-store", signal: controller.signal })
       .then(async (res) => {
         const body = await res.json().catch(() => null);
         if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
@@ -32,15 +35,20 @@ export function useApi<T>(url: string | null) {
       })
       .catch((err) => {
         if (!alive) return;
-        setError(err instanceof Error ? err.message : "Erro ao carregar dados");
+        setError(err instanceof DOMException && err.name === "AbortError"
+          ? "A consulta demorou mais que 15 segundos. Tente atualizar."
+          : err instanceof Error ? err.message : "Erro ao carregar dados");
       })
       .finally(() => {
+        window.clearTimeout(timeout);
         if (!alive) return;
         setLoading(false);
       });
 
     return () => {
       alive = false;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
   }, [url]);
 
