@@ -6,10 +6,13 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Providers } from "@/components/layout/providers";
 import { MainWrapper } from "@/components/layout/main-wrapper";
 
-// Mesma fonte usada no site institucional da Arcil (arcil.com.br)
+// Mesma fonte usada no site institucional da Arcil (arcil.com.br).
+// Sem `weight`: Montserrat é variable font e o Google deixou de servir os
+// arquivos de instância estática (`.../JTU4jIg1...woff2` responde 404), o que
+// derrubava o build e fazia toda rota devolver 500. O eixo variável cobre
+// 100–900, então os pesos usados na UI continuam disponíveis.
 const montserrat = Montserrat({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
   variable: "--font-sans",
   display: "swap",
 });

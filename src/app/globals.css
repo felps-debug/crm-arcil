@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* O tema é escolhido pelo usuário e vive na classe `.dark` do <html> (ver
+   use-theme.tsx). Sem isto, o `dark:` do Tailwind v4 cai no padrão
+   `prefers-color-scheme` e passa a obedecer ao sistema operacional: quem
+   estivesse com SO escuro e app no claro mantinha os gradientes e o brilho
+   escuros dos botões por cima da interface clara. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ══════════════════════════════════════════════════════════════════
    ARCIL CRM — Design System (Apple-inspired)
    Typography: Montserrat (UI — mesma fonte do site arcil.com.br) + IBM Plex Mono (dados)
@@ -386,5 +393,13 @@ body {
 
 .console-grid-bg {
   background: var(--bg-base);
+}
+
+/* Deslocamento do conteúdo pelo trilho lateral. A largura chega por
+   `--rail-w` (definida inline no MainWrapper, que sabe se está recolhido);
+   a media query garante que nada disso vale no mobile, onde o trilho é
+   topbar e o conteúdo ocupa a largura inteira. */
+@media (min-width: 768px) {
+  .rail-offset { margin-left: var(--rail-w, var(--sidebar-w-open)); }
 }
 

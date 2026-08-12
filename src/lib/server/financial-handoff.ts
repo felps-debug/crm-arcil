@@ -33,6 +33,10 @@ export type FinancialBoardItem = {
   cobrancaLogId: string | null;
   openBoletoCount: number;
   openAmount: number;
+  /** Somatório dos boletos com decisão viva "pago". O valor não vive na tabela
+   *  de decisões — vem do snapshot do disparo, cruzado por empresa+documento. */
+  paidAmount: number;
+  paidBoletoCount: number;
   handoffAcceptedAt: string | null;
   column: FinancialBoardColumn;
   followupAt: string | null;

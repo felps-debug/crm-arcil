@@ -79,7 +79,7 @@ export function ConsoleMetric({
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{label}</p>
           <div className="mt-5 font-data text-[30px] font-bold leading-none text-[var(--text-primary)]">{value}</div>
-          {helper && <div className="mt-2 text-[11px] font-semibold text-emerald-400">{helper}</div>}
+          {helper && <div className="mt-2 text-[11px] font-semibold text-[var(--emerald)]">{helper}</div>}
         </div>
         {Icon && (
           <div className={cn("grid h-8 w-8 place-items-center rounded-[6px] border", tones[tone])}>
@@ -98,12 +98,15 @@ export function ConsoleStatus({
   children: React.ReactNode;
   tone?: "green" | "amber" | "red" | "blue" | "violet" | "slate";
 }) {
+  // O texto usa as variáveis de acento em vez de `text-*-300` fixo: o tema claro
+  // troca essas variáveis por tons escuros. Com a cor fixa, todo selo ficava em
+  // ~1.9:1 sobre o fundo branco — ilegível justamente onde ele carrega o estado.
   const tones = {
-    green: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300",
-    amber: "border-amber-500/25 bg-amber-500/10 text-amber-300",
-    red: "border-red-500/25 bg-red-500/10 text-red-300",
-    blue: "border-blue-500/25 bg-blue-500/10 text-blue-300",
-    violet: "border-violet-500/25 bg-violet-500/10 text-violet-300",
+    green: "border-emerald-500/25 bg-emerald-500/10 text-[var(--emerald)]",
+    amber: "border-amber-500/25 bg-amber-500/10 text-[var(--amber)]",
+    red: "border-red-500/25 bg-red-500/10 text-[var(--red)]",
+    blue: "border-blue-500/25 bg-blue-500/10 text-[var(--blue)]",
+    violet: "border-violet-500/25 bg-violet-500/10 text-[var(--violet)]",
     slate: "border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text-secondary)]",
   };
   return (

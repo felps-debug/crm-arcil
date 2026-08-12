@@ -329,35 +329,137 @@ function parseSnapshotBoletos(metadata: Record<string, unknown> | null) {
   });
 }
 
+/**
+ * Janela de reuso das tabelas do núcleo.
+ *
+ * Uma carga do dashboard dispara quatro chamadas em paralelo (`summary`,
+ * `pending-center`, `agents/summary`, `inventory/summary`) e três delas passam
+ * por aqui — sem isto, cada uma refazia as sete varreduras, 21 no total, para
+ * responder o mesmo instante. Pior: o realtime chama refresh a cada linha
+ * alterada, então um lote do n8n multiplicava tudo de novo.
+ *
+ * Cinco segundos é curto o bastante para o painel continuar parecendo vivo (o
+ * gatilho da atualização segue sendo o evento do Postgres, não um relógio) e
+ * longo o bastante para que as chamadas de uma mesma carga compartilhem uma
+ * única ida ao banco.
+ */
+const CORE_TTL_MS = 5_000;
+
+type CoreCacheEntry = { at: number; rows: Promise<unknown[]> };
+const coreCache = new Map<string, CoreCacheEntry>();
+
+/**
+ * Guarda a *promise*, não o resultado. As três rotas do dashboard saem juntas,
+ * antes de qualquer uma terminar; guardando só o valor pronto elas ainda
+ * abririam três consultas idênticas em voo. Compartilhando a promise, a
+ * primeira busca e as outras duas esperam nela.
+ */
+function cachedTable<T>(key: string, run: () => PromiseLike<{ data: unknown; error: unknown }>): Promise<T[]> {
+  const now = Date.now();
+  const hit = coreCache.get(key);
+  if (hit && now - hit.at < CORE_TTL_MS) return hit.rows as Promise<T[]>;
+
+  const rows = Promise.resolve(run()).then((res) => {
+    if (res.error) throw res.error;
+    return (res.data ?? []) as unknown[];
+  });
+
+  // Uma falha não pode ficar memorizada por 5s: some com a entrada para que a
+  // próxima chamada tente de novo em vez de herdar a promise rejeitada.
+  rows.catch(() => coreCache.delete(key));
+  coreCache.set(key, { at: now, rows });
+  return rows as Promise<T[]>;
+}
+
+const coreTables = {
+  leads: () =>
+    cachedTable<LeadRow>("leads", () =>
+      createAdminClient().from("leads").select(LEAD_SELECT).order("created_at", { ascending: false })
+    ),
+  followups: () =>
+    cachedTable<FollowupRow>("followups", () =>
+      createAdminClient().from("followups").select("*").order("created_at", { ascending: false })
+    ),
+  conversations: () =>
+    cachedTable<ConversationRow>("conversations", () =>
+      createAdminClient().from("conversations").select("*").order("started_at", { ascending: false })
+    ),
+  vendors: () =>
+    cachedTable<VendorRow>("vendors", () =>
+      createAdminClient().from("vendors").select("*").order("created_at", { ascending: true })
+    ),
+  cobrancas: () =>
+    cachedTable<CobrancaRow>("cobranca_log", () =>
+      createAdminClient().from("cobranca_log").select("*").order("created_at", { ascending: false })
+    ),
+  quotes: () =>
+    cachedTable<QuoteRow>("quotes", () =>
+      createAdminClient().from("quotes").select("*").order("created_at", { ascending: false })
+    ),
+  sales: () =>
+    cachedTable<SaleRow>("sales", () =>
+      createAdminClient().from("sales").select("*").order("confirmed_at", { ascending: false })
+    ),
+  /** Só decisões vivas: uma correção supersede a anterior, e somar as duas
+   *  contaria o mesmo boleto duas vezes no total recebido. */
+  handoffDecisions: () =>
+    cachedTable<{ empresa: string | null; documento: string | null; status: string | null; cobranca_log_id: string | null }>(
+      "cobranca_handoff_boleto_decisions",
+      () =>
+        createAdminClient()
+          .from("cobranca_handoff_boleto_decisions")
+          .select("empresa,documento,status,cobranca_log_id")
+          .is("superseded_at", null)
+    ),
+};
+
+/**
+ * Quanto já entrou de cobrança. O valor de cada boleto vive no snapshot do
+ * disparo (`cobranca_log.metadata`), não na tabela de decisões, então o
+ * cruzamento é por disparo + empresa + documento.
+ */
+function sumReceived(
+  cobrancas: CobrancaRow[],
+  decisions: { empresa: string | null; documento: string | null; status: string | null; cobranca_log_id: string | null }[]
+) {
+  const paidKeys = new Set(
+    decisions
+      .filter((decision) => decision.status === "pago" && decision.cobranca_log_id && decision.empresa && decision.documento)
+      .map((decision) => `${decision.cobranca_log_id} ${decision.empresa} ${decision.documento}`)
+  );
+  if (!paidKeys.size) return 0;
+
+  return cobrancas.reduce((total, cobranca) => {
+    const paid = parseSnapshotBoletos(cobranca.metadata).filter((boleto) =>
+      paidKeys.has(`${cobranca.id} ${boleto.empresa} ${boleto.documento}`)
+    );
+    return total + paid.reduce((sum, boleto) => sum + boleto.valor, 0);
+  }, 0);
+}
+
 async function fetchCore() {
-  const supabase = createAdminClient();
-  const [leadsRes, followupsRes, conversationsRes, vendorsRes, cobrancaRes, quotesRes, salesRes] = await Promise.all([
-    supabase.from("leads").select(LEAD_SELECT).order("created_at", { ascending: false }),
-    supabase.from("followups").select("*").order("created_at", { ascending: false }),
-    supabase.from("conversations").select("*").order("started_at", { ascending: false }),
-    supabase.from("vendors").select("*").order("created_at", { ascending: true }),
-    supabase.from("cobranca_log").select("*").order("created_at", { ascending: false }),
-    supabase.from("quotes").select("*").order("created_at", { ascending: false }),
-    supabase.from("sales").select("*").order("confirmed_at", { ascending: false }),
+  const [leads, followups, conversations, vendors, cobrancas, quotes, sales] = await Promise.all([
+    coreTables.leads(),
+    coreTables.followups(),
+    coreTables.conversations(),
+    coreTables.vendors(),
+    coreTables.cobrancas(),
+    coreTables.quotes(),
+    coreTables.sales(),
   ]);
 
-  for (const res of [leadsRes, followupsRes, conversationsRes, vendorsRes, cobrancaRes, quotesRes, salesRes]) {
-    if (res.error) throw res.error;
-  }
-
-  return {
-    leads: (leadsRes.data ?? []) as LeadRow[],
-    followups: (followupsRes.data ?? []) as FollowupRow[],
-    conversations: (conversationsRes.data ?? []) as ConversationRow[],
-    vendors: (vendorsRes.data ?? []) as VendorRow[],
-    cobrancas: (cobrancaRes.data ?? []) as CobrancaRow[],
-    quotes: (quotesRes.data ?? []) as QuoteRow[],
-    sales: (salesRes.data ?? []) as SaleRow[],
-  };
+  return { leads, followups, conversations, vendors, cobrancas, quotes, sales };
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
-  const { leads, followups, vendors, quotes, sales } = await fetchCore();
+  const [{ leads, followups, vendors, quotes, sales, cobrancas }, handoffDecisions] = await Promise.all([
+    fetchCore(),
+    coreTables.handoffDecisions(),
+  ]);
+  const receivedRevenue = sumReceived(cobrancas, handoffDecisions);
+  const openCollections = cobrancas
+    .filter((cobranca) => !cobranca.pagamento_confirmado)
+    .reduce((sum, cobranca) => sum + parseSnapshotBoletos(cobranca.metadata).reduce((total, boleto) => total + boleto.valor, 0), 0);
   const { from, to, previousFrom } = previousWindow();
   const sentFollowups = followups.filter((f) => f.followup_sent);
   const answeredFollowups = sentFollowups.filter((f) => f.respondeu);
@@ -411,6 +513,31 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
         previous: null,
         tooltip: "Soma dos valores ofertados em orçamentos registrados.",
         drilldown: { href: "/leads", filters: { hasQuotes: "true" } },
+      }),
+      // Dinheiro que entrou de verdade, vindo das baixas de boleto no
+      // atendimento financeiro. É o número que o Paulo procura primeiro, e até
+      // aqui o painel só sabia dizer quanto FALTAVA receber.
+      metric({
+        id: "received_revenue",
+        label: "Recebido",
+        value: receivedRevenue,
+        unit: "BRL",
+        formula: "sum(boletos com decisão viva status = pago)",
+        period: allTimePeriod(),
+        previous: null,
+        tooltip: "Boletos baixados como pagos no atendimento financeiro.",
+        drilldown: { href: "/cobranca", filters: {} },
+      }),
+      metric({
+        id: "open_collections",
+        label: "Em aberto",
+        value: openCollections,
+        unit: "BRL",
+        formula: "sum(boletos de cobranças sem pagamento confirmado)",
+        period: allTimePeriod(),
+        previous: null,
+        tooltip: "Total ainda em cobrança, somando os boletos dos disparos não quitados.",
+        drilldown: { href: "/cobranca", filters: {} },
       }),
       metric({
         id: "followup_response_rate",
@@ -577,13 +704,20 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
         drilldown: { href: "/demanda-estoque", filters: {} },
       },
       {
+        // `estoque` é null nas 3.077 linhas de produto — o ERP não sincroniza
+        // quantidade. Com `(p.estoque ?? 0) <= 0` cada null virava 0 e TODO o
+        // catálogo entrava na fila: 2.653 "produtos sem estoque" ao lado de uma
+        // linha da agenda dizendo "aguardando saldo do ERP", e inflando o total
+        // de "filas abertas" de 6 pendências reais para 2.659. Contar só onde há
+        // dado é o mesmo critério que getInventorySummary já aplica.
         id: "out_of_stock_products",
         label: "Produtos sem estoque",
-        count: productRows.filter((p) => (p.estoque ?? 0) <= 0).length,
+        count: productRows.filter((p) => p.estoque != null && p.estoque <= 0).length,
         severity: "warning",
-        formula: "count(products_* where estoque <= 0)",
+        formula: "count(products_* where estoque is not null and estoque <= 0)",
         period: allTimePeriod(),
-        tooltip: "Produtos das tabelas segmentadas com estoque zerado ou negativo.",
+        tooltip:
+          "Produtos com saldo zerado ou negativo. Enquanto o ERP não enviar quantidade, fica em zero — a demanda não atendida aparece em Demanda & Estoque.",
         drilldown: { href: "/demanda-estoque", filters: { stock: "out" } },
       },
     ],
@@ -709,6 +843,17 @@ export async function getFinancialHandoffBoard(): Promise<FinancialBoardItem[]> 
     const snapshot = latestSnapshotByPhone.get(tail) ?? null;
     const boletos = positionByPhone.get(tail) ?? [];
     const resolution = latestResolutionByLead.get(lead.id) ?? null;
+
+    // Quanto já entrou. A tabela de decisões guarda empresa+documento+status mas
+    // não o valor, então o valor vem do snapshot do disparo; o cruzamento é por
+    // empresa+documento. Só decisões vivas contam (a query já filtra
+    // superseded_at is null), senão cada correção somaria de novo.
+    const leadDecisions = decisionsByLead.get(lead.id) ?? [];
+    const paidKeys = new Set(
+      leadDecisions.filter((decision) => decision.status === "pago").map((decision) => `${decision.empresa} ${decision.documento}`)
+    );
+    const paidBoletos = parseSnapshotBoletos(snapshot?.metadata ?? null)
+      .filter((boleto) => paidKeys.has(`${boleto.empresa} ${boleto.documento}`));
     const column = classifyFinancialHandoff({
       handoffAcceptedAt: lead.handoff_accepted_at ?? null,
       resolution: resolution ? { destination: resolution.destination, recordedAt: resolution.recorded_at, followupStatus: resolution.followup_status } : null,
@@ -721,6 +866,8 @@ export async function getFinancialHandoffBoard(): Promise<FinancialBoardItem[]> 
       cobrancaLogId: snapshot?.id ?? null,
       openBoletoCount: boletos.length,
       openAmount: boletos.reduce((sum, boleto) => sum + boleto.valor, 0),
+      paidAmount: paidBoletos.reduce((sum, boleto) => sum + boleto.valor, 0),
+      paidBoletoCount: paidBoletos.length,
       handoffAcceptedAt: lead.handoff_accepted_at ?? null,
       column,
       followupAt: resolution?.followup_at ?? null,
@@ -974,6 +1121,71 @@ export async function getActivityLog(limit = 8): Promise<ActivityLogResponse> {
   };
 }
 
+export type LeadConversationsResponse = {
+  generatedAt: string;
+  leadId: string;
+  leadName: string | null;
+  leadPhone: string | null;
+  conversations: {
+    id: string;
+    channel: string | null;
+    status: string | null;
+    startedAt: string | null;
+    messages: { id: string; role: "user" | "assistant" | "system"; content: string; createdAt: string | null }[];
+  }[];
+};
+
+/**
+ * O que o agente conversou com aquele número. Usado no atendimento financeiro:
+ * antes de baixar um boleto ou devolver ao bot, quem decide precisa ver o que o
+ * cliente respondeu — senão a decisão é tomada só pelo valor na tela.
+ */
+export async function getLeadConversations(leadId: string): Promise<LeadConversationsResponse | null> {
+  const supabase = createAdminClient();
+  const { leads } = await fetchCore();
+  const lead = leads.find((l) => l.id === leadId);
+  if (!lead) return null;
+
+  const { data: conversationsData, error: conversationsError } = await supabase
+    .from("conversations")
+    .select("id,channel,status,started_at")
+    .eq("lead_id", leadId)
+    .order("started_at", { ascending: false });
+  if (conversationsError) throw conversationsError;
+
+  const conversationRows = conversationsData ?? [];
+  const conversationIds = conversationRows.map((conversation) => conversation.id);
+  const { data: messagesData, error: messagesError } = conversationIds.length
+    ? await supabase
+        .from("messages")
+        .select("id,conversation_id,role,content,created_at")
+        .in("conversation_id", conversationIds)
+        .order("created_at", { ascending: true })
+    : { data: [], error: null };
+  if (messagesError) throw messagesError;
+
+  return {
+    generatedAt: nowIso(),
+    leadId: lead.id,
+    leadName: lead.name ?? null,
+    leadPhone: lead.wa_phone ?? null,
+    conversations: conversationRows.map((conversation) => ({
+      id: conversation.id,
+      channel: conversation.channel,
+      status: conversation.status,
+      startedAt: conversation.started_at,
+      messages: (messagesData ?? [])
+        .filter((message) => message.conversation_id === conversation.id)
+        .map((message) => ({
+          id: message.id,
+          role: message.role as "user" | "assistant" | "system",
+          content: message.content,
+          createdAt: message.created_at,
+        })),
+    })),
+  };
+}
+
 export async function getVendorConversations(vendorId: string): Promise<AgentConversationsResponse | null> {
   const supabase = createAdminClient();
   const { vendors, leads } = await fetchCore();
@@ -1028,7 +1240,29 @@ export async function getVendorConversations(vendorId: string): Promise<AgentCon
   };
 }
 
+/**
+ * O catálogo tem 3.077 linhas nas quatro tabelas e vem de uma carga do ERP —
+ * muda algumas vezes por dia, não a cada requisição. Sem isto, o dashboard
+ * puxava as 3.077 linhas só para saber se o estoque está sincronizado (ele pede
+ * `limit=1`, mas o corte acontece depois da busca), e a tela de estoque
+ * refazia tudo a cada tecla digitada na busca, que também é filtrada aqui.
+ *
+ * Um minuto é bem menor que o intervalo entre cargas do ERP.
+ */
+const PRODUCTS_TTL_MS = 60_000;
+let productsCache: { at: number; rows: Promise<InventoryProduct[]> } | undefined;
+
 async function fetchProducts(): Promise<InventoryProduct[]> {
+  const now = Date.now();
+  if (productsCache && now - productsCache.at < PRODUCTS_TTL_MS) return productsCache.rows;
+
+  const rows = loadProducts();
+  rows.catch(() => { productsCache = undefined; });
+  productsCache = { at: now, rows };
+  return rows;
+}
+
+async function loadProducts(): Promise<InventoryProduct[]> {
   const supabase = createAdminClient();
   const [consumerRes, resellerRes, installerRes, builderRes] = await Promise.all([
     supabase.from("products_consumer").select("id,codigo_erp,nome,marca,btu,voltagem,preco_venda,estoque").order("nome"),

@@ -133,10 +133,61 @@ export default function LoginPage() {
   }
 
   return (
-    <div
-      className="min-h-screen w-full flex items-center justify-center"
-      style={{ background: "#030813" }}
-    >
+    <div className="min-h-screen w-full lg:grid lg:grid-cols-[1.05fr_1fr]" style={{ background: "#030813" }}>
+      {/* Painel da marca. Some abaixo de `lg`: num celular ele empurraria o
+          formulário para fora da primeira tela, e entrar é o que importa ali. */}
+      <aside
+        className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex"
+        style={{ background: "linear-gradient(155deg, #172959 0%, #0f1c3d 55%, #0a1229 100%)" }}
+      >
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px)",
+            backgroundSize: "72px 72px",
+          }}
+        />
+        <div
+          className="pointer-events-none absolute -left-24 -top-24 h-[420px] w-[420px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(78,167,255,0.18) 0%, transparent 70%)" }}
+        />
+
+        <Image
+          src="/logo-arcil-full.png"
+          alt="Grupo Arcil"
+          width={420}
+          height={132}
+          priority
+          className="relative z-10 h-auto w-[240px] object-contain"
+        />
+
+        <div className="relative z-10 max-w-[26rem]">
+          <h1 className="text-[34px] font-extrabold leading-[1.12] tracking-tight text-white">
+            A operação inteira em uma tela só.
+          </h1>
+          <p className="mt-4 text-[14px] leading-relaxed text-[#a8bfd4]">
+            Leads, agentes de IA, cobranças, atendimento e estoque no mesmo lugar — atualizando em tempo real conforme a
+            operação acontece.
+          </p>
+          <ul className="mt-8 space-y-3">
+            {["Agentes de IA monitorados por segmento", "Cobrança acompanhada boleto a boleto", "Painel de TV para a visão do dia"].map(
+              (line) => (
+                <li key={line} className="flex items-center gap-3 text-[13px] font-medium text-[#d7e4f1]">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "#4ea7ff" }} />
+                  {line}
+                </li>
+              )
+            )}
+          </ul>
+        </div>
+
+        <p className="relative z-10 text-[10px] font-bold uppercase tracking-[0.28em]" style={{ color: "rgba(168,191,212,0.45)" }}>
+          Fluxo · Automações com IA
+        </p>
+      </aside>
+
+      <div className="relative flex w-full items-center justify-center py-16 lg:py-0">
       {/* Subtle top spotlight — enterprise restraint, not consumer glow */}
       <div
         className="fixed top-0 left-1/2 -translate-x-1/2 pointer-events-none"
@@ -448,6 +499,7 @@ export default function LoginPage() {
           </div>
         </div>
       </motion.div>
+      </div>
     </div>
   );
 }

@@ -508,7 +508,7 @@ function LeadPanel({
         <MiniStat label="Imagens" value={detail.summary.generatedImages} />
       </div>
 
-      <FinancialHandoffCard detail={detail} onSaved={onSaved} />
+      <FinancialHandoffCard detail={detail} />
 
       <div className="mt-5">
         <h3 className="mb-3 text-[12px] font-bold text-[var(--text-primary)]">Histórico recente</h3>
