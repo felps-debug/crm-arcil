@@ -54,6 +54,10 @@ const STEPS: Step[] = [
   { key: "ambiente", question: "Qual o ambiente da instalacao?", type: "text" },
   { key: "tipo_parede", question: "Qual o tipo da parede?", type: "choice", options: ["Alvenaria", "Drywall", "Outro"] },
   { key: "foto", question: "Envie uma foto da parede", type: "file" },
+  // Sem "Outro": a opção não descrevia geometria nenhuma, e o gerador de imagem
+  // precisa saber onde o equipamento se instala. Estes quatro são a linha atual.
+  { key: "tipo_equipamento", question: "Qual o tipo do ar-condicionado?", type: "choice", options: ["Split Hi-Wall", "Cassete", "Piso-teto", "Dutado"] },
+  { key: "marca", question: "Qual a marca do ar-condicionado?", type: "text" },
   { key: "modelo", question: "Qual o modelo do ar-condicionado?", type: "text" },
   { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
   { key: "ponto_eletrico", question: "Já existe ponto elétrico na parede?", type: "choice", options: ["Sim", "Não"] },
@@ -88,6 +92,7 @@ function ChatbotPageInner() {
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+  const [revisionPrompt, setRevisionPrompt] = useState("");
   const [installationNotes, setInstallationNotes] = useState<string | null>(null);
   const [installationNotesSource, setInstallationNotesSource] = useState<"manual" | "ia" | null>(null);
   const [dividerPct, setDividerPct] = useState(50);
@@ -153,13 +158,19 @@ function ChatbotPageInner() {
   }, [wallImageUrl]);
 
   const requestGeneration = useCallback(
-    async (finalAnswers: Record<string, string>) => {
+    async (finalAnswers: Record<string, string>, revision?: { referenceImageUrl?: string; revisionPrompt?: string }) => {
       setGenerating(true);
       try {
         const res = await fetch("/api/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: buildAnswersForApi(finalAnswers), imageUrl: wallImageUrl, answers: finalAnswers }),
+          body: JSON.stringify({
+            messages: buildAnswersForApi(finalAnswers),
+            imageUrl: wallImageUrl,
+            answers: finalAnswers,
+            referenceImageUrl: revision?.referenceImageUrl,
+            revisionPrompt: revision?.revisionPrompt,
+          }),
         });
         const data = await res.json();
         if (!res.ok || data.error) {
@@ -170,6 +181,7 @@ function ChatbotPageInner() {
         setInstallationNotes(data.installationNotes ?? null);
         setInstallationNotesSource(data.installationNotesSource ?? null);
         setDividerPct(50);
+        setRevisionPrompt("");
         setHistoryLoaded(false);
       } catch {
         toast("Erro de conexao ao gerar a imagem.", "error");
@@ -179,6 +191,11 @@ function ChatbotPageInner() {
     },
     [buildAnswersForApi, wallImageUrl, toast]
   );
+
+  const requestRevision = useCallback(() => {
+    if (!generatedImageUrl || !revisionPrompt.trim() || generating) return;
+    void requestGeneration(answers, { referenceImageUrl: generatedImageUrl, revisionPrompt: revisionPrompt.trim() });
+  }, [answers, generatedImageUrl, generating, requestGeneration, revisionPrompt]);
 
   const handleDownload = useCallback(async () => {
     if (!generatedImageUrl) return;
@@ -429,6 +446,26 @@ function ChatbotPageInner() {
                     <ConsoleButton icon={downloading ? Loader2 : Download} active onClick={handleDownload} disabled={downloading}>
                       {downloading ? "Baixando..." : "Baixar imagem"}
                     </ConsoleButton>
+                  </div>
+
+                  <div className="mt-4 space-y-2 rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-primary)]">Ajustar esta imagem</p>
+                      <p className="mt-1 text-[11px] text-[var(--text-muted)]">Descreva somente o que precisa mudar. A imagem atual será usada como referência.</p>
+                    </div>
+                    <textarea
+                      value={revisionPrompt}
+                      onChange={(event) => setRevisionPrompt(event.target.value)}
+                      maxLength={1200}
+                      rows={3}
+                      placeholder="Ex.: suba a condensadora, mantenha a evaporadora cassete no forro e deixe a tubulação aparente pelo lado direito."
+                      className="w-full resize-y rounded-[6px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-blue-400"
+                    />
+                    <div className="flex justify-end">
+                      <ConsoleButton onClick={requestRevision} disabled={!revisionPrompt.trim() || generating}>
+                        Gerar ajuste
+                      </ConsoleButton>
+                    </div>
                   </div>
 
                   {installationNotes && <InstallationNotesCard notes={installationNotes} source={installationNotesSource} />}
