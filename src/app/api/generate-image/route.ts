@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
   }
 
   const productLookup = [collectedData.marca, collectedData.modelo].filter(Boolean).join(" ");
-  const productImageUrl = await getProductImageUrl(supabase, String(productLookup));
+  const productImageUrl = await getProductImageUrl(supabase, String(productLookup), collectedData.tipo_equipamento);
 
   // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node
   const n8nRes = await fetch(N8N_CHATBOT_WEBHOOK, {
@@ -257,14 +257,31 @@ export async function POST(request: NextRequest) {
  * generation prompt can use it as a real visual reference instead of
  * inventing a generic unit.
  */
-async function getProductImageUrl(supabase: SupabaseClient, modelo: string): Promise<string | null> {
-  if (!modelo.trim()) return null;
+async function getProductImageUrl(
+  supabase: SupabaseClient,
+  modelo: string,
+  tipoEquipamento?: unknown
+): Promise<string | null> {
+  const busca = modelo.trim().toLowerCase();
+  const tipo = typeof tipoEquipamento === "string" ? tipoEquipamento.trim().toLowerCase() : "";
+  if (!busca && !tipo) return null;
+
   const { data: refs } = await supabase.from("product_reference_images").select("brand,model_pattern,image_url");
-  const modeloLower = modelo.toLowerCase();
-  const match = (refs ?? []).find(
-    (r) => modeloLower.includes(r.brand.toLowerCase()) && modeloLower.includes(r.model_pattern.toLowerCase())
-  );
-  return match?.image_url ?? null;
+  const linhas = refs ?? [];
+
+  // 1ª passada: marca E padrão, a referência exata.
+  const exata = busca
+    ? linhas.find((r) => busca.includes(r.brand.toLowerCase()) && busca.includes(r.model_pattern.toLowerCase()))
+    : undefined;
+  if (exata) return exata.image_url;
+
+  // 2ª passada: só o tipo. Exigir a marca deixava a geração sem referência
+  // nenhuma quando o vendedor abreviava ou errava o nome dela — e aí o gerador
+  // inventava o equipamento. Uma foto do tipo certo de outra marca erra menos
+  // que nenhuma foto, porque o que precisa acertar é onde e como se instala.
+  if (!tipo) return null;
+  const porTipo = linhas.find((r) => tipo.includes(r.model_pattern.toLowerCase()));
+  return porTipo?.image_url ?? null;
 }
 
 /**
