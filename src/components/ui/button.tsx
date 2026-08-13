@@ -8,13 +8,13 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants = {
   primary:
-    "bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-600/25 active:shadow-sm active:scale-[0.98] dark:bg-gradient-to-br dark:from-[var(--dsc-primary)] dark:to-[var(--dsc-primary-2)] dark:shadow-none dark:hover:shadow-[var(--glow-primary)]",
+    "bg-blue-600 hover:bg-blue-700 text-white shadow-sm active:shadow-none active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700",
   secondary:
     "bg-[var(--bg-surface)] hover:bg-[var(--bg-subtle)] text-[var(--text-primary)] ring-1 ring-[var(--border-strong)] shadow-sm hover:shadow-md active:scale-[0.98] dark:hover:shadow-[0_0_10px_rgba(76,147,255,0.12)]",
   ghost:
     "hover:bg-[var(--bg-subtle)] text-[var(--text-secondary)] active:bg-[var(--bg-subtle)] active:scale-[0.98]",
   danger:
-    "bg-gradient-to-b from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-md shadow-red-500/20 hover:shadow-lg hover:shadow-red-600/25 active:shadow-sm active:scale-[0.98] dark:bg-gradient-to-br dark:from-[var(--dsc-error)] dark:to-[#c94a3a] dark:shadow-none dark:hover:shadow-[var(--glow-error)]",
+    "bg-red-600 hover:bg-red-700 text-white shadow-sm active:shadow-none active:scale-[0.98] dark:bg-red-600 dark:hover:bg-red-700",
 };
 
 const sizes = {

@@ -137,22 +137,9 @@ export default function LoginPage() {
       {/* Painel da marca. Some abaixo de `lg`: num celular ele empurraria o
           formulário para fora da primeira tela, e entrar é o que importa ali. */}
       <aside
-        className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex"
+        className="relative hidden flex-col justify-between overflow-visible p-12 lg:flex"
         style={{ background: "linear-gradient(155deg, #172959 0%, #0f1c3d 55%, #0a1229 100%)" }}
       >
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px)",
-            backgroundSize: "72px 72px",
-          }}
-        />
-        <div
-          className="pointer-events-none absolute -left-24 -top-24 h-[420px] w-[420px] rounded-full"
-          style={{ background: "radial-gradient(circle, rgba(78,167,255,0.18) 0%, transparent 70%)" }}
-        />
-
         <Image
           src="/logo-arcil-full.png"
           alt="Grupo Arcil"
@@ -182,33 +169,12 @@ export default function LoginPage() {
           </ul>
         </div>
 
-        <p className="relative z-10 text-[10px] font-bold uppercase tracking-[0.28em]" style={{ color: "rgba(168,191,212,0.45)" }}>
+        <p className="relative z-10 text-[12px] font-bold uppercase tracking-[0.16em]" style={{ color: "#a8bfd4" }}>
           Fluxo · Automações com IA
         </p>
       </aside>
 
       <div className="relative flex w-full items-center justify-center py-16 lg:py-0">
-      {/* Subtle top spotlight — enterprise restraint, not consumer glow */}
-      <div
-        className="fixed top-0 left-1/2 -translate-x-1/2 pointer-events-none"
-        style={{
-          width: 1000,
-          height: 600,
-          background:
-            "radial-gradient(ellipse 60% 40% at 50% 0%, rgba(37,99,235,0.09) 0%, transparent 100%)",
-        }}
-      />
-
-      {/* Micro grid */}
-      <div
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px)",
-          backgroundSize: "64px 64px",
-        }}
-      />
-
       {/* Card */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -222,7 +188,6 @@ export default function LoginPage() {
           style={{
             background: "#050b14",
             borderColor: "#1f2b3d",
-            boxShadow: "0 4px 6px rgba(0,0,0,0.4), 0 24px 48px rgba(0,0,0,0.6)",
           }}
         >
           {/* Top rule — single blue accent line */}
@@ -254,8 +219,8 @@ export default function LoginPage() {
                   ARCIL
                 </p>
                 <p
-                  className="mt-2 text-[10px] font-bold"
-                  style={{ color: "rgba(148,178,230,0.5)", letterSpacing: "0.32em" }}
+                  className="mt-2 text-[11px] font-bold"
+                  style={{ color: "#94b2e6", letterSpacing: "0.16em" }}
                 >
                   OPERACIONAL COMERCIAL
                 </p>
@@ -339,12 +304,11 @@ export default function LoginPage() {
                   <motion.button
                     type="submit"
                     disabled={loading}
-                    whileHover={{ y: -1, boxShadow: "0 1px 0 rgba(255,255,255,0.12) inset, 0 6px 22px rgba(37,99,235,0.45)" }}
+                    whileHover={{ y: -1 }}
                     whileTap={{ scale: 0.987, y: 0 }}
                     className="w-full py-3 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-opacity"
                     style={{
                       background: "linear-gradient(180deg, #4c93ff 0%, #2f6fe0 100%)",
-                      boxShadow: "0 1px 0 rgba(255,255,255,0.1) inset, 0 4px 16px rgba(37,99,235,0.35)",
                     }}
                   >
                     {loading ? (
@@ -463,12 +427,11 @@ export default function LoginPage() {
                         <motion.button
                           type="submit"
                           disabled={loading || (!!TURNSTILE_SITE_KEY && !captchaToken)}
-                          whileHover={{ y: -1, boxShadow: "0 1px 0 rgba(255,255,255,0.12) inset, 0 6px 22px rgba(37,99,235,0.45)" }}
+                          whileHover={{ y: -1 }}
                           whileTap={{ scale: 0.987, y: 0 }}
                           className="w-full py-3 rounded-lg text-[13px] font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-opacity"
                           style={{
                             background: "linear-gradient(180deg, #4c93ff 0%, #2f6fe0 100%)",
-                            boxShadow: "0 1px 0 rgba(255,255,255,0.1) inset, 0 4px 16px rgba(37,99,235,0.35)",
                           }}
                         >
                           {loading ? (
@@ -491,8 +454,8 @@ export default function LoginPage() {
             style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}
           >
             <p
-              className="text-[9.5px] font-semibold uppercase"
-              style={{ color: "rgba(255,255,255,0.12)", letterSpacing: "0.25em" }}
+              className="text-[11px] font-semibold uppercase"
+              style={{ color: "#94a3b8", letterSpacing: "0.16em" }}
             >
               Fluxo · Automações com IA
             </p>
