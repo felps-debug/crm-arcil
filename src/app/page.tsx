@@ -131,8 +131,10 @@ export default function DashboardPage() {
   const summary = useApi<DashboardSummaryResponse>(`/api/dashboard/summary${suffix}`);
   const pending = useApi<PendingCenterResponse>(`/api/dashboard/pending-center${suffix}`);
   const agents = useApi<AgentSummaryResponse>(`/api/agents/summary${suffix}`);
+  // `scope=summary`: o painel só usa `estoqueSincronizado` e o total de
+  // produtos, e a rota responde isso por contagem em vez de trazer o catálogo.
   const inventory = useApi<InventorySummaryResponse>(
-    `/api/inventory/summary?limit=1${refreshTick ? `&_r=${refreshTick}` : ""}`
+    `/api/inventory/summary?scope=summary${refreshTick ? `&_r=${refreshTick}` : ""}`
   );
   const { data: activity, loading: loadingActivity } = useSupabase(() => getRecentActivity(), [refreshTick]);
   // Sem cache-busting: a liturgia é a mesma o dia inteiro e a rota já guarda

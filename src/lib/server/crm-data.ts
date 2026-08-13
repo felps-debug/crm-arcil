@@ -616,24 +616,27 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
 export async function getPendingCenter(): Promise<PendingCenterResponse> {
   const supabase = createAdminClient();
   const { leads, followups, cobrancas } = await fetchCore();
-  const [sheetSourcesRes, consumerRes, resellerRes, installerRes, builderRes] = await Promise.all([
+  // Esta rota só precisa de UM número sobre produto: quantos estão sem estoque.
+  // Antes ela trazia as 3.077 linhas das três tabelas para contar em memória, e
+  // media 4,2s em produção — empatada com /api/inventory/summary, que repetia a
+  // mesma carga. `head: true` faz o Postgres contar e devolver zero linha.
+  const outOfStockCount = (table: string) =>
+    supabase.from(table).select("id", { count: "exact", head: true }).not("estoque", "is", null).lte("estoque", 0);
+
+  const [sheetSourcesRes, consumerCount, resellerCount, installerCount] = await Promise.all([
     supabase.from("sheet_sources").select("*"),
-    supabase.from("products_consumer").select("id,estoque"),
-    supabase.from("products_reseller").select("id,estoque"),
-    supabase.from("products_installer").select("id,estoque"),
-    supabase.from("products_builder_architect").select("id"),
+    outOfStockCount("products_consumer"),
+    outOfStockCount("products_reseller"),
+    outOfStockCount("products_installer"),
   ]);
 
-  for (const res of [sheetSourcesRes, consumerRes, resellerRes, installerRes, builderRes]) {
+  for (const res of [sheetSourcesRes, consumerCount, resellerCount, installerCount]) {
     if (res.error) throw res.error;
   }
 
   const sheetSources = (sheetSourcesRes.data ?? []) as SheetSourceRow[];
-  const productRows = [
-    ...((consumerRes.data ?? []) as ProductRow[]),
-    ...((resellerRes.data ?? []) as ProductRow[]),
-    ...((installerRes.data ?? []) as ProductRow[]),
-  ];
+  const outOfStockProducts =
+    (consumerCount.count ?? 0) + (resellerCount.count ?? 0) + (installerCount.count ?? 0);
   const leadIdsWithFollowup = new Set(followups.map((f) => f.lead_id).filter(Boolean));
   const today = new Date().toISOString().slice(0, 10);
 
@@ -712,7 +715,7 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
         // dado é o mesmo critério que getInventorySummary já aplica.
         id: "out_of_stock_products",
         label: "Produtos sem estoque",
-        count: productRows.filter((p) => p.estoque != null && p.estoque <= 0).length,
+        count: outOfStockProducts,
         severity: "warning",
         formula: "count(products_* where estoque is not null and estoque <= 0)",
         period: allTimePeriod(),
@@ -1310,7 +1313,61 @@ async function fetchOutOfStockRequests(): Promise<InventorySummaryResponse["outO
   return (data ?? []).map((r) => ({ id: r.id, productName: r.product_name, createdAt: r.created_at }));
 }
 
+const PRODUCT_TABLES = ["products_consumer", "products_reseller", "products_installer", "products_builder_architect"] as const;
+
+/**
+ * Só os números do catálogo, sem trazer linha nenhuma.
+ *
+ * O dashboard pergunta duas coisas ao estoque: "o ERP já mandou saldo?" e
+ * "quantos produtos existem?". Responder isso buscando as 3.077 linhas custava
+ * 4,2s em produção — era, junto com a fila de pendências, o endpoint mais lento
+ * da tela. `head: true` deixa a contagem no Postgres.
+ */
+async function getInventoryCounts(): Promise<InventorySummaryResponse> {
+  const supabase = createAdminClient();
+
+  const totals = await Promise.all(
+    PRODUCT_TABLES.map((table) => supabase.from(table).select("id", { count: "exact", head: true }))
+  );
+  // builder_architect não tem a coluna `estoque`, por isso fica de fora daqui.
+  const withStock = await Promise.all(
+    PRODUCT_TABLES.slice(0, 3).map((table) =>
+      supabase.from(table).select("id", { count: "exact", head: true }).not("estoque", "is", null)
+    )
+  );
+
+  for (const result of [...totals, ...withStock]) {
+    if (result.error) throw result.error;
+  }
+
+  const totalProducts = totals.reduce((sum, result) => sum + (result.count ?? 0), 0);
+  const estoqueSincronizado = withStock.reduce((sum, result) => sum + (result.count ?? 0), 0) > 0;
+
+  return {
+    generatedAt: nowIso(),
+    estoqueSincronizado,
+    topDemanda: [],
+    metrics: [
+      metric({
+        id: "total_products",
+        label: "Total de produtos",
+        value: totalProducts,
+        formula: "count(products_*)",
+        period: allTimePeriod(),
+        previous: null,
+        tooltip: "Produtos cadastrados nas quatro tabelas de segmento.",
+        drilldown: { href: "/demanda-estoque", filters: {} },
+      }),
+    ],
+    products: [],
+    outOfStockRequests: [],
+    breakdowns: { bySource: [], lowStockBySource: [] },
+  } as InventorySummaryResponse;
+}
+
 export async function getInventorySummary(searchParams?: URLSearchParams): Promise<InventorySummaryResponse> {
+  if (searchParams?.get("scope") === "summary") return getInventoryCounts();
+
   const [products, outOfStockRequests] = await Promise.all([fetchProducts(), fetchOutOfStockRequests()]);
   const q = searchParams?.get("search")?.toLowerCase().trim();
   const limit = Math.min(Number(searchParams?.get("limit") ?? 200) || 200, 1000);
