@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { VersiculoDoDia } from "./versiculo";
 
 export function ConsolePage({
   title,
@@ -21,6 +22,9 @@ export function ConsolePage({
             <h1 className="text-[22px] font-bold leading-tight tracking-normal text-[var(--text-primary)]">{title}</h1>
             {subtitle && <p className="mt-0.5 text-[12px] font-medium text-[var(--text-muted)]">{subtitle}</p>}
           </div>
+
+          <VersiculoDoDia />
+
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
         {children}

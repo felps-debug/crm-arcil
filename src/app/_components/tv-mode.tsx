@@ -2,8 +2,7 @@
 
 import { useEffect } from "react";
 import Image from "next/image";
-import { AlertTriangle, BookOpen, X } from "lucide-react";
-import type { LiturgiaResponse } from "@/app/api/liturgia/route";
+import { AlertTriangle, X } from "lucide-react";
 
 export type TvMetric = { label: string; value: string; tone: "emerald" | "amber" | "blue" | "violet" | "red" };
 export type TvAgendaRow = { id: string; domain: string; state: string; owner: string; nextStep: string };
@@ -59,7 +58,6 @@ export function TvMode({
   agents,
   events,
   funnel,
-  liturgia,
 }: {
   onExit: () => void;
   clock: string;
@@ -71,7 +69,6 @@ export function TvMode({
   agents: TvAgent[];
   events: TvEvent[];
   funnel: TvFunnelStep[];
-  liturgia: LiturgiaResponse | null;
 }) {
   // Esc sai. Numa TV o mouse costuma estar longe, e prender alguém numa tela
   // cheia sem saída óbvia é o tipo de coisa que faz desligar no botão.
@@ -256,27 +253,7 @@ export function TvMode({
             </div>
           </Panel>
 
-          <Panel title="Liturgia de hoje" icon={<BookOpen style={{ width: "clamp(12px,1.35vh,20px)", height: "clamp(12px,1.35vh,20px)" }} />}>
-            <div className="h-full px-[1vw] py-[0.9vh]">
-              {liturgia?.available ? (
-                <>
-                  <p className="text-[clamp(10px,1.2vh,18px)] font-bold" style={{ color: "var(--violet)" }}>
-                    {liturgia.liturgia}
-                  </p>
-                  <p className="font-data mt-[0.4vh] text-[clamp(10px,1.15vh,17px)] font-semibold text-[var(--text-muted)]">
-                    {liturgia.evangelho?.referencia}
-                  </p>
-                  <p className="mt-[0.7vh] line-clamp-[5] text-[clamp(10px,1.3vh,20px)] leading-snug text-[var(--text-secondary)]">
-                    {liturgia.evangelho?.texto}
-                  </p>
-                </>
-              ) : (
-                <p className="text-[clamp(10px,1.3vh,19px)] text-[var(--text-muted)]">
-                  {liturgia?.reason ?? "Carregando liturgia do dia…"}
-                </p>
-              )}
-            </div>
-          </Panel>
+          
         </div>
       </div>
     </div>

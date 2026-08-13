@@ -6,7 +6,6 @@ import {
   Activity,
   AlertTriangle,
   ArrowUpRight,
-  BookOpen,
   Bot,
   DollarSign,
   MessageCircleReply,
@@ -36,7 +35,6 @@ import type {
   PendingCenterResponse,
   PendingSeverity,
 } from "@/types/api";
-import type { LiturgiaResponse } from "@/app/api/liturgia/route";
 import { TvMode } from "./_components/tv-mode";
 
 type Tone = "blue" | "green" | "amber" | "red" | "violet" | "slate";
@@ -137,9 +135,6 @@ export default function DashboardPage() {
     `/api/inventory/summary?scope=summary${refreshTick ? `&_r=${refreshTick}` : ""}`
   );
   const { data: activity, loading: loadingActivity } = useSupabase(() => getRecentActivity(), [refreshTick]);
-  // Sem cache-busting: a liturgia é a mesma o dia inteiro e a rota já guarda
-  // por data. Refazer a cada refresh só castigaria a fonte pública.
-  const liturgia = useApi<LiturgiaResponse>("/api/liturgia");
 
   const metrics = useMemo(
     () => new Map((summary.data?.metrics ?? []).map((metric) => [metric.id, metric])),
@@ -489,8 +484,7 @@ export default function DashboardPage() {
             </ConsoleCard>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-          <ConsoleCard className="xl:col-span-2">
+          <ConsoleCard>
             <div className="mb-4">
               <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Funil comercial</h2>
               <p className="text-[11px] text-[var(--text-muted)]">Do lead recebido à venda fechada</p>
@@ -519,29 +513,6 @@ export default function DashboardPage() {
               )}
             </div>
           </ConsoleCard>
-
-          <ConsoleCard>
-            <div className="mb-3 flex items-center gap-2">
-              <BookOpen size={15} className="text-[var(--violet)]" />
-              <div>
-                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Liturgia de hoje</h2>
-                <p className="text-[11px] text-[var(--text-muted)]">{liturgia.data?.liturgia ?? "Evangelho do dia"}</p>
-              </div>
-            </div>
-            {liturgia.data?.available ? (
-              <>
-                <p className="font-data text-[11px] font-bold text-[var(--violet)]">{liturgia.data.evangelho?.referencia}</p>
-                <p className="mt-2 line-clamp-[10] text-[12px] leading-relaxed text-[var(--text-secondary)]">
-                  {liturgia.data.evangelho?.texto}
-                </p>
-              </>
-            ) : (
-              <p className="py-4 text-[12px] text-[var(--text-muted)]">
-                {liturgia.loading ? "Carregando liturgia do dia…" : liturgia.data?.reason ?? "Liturgia do dia indisponível."}
-              </p>
-            )}
-          </ConsoleCard>
-          </div>
         </>
       )}
 
@@ -551,7 +522,6 @@ export default function DashboardPage() {
           clock={clock}
           realtime={realtime}
           attention={attention}
-          liturgia={liturgia.data}
           metrics={[
             { label: "Recebido", value: metricValue(metrics.get("received_revenue"), "R$ 0,00"), tone: "emerald" },
             { label: "Em aberto", value: metricValue(metrics.get("open_collections"), "R$ 0,00"), tone: "amber" },
