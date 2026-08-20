@@ -617,19 +617,56 @@
     </div>
 
     <h2 id="gerador"><span class="numero">7</span>Gerador de Imagem</h2>
-    <p>
-      O vendedor manda a foto da parede do cliente e o sistema devolve uma prévia técnica
-      do aparelho instalado naquele ambiente, com as medidas de instalação e as exigências
-      da garantia.
+    <p class="lead">
+      O vendedor manda uma foto do ambiente e o sistema devolve uma prévia técnica do
+      aparelho instalado ali, com as medidas de instalação e as exigências da garantia.
     </p>
     <p>
       O aparelho é escolhido do catálogo do ERP: dá para digitar o código
       (<code>0129C1</code>), o modelo ou a marca. Escolhendo da lista, o sistema já sabe o
       tipo, a foto oficial, o preço e o estoque — sem ninguém digitar errado.
     </p>
+
+    <h3>As perguntas mudam com o tipo de aparelho</h3>
+    <p>
+      Cassete, dutado, piso-teto e janela instalam de um jeito completamente diferente de
+      um split de parede — por isso o questionário muda assim que o vendedor escolhe o
+      aparelho, em vez de perguntar sempre a mesma coisa:
+    </p>
+    <div class="rolagem">
+      <table>
+        <thead>
+          <tr><th>Tipo</th><th>O que o questionário pergunta de diferente</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><b>Split Hi-Wall</b></td><td>Tipo de parede; tubulação embutida na parede ou em canaleta</td></tr>
+          <tr><td><b>Cassete</b></td><td>Tipo de forro; altura entre a laje e o forro (plenum); se já existe alçapão de inspeção</td></tr>
+          <tr><td><b>Dutado</b></td><td>Tipo de forro; espaço técnico disponível no plenum; se a rede de dutos é nova ou já existente</td></tr>
+          <tr><td><b>Piso-teto</b></td><td>Se a instalação é no piso ou no teto</td></tr>
+          <tr><td><b>Janela</b></td><td>Se o vão já existe ou precisa ser aberto/adaptado; medidas do vão</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      O tipo é identificado automaticamente pelo nome do produto escolhido no catálogo.
+      Quando o sistema não reconhece, ele pergunta ao vendedor em vez de chutar — errar o
+      tipo custa a prévia inteira, então não é decisão para adivinhar.
+    </p>
+
+    <div class="nota">
+      <span class="rotulo">Por que isso importa</span>
+      <p>
+        Antes, todo aparelho recebia as mesmas perguntas de split de parede — inclusive
+        cassete e dutado, que instalam no forro, e janela, que não tem condensadora
+        separada. A prévia técnica reflete a instalação real de cada tipo: o passo a
+        passo, as cotas e as exigências de garantia mudam junto com o questionário.
+      </p>
+    </div>
+
     <p>
       A imagem final serve para mandar ao cliente. O texto técnico é escrito pelo próprio
-      console, não pela inteligência artificial, então os números conferem sempre.
+      console, não pela inteligência artificial, então os números conferem sempre. A
+      prévia sai sempre com o selo ARCIL.
     </p>
 
     <span class="parte">Parte 2 — para o financeiro</span>
