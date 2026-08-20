@@ -53,21 +53,102 @@ type Step =
   | { key: string; question: string; type: "produto" }
   | { key: string; question: string; type: "choice"; options: string[] };
 
-const STEPS: Step[] = [
-  { key: "ambiente", question: "Qual o ambiente da instalacao?", type: "text" },
-  { key: "tipo_parede", question: "Qual o tipo da parede?", type: "choice", options: ["Alvenaria", "Drywall", "Outro"] },
-  { key: "foto", question: "Envie uma foto da parede", type: "file" },
-  // Um passo no lugar de três (tipo, marca e modelo). Escolher do catálogo dá o
-  // código do ERP, e com ele a foto oficial do produto é lookup exato — antes o
-  // modelo vinha como texto livre e a foto tinha que ser adivinhada por
-  // semelhança de palavras, o que confundia modelos que só diferem por "WIFI".
-  { key: "produto", question: "Qual o aparelho? Busque pelo código do ERP, modelo ou marca.", type: "produto" },
-  { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
-  { key: "ponto_eletrico", question: "Já existe ponto elétrico na parede?", type: "choice", options: ["Sim", "Não"] },
-  { key: "unidade_externa", question: "Onde ficara a unidade externa (condensadora) e a que distancia aproximada?", type: "text" },
-  { key: "nivel_condensadora", question: "A condensadora fica acima, abaixo ou no mesmo nivel do ambiente?", type: "choice", options: ["Acima do ambiente", "Abaixo do ambiente", "Mesmo nivel do ambiente"] },
-  { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente", "Sem canaleta"] },
-];
+const NIVEL_CONDENSADORA: Step = {
+  key: "nivel_condensadora",
+  question: "A condensadora fica acima, abaixo ou no mesmo nivel do ambiente?",
+  type: "choice",
+  options: ["Acima do ambiente", "Abaixo do ambiente", "Mesmo nivel do ambiente"],
+};
+const UNIDADE_EXTERNA: Step = {
+  key: "unidade_externa",
+  question: "Onde ficara a unidade externa (condensadora) e a que distancia aproximada?",
+  type: "text",
+};
+
+/**
+ * As perguntas de parede (tipo de parede, ponto elétrico "na parede",
+ * tubulação "embutida na parede") só fazem sentido pro hi-wall. Um cassete
+ * cassete mora no forro, um dutado tem espaço técnico em vez de pé-direito de
+ * parede, e uma janela é peça única sem condensadora separada — perguntar do
+ * mesmo jeito pra todos gerava prévia certa só por acaso.
+ *
+ * `produto` vem cedo (logo depois de `ambiente`) porque é dali que o tipo sai
+ * — sem saber o tipo ainda, não dá pra escolher qual ramo perguntar.
+ */
+function buildSteps(tipo: string | null): Step[] {
+  const inicio: Step[] = [
+    { key: "ambiente", question: "Qual o ambiente da instalacao?", type: "text" },
+    // Um passo no lugar de três (tipo, marca e modelo). Escolher do catálogo dá
+    // o código do ERP, e com ele a foto oficial do produto é lookup exato —
+    // antes o modelo vinha como texto livre e a foto tinha que ser adivinhada
+    // por semelhança de palavras, o que confundia modelos que só diferem por
+    // "WIFI".
+    { key: "produto", question: "Qual o aparelho? Busque pelo código do ERP, modelo ou marca.", type: "produto" },
+    { key: "foto", question: "Envie uma foto do ambiente", type: "file" },
+  ];
+
+  if (tipo === "Cassete") {
+    return [
+      ...inicio,
+      { key: "tipo_forro", question: "Qual o tipo do forro?", type: "choice", options: ["Gesso", "PVC", "Modular", "Outro"] },
+      { key: "pe_direito", question: "Qual a altura entre a laje e o forro (plenum), no ponto de instalação?", type: "text" },
+      { key: "alcapao", question: "Já existe alçapão de inspeção próximo ao ponto de instalação?", type: "choice", options: ["Sim", "Não"] },
+      { key: "ponto_eletrico", question: "Já existe ponto elétrico no forro, no local de instalação?", type: "choice", options: ["Sim", "Não"] },
+      UNIDADE_EXTERNA,
+      NIVEL_CONDENSADORA,
+      { key: "tubulacao", question: "Tubulação e dreno correm embutidos ou aparentes sob o forro?", type: "choice", options: ["Embutidos no forro", "Aparentes sob o forro"] },
+    ];
+  }
+
+  if (tipo === "Dutado") {
+    return [
+      ...inicio,
+      { key: "tipo_forro", question: "Qual o tipo do forro onde a rede de dutos vai correr?", type: "choice", options: ["Gesso", "PVC", "Modular", "Outro"] },
+      { key: "pe_direito", question: "Qual o espaço técnico disponível entre a laje e o forro (plenum)?", type: "text" },
+      { key: "rede_dutos", question: "Já existe rede de dutos instalada ou sera nova?", type: "choice", options: ["Nova instalação", "Rede existente"] },
+      { key: "ponto_eletrico", question: "Já existe ponto elétrico no espaço técnico?", type: "choice", options: ["Sim", "Não"] },
+      UNIDADE_EXTERNA,
+      NIVEL_CONDENSADORA,
+    ];
+  }
+
+  if (tipo === "Piso-teto") {
+    return [
+      ...inicio,
+      { key: "superficie_fixacao", question: "A unidade interna sera fixada no piso ou no teto?", type: "choice", options: ["Piso", "Teto"] },
+      { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
+      { key: "ponto_eletrico", question: "Já existe ponto elétrico no local de instalação?", type: "choice", options: ["Sim", "Não"] },
+      UNIDADE_EXTERNA,
+      NIVEL_CONDENSADORA,
+      { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente", "Sem canaleta"] },
+    ];
+  }
+
+  if (tipo === "Janela") {
+    // Peça única no vão: sem condensadora separada, sem tubulação de cobre
+    // exposta pra perguntar — as duas perguntas que sobram são o vão e a
+    // instalação elétrica.
+    return [
+      ...inicio,
+      { key: "vao_janela", question: "O vão da janela/parede já existe ou sera aberto para instalação?", type: "choice", options: ["Vão já existe", "Sera aberto/adaptado"] },
+      { key: "pe_direito", question: "Quais as medidas aproximadas do vão (largura x altura)?", type: "text" },
+      { key: "ponto_eletrico", question: "Já existe ponto elétrico exclusivo próximo ao vão?", type: "choice", options: ["Sim", "Não"] },
+    ];
+  }
+
+  // "Split Hi-Wall" e o estado inicial (tipo ainda não escolhido, antes do
+  // passo "produto" responder) caem aqui — os dois primeiros passos são iguais
+  // em todo ramo, então não importa que o tipo real só se confirme depois.
+  return [
+    ...inicio,
+    { key: "tipo_parede", question: "Qual o tipo da parede?", type: "choice", options: ["Alvenaria", "Drywall", "Outro"] },
+    { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
+    { key: "ponto_eletrico", question: "Já existe ponto elétrico na parede?", type: "choice", options: ["Sim", "Não"] },
+    UNIDADE_EXTERNA,
+    NIVEL_CONDENSADORA,
+    { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente", "Sem canaleta"] },
+  ];
+}
 
 type Tab = "chat" | "historico";
 
@@ -88,7 +169,7 @@ function ChatbotPageInner() {
   const [tab, setTab] = useState<Tab>("chat");
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [transcript, setTranscript] = useState<ChatMessage[]>([{ role: "assistant", content: STEPS[0].question }]);
+  const [transcript, setTranscript] = useState<ChatMessage[]>([{ role: "assistant", content: buildSteps(null)[0].question }]);
   const [typing, setTyping] = useState(false);
   const [textValue, setTextValue] = useState("");
   const [wallImageUrl, setWallImageUrl] = useState<string | null>(null);
@@ -131,8 +212,12 @@ function ChatbotPageInner() {
     if (tab === "historico" && !historyLoaded) void fetchHistory();
   }, [tab, historyLoaded, fetchHistory]);
 
-  const current = STEPS[step];
-  const isLastStep = step === STEPS.length - 1;
+  // Os dois primeiros passos (ambiente, produto) são iguais em todo ramo, e o
+  // tipo só se confirma na resposta do passo "produto" — por isso reconstruir
+  // isto a cada resposta não pula nem repete pergunta, só troca o que vem depois.
+  const steps = useMemo(() => buildSteps(answers.tipo_equipamento ?? null), [answers.tipo_equipamento]);
+  const current = steps[step];
+  const isLastStep = step === steps.length - 1;
   const done = Boolean(generatedImageUrl);
 
   useEffect(() => {
@@ -149,10 +234,13 @@ function ChatbotPageInner() {
 
   const buildAnswersForApi = useCallback((finalAnswers: Record<string, string>): { role: "user" | "assistant"; content: string; imageUrl?: string }[] => {
     const messages: { role: "user" | "assistant"; content: string; imageUrl?: string }[] = [];
-    for (const s of STEPS) {
+    // Deriva do próprio finalAnswers, não da `steps` do render: essa closure
+    // roda depois de o step avançar, e `steps` (estado) atrasa uma renderização
+    // — reconstruir aqui garante o ramo do tipo que realmente foi respondido.
+    for (const s of buildSteps(finalAnswers.tipo_equipamento ?? null)) {
       messages.push({ role: "assistant", content: s.question });
       if (s.type === "file") {
-        messages.push({ role: "user", content: "Foto da parede enviada.", imageUrl: wallImageUrl ?? undefined });
+        messages.push({ role: "user", content: "Foto enviada.", imageUrl: wallImageUrl ?? undefined });
       } else {
         messages.push({ role: "user", content: finalAnswers[s.key] ?? "" });
       }
@@ -224,14 +312,18 @@ function ChatbotPageInner() {
       }
 
       setTyping(true);
-      const nextStep = STEPS[step + 1];
+      // `steps[step + 1]` fica correto mesmo na transição em que o tipo muda
+      // (passo "produto"): os índices 0-2 (ambiente, produto, foto) são iguais
+      // em todo ramo, e é só essa transição que roda antes do useMemo de
+      // `steps` refletir o tipo recém-escolhido.
+      const nextStep = steps[step + 1];
       setTimeout(() => {
         setTyping(false);
         setTranscript((t) => [...t, { role: "assistant", content: nextStep.question }]);
         setStep((s) => s + 1);
       }, 550);
     },
-    [isLastStep, requestGeneration, step]
+    [isLastStep, requestGeneration, step, steps]
   );
 
   const handleSendText = useCallback(() => {
@@ -285,7 +377,7 @@ function ChatbotPageInner() {
         }
         const { data } = supabase.storage.from("chatbot-images").getPublicUrl(path);
         setWallImageUrl(data.publicUrl);
-        advance(answers, { role: "user", content: "Foto da parede enviada.", imageUrl: data.publicUrl });
+        advance(answers, { role: "user", content: "Foto enviada.", imageUrl: data.publicUrl });
       } finally {
         setUploading(false);
       }
@@ -301,7 +393,7 @@ function ChatbotPageInner() {
     setGeneratedImageUrl(null);
     setInstallationNotes(null);
     setInstallationNotesSource(null);
-    setTranscript([{ role: "assistant", content: STEPS[0].question }]);
+    setTranscript([{ role: "assistant", content: buildSteps(null)[0].question }]);
   }, []);
 
   const handleDrag = useCallback((clientX: number) => {
@@ -329,8 +421,8 @@ function ChatbotPageInner() {
   );
 
   const answeredSteps = useMemo(
-    () => STEPS.filter((s) => (s.type === "file" ? Boolean(wallImageUrl) : Boolean(answers[s.key]))).length,
-    [answers, wallImageUrl]
+    () => steps.filter((s) => (s.type === "file" ? Boolean(wallImageUrl) : Boolean(answers[s.key]))).length,
+    [steps, answers, wallImageUrl]
   );
 
   /** O último passo não avança o `step` — ele dispara a geração. Se a geração
@@ -338,7 +430,7 @@ function ChatbotPageInner() {
    *  duplicava a bolha no histórico ("Embutida na parede" duas vezes) sem que o
    *  questionário tivesse mudado. Com tudo respondido a tela oferece repetir a
    *  geração, que é a ação que a pessoa realmente quer ali. */
-  const tudoRespondido = answeredSteps === STEPS.length;
+  const tudoRespondido = answeredSteps === steps.length;
 
   return (
     <ConsolePage title="Gerador de Imagem" subtitle="Simulação de instalação com IA">
@@ -363,14 +455,14 @@ function ChatbotPageInner() {
                 <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Assistente de Instalação</h2>
               </div>
               {!done && (
-                <span className="font-data text-[11px] text-[var(--text-muted)]">{answeredSteps}/{STEPS.length}</span>
+                <span className="font-data text-[11px] text-[var(--text-muted)]">{answeredSteps}/{steps.length}</span>
               )}
             </div>
 
             <div className="h-1 w-full overflow-hidden bg-[var(--bg-subtle)]">
               <div
                 className="h-full bg-blue-400 transition-all"
-                style={{ width: `${done ? 100 : (answeredSteps / STEPS.length) * 100}%` }}
+                style={{ width: `${done ? 100 : (answeredSteps / steps.length) * 100}%` }}
               />
             </div>
 

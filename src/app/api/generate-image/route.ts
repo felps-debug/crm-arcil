@@ -8,6 +8,11 @@ import { assertEnv } from "@/lib/server/env-guard";
 import { ARCIL_WATERMARK_BADGE_BASE64, ARCIL_WATERMARK_BADGE_WIDTH } from "@/lib/watermark-badge";
 import { comporPrevia, type DadosOverlay } from "@/lib/server/installation-overlay";
 
+// A rota espera o n8n desenhar a imagem, o que passa de um minuto. O padrão da
+// plataforma corta antes e o vendedor recebe um erro genérico enquanto a geração
+// ainda está em pé do outro lado.
+export const maxDuration = 300;
+
 interface ApiMessage {
   role: "user" | "assistant";
   content: string;
@@ -19,7 +24,24 @@ const EQUIPMENT_GUIDANCE: Record<string, string> = {
   cassete: "Representar a unidade interna embutida no forro, com painel quadrado alinhado ao teto; não tratar como equipamento de parede e prever acesso técnico, dreno e distribuição de ar compatíveis.",
   "piso-teto": "Representar a unidade interna na configuração piso-teto indicada pelo ambiente, sem transformá-la em split de parede; respeitar suportes, peso, dreno, tubulação e manutenção.",
   dutado: "Representar a unidade dutada conectada à rede de dutos e grelhas, sem inventar uma evaporadora aparente na parede; prever espaço técnico, retorno, insuflamento, dreno e manutenção.",
+  janela: "Representar a unidade única embutida no vão da janela ou da parede, sem separar evaporadora e condensadora — é uma peça só, com a face traseira voltada para fora; não desenhar tubulação frigorígena externa nem unidade externa à parte.",
 };
+
+// Só o hi-wall tem cota fixa aqui, porque foi a única validada contra a
+// prática da ARCIL (era o único tipo que o gerador desenhava até hoje). Para
+// os demais tipos é melhor apontar para o manual do fabricante do que inventar
+// um número — foi exatamente inventar "2,80m" onde o vendedor respondeu 2,70
+// que fez este overlay nascer com valor vindo do banco, não do modelo de
+// imagem. Mesma regra vale aqui: sem confirmação, sem número.
+const CONSULTAR_MANUAL = "conforme manual do fabricante";
+
+function overlayCotas(type: unknown): { alturaInstalacao: string; distanciaTeto: string; espacamentoLateral: string } {
+  const normalized = typeof type === "string" ? type.trim().toLowerCase() : "";
+  if (normalized === "split hi-wall") {
+    return { alturaInstalacao: "aprox. 2,20 m", distanciaTeto: "15 a 20 cm", espacamentoLateral: "mín. 15 cm" };
+  }
+  return { alturaInstalacao: CONSULTAR_MANUAL, distanciaTeto: CONSULTAR_MANUAL, espacamentoLateral: CONSULTAR_MANUAL };
+}
 
 function equipmentGuidance(type: unknown) {
   const normalized = typeof type === "string" ? type.trim().toLowerCase() : "";
@@ -199,26 +221,41 @@ export async function POST(request: NextRequest) {
 
   const productImageBase64 = await fetchProductImageBase64(productImageUrl);
 
-  // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node
-  const n8nRes = await fetch(N8N_CHATBOT_WEBHOOK, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      lead_id: leadId,
-      image_url: imageUrl,
-      image_base64: imageBase64,
-      image_description: imageDescription,
-      product_image_url: productImageUrl,
-      product_image_base64: productImageBase64,
-      reference_image_url: referenceImageUrl ?? null,
-      revision_prompt: revisionPrompt?.trim() ?? null,
-      generation_mode: referenceImageUrl ? "revision" : "initial",
-      equipment_guidance: technicalGuidance,
-      revision_instruction: revisionInstruction,
-      prompt,
-      ...collectedData,
-    }),
-  });
+  // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node.
+  // O fetch fica dentro de try/catch porque, sem ele, uma falha de rede virava um
+  // 500 sem corpo: o cliente tentava `res.json()`, estourava e mostrava "Erro de
+  // conexao", indistinguível de um erro dentro da automação. Os dois casos se
+  // investigam em lugares diferentes — um no n8n, outro aqui.
+  let n8nRes: Response;
+  try {
+    n8nRes = await fetch(N8N_CHATBOT_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(240_000),
+      body: JSON.stringify({
+        lead_id: leadId,
+        image_url: imageUrl,
+        image_base64: imageBase64,
+        image_description: imageDescription,
+        product_image_url: productImageUrl,
+        product_image_base64: productImageBase64,
+        reference_image_url: referenceImageUrl ?? null,
+        revision_prompt: revisionPrompt?.trim() ?? null,
+        generation_mode: referenceImageUrl ? "revision" : "initial",
+        equipment_guidance: technicalGuidance,
+        revision_instruction: revisionInstruction,
+        prompt,
+        ...collectedData,
+      }),
+    });
+  } catch (err) {
+    const motivo = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.error("[generate-image] a chamada ao n8n nem completou:", motivo);
+    return Response.json(
+      { error: `Não consegui falar com a automação de imagem (${motivo}). Nenhuma execução foi criada no n8n.` },
+      { status: 502 }
+    );
+  }
 
   // O corpo é lido como texto antes de virar JSON porque o n8n responde vazio
   // quando um nó do meio falha: o "Respond to Webhook" nunca é alcançado, e
@@ -281,9 +318,7 @@ export async function POST(request: NextRequest) {
     sku: typeof collectedData.sku === "string" ? collectedData.sku : null,
     tipoEquipamento: String(collectedData.tipo_equipamento ?? "Split Hi-Wall"),
     peDireito: typeof collectedData.pe_direito === "string" ? formatarMetros(collectedData.pe_direito) : null,
-    alturaInstalacao: "aprox. 2,20 m",
-    distanciaTeto: "15 a 20 cm",
-    espacamentoLateral: "mín. 15 cm",
+    ...overlayCotas(collectedData.tipo_equipamento),
     tubulacao: typeof collectedData.tubulacao === "string" ? collectedData.tubulacao : null,
     pontoEletrico: typeof collectedData.ponto_eletrico === "boolean" ? collectedData.ponto_eletrico : null,
     produtoImagemBase64: productImageBase64 ? `data:image/jpeg;base64,${productImageBase64}` : null,
