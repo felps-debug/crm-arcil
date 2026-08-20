@@ -56,9 +56,9 @@ export default function OperacoesCobrancaPage() {
   ];
 
   const billingStatus = [
-    { id: "pending", label: "Pendente", count: stats.pending, icon: Clock, color: "var(--amber)" },
-    { id: "overdue", label: "Vencido", count: stats.overdue, icon: AlertTriangle, color: "var(--red)" },
-    { id: "paid", label: "Pago", count: stats.paid, icon: CheckCircle2, color: "var(--emerald)" },
+    { id: "pending", label: "Pendente", count: stats.pending, icon: Clock, color: "var(--op-amber)" },
+    { id: "overdue", label: "Vencido", count: stats.overdue, icon: AlertTriangle, color: "var(--op-red)" },
+    { id: "paid", label: "Pago", count: stats.paid, icon: CheckCircle2, color: "var(--op-green)" },
   ];
 
   const openBillDetail = (bill: BillingDetail) => {
@@ -210,7 +210,7 @@ export default function OperacoesCobrancaPage() {
         </div>
         <div className="op-ledger-cell">
           <span className="op-ledger-label">Risco</span>
-          <span className="op-ledger-value" style={{ color: "var(--red)" }}>{formatMoney(stats.overdue * 1200)}</span>
+          <span className="op-ledger-value" style={{ color: "var(--op-red)" }}>{formatMoney(stats.overdue * 1200)}</span>
         </div>
       </div>
 
@@ -287,10 +287,10 @@ export default function OperacoesCobrancaPage() {
                       borderRadius: "50%",
                       background:
                         selectedBill?.status === "overdue"
-                          ? "var(--red)"
+                          ? "var(--op-red)"
                           : selectedBill?.status === "pending"
-                            ? "var(--amber)"
-                            : "var(--emerald)",
+                            ? "var(--op-amber)"
+                            : "var(--op-green)",
                     }}
                   />
                   <span style={{ fontSize: "13px", color: "var(--op-text-primary)" }}>

@@ -37,11 +37,11 @@ export default function OperacoesLeadsPage() {
   const leads = useApi<LeadsResponse>(`/api/leads?_r=${refreshTick}`);
 
   const stages = [
-    { id: "NOVO", label: "Novo", color: "var(--amber)" },
-    { id: "CONVERSANDO", label: "Conversando", color: "var(--emerald)" },
-    { id: "FOLLOWUP", label: "Follow-up", color: "var(--amber)" },
-    { id: "ENCAMINHADO", label: "Encaminhado", color: "var(--emerald)" },
-    { id: "PERDIDO", label: "Perdido", color: "var(--red)" },
+    { id: "NOVO", label: "Novo", color: "var(--op-amber)" },
+    { id: "CONVERSANDO", label: "Conversando", color: "var(--op-green)" },
+    { id: "FOLLOWUP", label: "Follow-up", color: "var(--op-amber)" },
+    { id: "ENCAMINHADO", label: "Encaminhado", color: "var(--op-green)" },
+    { id: "PERDIDO", label: "Perdido", color: "var(--op-red)" },
   ];
 
   const filteredLeads = (leads.data?.items ?? []).filter((lead) => {

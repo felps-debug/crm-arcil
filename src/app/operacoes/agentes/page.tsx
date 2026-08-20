@@ -194,7 +194,7 @@ export default function OperacoesAgentesPage() {
         </div>
         <div className="op-ledger-cell">
           <span className="op-ledger-label">Taxa de Conversão</span>
-          <span className="op-ledger-value" style={{ color: "var(--emerald)" }}>
+          <span className="op-ledger-value" style={{ color: "var(--op-green)" }}>
             {totalActiveLeads + (agents.data?.agents.reduce((s, a) => s + a.lostLeads, 0) ?? 0) > 0
               ? Math.round((totalActiveLeads / (totalActiveLeads + (agents.data?.agents.reduce((s, a) => s + a.lostLeads, 0) ?? 0))) * 100)
               : 0}%
