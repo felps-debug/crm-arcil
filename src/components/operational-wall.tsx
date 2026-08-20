@@ -206,11 +206,11 @@ export function OperationalWall({
             </div>
             <div className="op-ledger-cell" style={{ minWidth: "auto", flex: 1 }}>
               <span className="op-ledger-label">Recebido</span>
-              <span className="op-ledger-value" style={{ color: "#70d8a1" }}>{formatMoney(metricaPorId(summary?.metrics, "received_revenue"))}</span>
+              <span className="op-ledger-value" style={{ color: "var(--emerald)" }}>{formatMoney(metricaPorId(summary?.metrics, "received_revenue"))}</span>
             </div>
             <div className="op-ledger-cell" style={{ minWidth: "auto", flex: 1 }}>
               <span className="op-ledger-label">Em risco</span>
-              <span className="op-ledger-value" style={{ color: "#ff7465" }}>{formatMoney(metricaPorId(summary?.metrics, "open_collections"))}</span>
+              <span className="op-ledger-value" style={{ color: "var(--red)" }}>{formatMoney(metricaPorId(summary?.metrics, "open_collections"))}</span>
             </div>
           </div>
         </section>
