@@ -9,7 +9,7 @@ import type { InventoryProduct } from "@/types/api";
 /** As mesmas quatro opções que a pergunta de tipo oferecia antes deste seletor
  *  existir — o gerador de imagem depende delas para saber onde o equipamento se
  *  instala. */
-export const TIPOS = ["Split Hi-Wall", "Cassete", "Piso-teto", "Dutado"] as const;
+export const TIPOS = ["Split Hi-Wall", "Cassete", "Piso-teto", "Dutado", "Janela"] as const;
 export type TipoEquipamento = (typeof TIPOS)[number];
 
 /**
@@ -27,6 +27,10 @@ export function tipoDoProduto(nome: string | null): TipoEquipamento | null {
   if (/\bDUTAD|\bDUTO\b/.test(n)) return "Dutado";
   // "PISO TETO" e "SPLIT TETO" instalam no mesmo lugar para efeito do desenho.
   if (/\bTETO\b/.test(n)) return "Piso-teto";
+  // ACJ = ar condicionado de janela: unidade única no vão, sem condensadora
+  // separada nem tubulação frigorígena exposta. Antes caía no default
+  // "Split Hi-Wall" do route.ts sem avisar — 12 produtos no catálogo.
+  if (/\bACJ\b|\bJANELA\b/.test(n)) return "Janela";
   return null;
 }
 

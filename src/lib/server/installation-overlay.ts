@@ -73,13 +73,52 @@ const img = (src: string, style: Record<string, unknown>): No => ({
   props: { src, style: { ...style } },
 });
 
-const PASSOS = [
+const PASSOS_PADRAO = [
   "Marcar e nivelar o suporte na parede",
   "Furar com leve caimento para fora",
   "Passar tubulação de cobre, dreno e cabo",
   "Fixar a unidade interna e conferir encaixe",
   "Testar drenagem, vedação e funcionamento",
 ];
+
+// A sequência de passos do hi-wall ("furar a parede", "suporte na parede") é
+// fisicamente errada para os outros formatos — cassete e dutado vão no forro,
+// janela não tem suporte de parede nenhum. Isso não é estilo, é o passo a
+// passo mostrando a obra errada para quem vai instalar.
+const PASSOS_POR_TIPO: Record<string, string[]> = {
+  cassete: [
+    "Marcar e nivelar o gabinete no forro",
+    "Abrir o vão e fixar os tirantes na laje",
+    "Passar tubulação de cobre, dreno (com bomba, se necessário) e cabo",
+    "Encaixar o gabinete e o painel decorativo",
+    "Testar drenagem, vedação e funcionamento",
+  ],
+  "piso-teto": [
+    "Marcar e nivelar o suporte no piso ou no teto",
+    "Fixar os suportes na superfície escolhida",
+    "Passar tubulação de cobre, dreno e cabo",
+    "Fixar a unidade interna e conferir encaixe",
+    "Testar drenagem, vedação e funcionamento",
+  ],
+  dutado: [
+    "Fixar a unidade no espaço técnico com amortecedores",
+    "Montar a rede de dutos, retorno e grelhas",
+    "Passar tubulação de cobre, dreno e cabo",
+    "Isolar termicamente dutos e conexões",
+    "Testar drenagem, vedação e funcionamento",
+  ],
+  janela: [
+    "Conferir e preparar o vão da janela ou parede",
+    "Instalar o suporte e a base de sustentação",
+    "Encaixar a unidade e vedar as laterais",
+    "Ligar ao ponto elétrico exclusivo",
+    "Testar vedação e funcionamento",
+  ],
+};
+
+function passosPara(tipoEquipamento: string): string[] {
+  return PASSOS_POR_TIPO[tipoEquipamento.trim().toLowerCase()] ?? PASSOS_PADRAO;
+}
 
 function spec(rotulo: string, valor: string): No {
   return el("div", { flexDirection: "column", marginBottom: 8 },
@@ -117,17 +156,44 @@ function topo(d: DadosOverlay): No {
   );
 }
 
-function base(d: DadosOverlay): No {
-  const specs: No[] = [
-    spec("Distância do teto", d.distanciaTeto),
-    spec("Espaçamento lateral", d.espacamentoLateral),
-    spec("Altura de instalação", d.alturaInstalacao),
-  ];
-  if (d.peDireito) specs.push(spec("Pé-direito", d.peDireito));
+/** Rótulo e presença dos cards mudam por tipo: "distância do teto" não
+ *  significa nada para um cassete que já mora no teto, e janela não tem
+ *  tubulação frigorígena exposta pra mostrar. Os valores continuam vindo do
+ *  que o vendedor respondeu — só o rótulo e o que aparece mudam aqui. */
+function especificacoes(d: DadosOverlay): No[] {
+  const t = d.tipoEquipamento.trim().toLowerCase();
+  const specs: No[] = [];
+
+  if (t === "cassete") {
+    specs.push(spec("Espaço no forro (plenum)", d.distanciaTeto));
+    specs.push(spec("Distância das paredes", d.espacamentoLateral));
+  } else if (t === "dutado") {
+    specs.push(spec("Espaço técnico (plenum)", d.distanciaTeto));
+    specs.push(spec("Afastamento da rede de dutos", d.espacamentoLateral));
+  } else if (t === "janela") {
+    // Unidade única no vão: nenhuma das três cotas genéricas (teto,
+    // espaçamento, altura) descreve essa instalação.
+  } else {
+    // split hi-wall, piso-teto e qualquer tipo não mapeado
+    specs.push(spec("Distância do teto", d.distanciaTeto));
+    specs.push(spec("Espaçamento lateral", d.espacamentoLateral));
+    specs.push(spec("Altura de instalação", d.alturaInstalacao));
+  }
+
+  if (d.peDireito) {
+    const rotuloPeDireito = t === "cassete" || t === "dutado" ? "Altura laje-forro" : t === "janela" ? "Medidas do vão" : "Pé-direito";
+    specs.push(spec(rotuloPeDireito, d.peDireito));
+  }
   if (d.tubulacao) specs.push(spec("Tubulação", d.tubulacao));
   if (d.pontoEletrico != null) specs.push(spec("Ponto elétrico", d.pontoEletrico ? "já existe" : "a executar"));
 
-  const passos = PASSOS.map((p, i) =>
+  return specs;
+}
+
+function base(d: DadosOverlay): No {
+  const specs = especificacoes(d);
+
+  const passos = passosPara(d.tipoEquipamento).map((p, i) =>
     el("div", { alignItems: "center", marginBottom: 10 },
       el("div", {
         alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 13,
@@ -148,12 +214,21 @@ function base(d: DadosOverlay): No {
     el("div", { fontSize: 12, color: CINZA, marginTop: 2 }, d.tipoEquipamento)
   );
 
-  const garantia = el("div", { flexDirection: "column", fontSize: 13, color: CLARO, lineHeight: 1.5 },
-    el("div", { marginBottom: 3 }, "· tubulação de cobre isolada"),
-    el("div", { marginBottom: 3 }, "· vácuo e teste de estanqueidade"),
-    el("div", { marginBottom: 3 }, "· dreno com caimento contínuo"),
-    el("div", {}, "· ponto elétrico exclusivo e aterrado")
-  );
+  // Janela é monobloco de fábrica: não tem tubulação de cobre nem vácuo pra
+  // testar em campo. Repetir a lista do hi-wall ali seria orientar o instalador
+  // a fazer um serviço que aquele aparelho não tem.
+  const garantia = d.tipoEquipamento.trim().toLowerCase() === "janela"
+    ? el("div", { flexDirection: "column", fontSize: 13, color: CLARO, lineHeight: 1.5 },
+        el("div", { marginBottom: 3 }, "· vedação completa do vão, sem frestas"),
+        el("div", { marginBottom: 3 }, "· caimento para o dreno de fábrica"),
+        el("div", {}, "· ponto elétrico exclusivo e aterrado")
+      )
+    : el("div", { flexDirection: "column", fontSize: 13, color: CLARO, lineHeight: 1.5 },
+        el("div", { marginBottom: 3 }, "· tubulação de cobre isolada"),
+        el("div", { marginBottom: 3 }, "· vácuo e teste de estanqueidade"),
+        el("div", { marginBottom: 3 }, "· dreno com caimento contínuo"),
+        el("div", {}, "· ponto elétrico exclusivo e aterrado")
+      );
 
   return el("div", { flexDirection: "column", padding: "0 36px 26px" },
     el("div", { gap: 18 },
