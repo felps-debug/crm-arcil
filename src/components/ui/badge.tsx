@@ -3,13 +3,13 @@ import { cn } from "@/lib/utils";
 type BadgeVariant = "default" | "success" | "warning" | "danger" | "info" | "outline" | "violet";
 
 const variants: Record<BadgeVariant, string> = {
-  default: "bg-[var(--bg-subtle)] text-[var(--text-secondary)] ring-1 ring-[var(--border)]",
-  success: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-600/15",
-  warning: "bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-1 ring-amber-600/15",
-  danger: "bg-red-500/10 text-red-700 dark:text-red-300 ring-1 ring-red-600/15",
-  info: "bg-sky-500/10 text-sky-700 dark:text-sky-300 ring-1 ring-sky-600/15",
-  outline: "bg-transparent text-[var(--text-secondary)] ring-1 ring-[var(--border)]",
-  violet: "bg-violet-500/10 text-violet-700 dark:text-violet-300 ring-1 ring-violet-600/15",
+  default: "bg-slate-100 text-slate-600 ring-1 ring-slate-200/60",
+  success: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/10",
+  warning: "bg-amber-50 text-amber-700 ring-1 ring-amber-600/10",
+  danger: "bg-red-50 text-red-700 ring-1 ring-red-600/10",
+  info: "bg-sky-50 text-sky-700 ring-1 ring-sky-600/10",
+  outline: "bg-transparent text-slate-500 ring-1 ring-slate-200",
+  violet: "bg-violet-50 text-violet-700 ring-1 ring-violet-600/10",
 };
 
 interface BadgeProps {
@@ -22,7 +22,8 @@ interface BadgeProps {
 export function Badge({ children, variant = "default", className, dot }: BadgeProps) {
   return (
     <span className={cn(
-      "inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[11.5px] font-semibold tracking-wide transition-all duration-150",
+      "inline-flex items-center gap-1.5 px-3 py-1 rounded-full dark:rounded-md text-[11.5px] font-semibold tracking-wide transition-all duration-150",
+      "dark:capitalize",
       variants[variant],
       className
     )}>

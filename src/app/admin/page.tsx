@@ -294,10 +294,10 @@ function AdminPageInner() {
               </div>
               <div className="mt-4 space-y-2 text-[12px] text-[var(--text-secondary)]">
                 {activity.loading && <p className="text-[var(--text-muted)]">Carregando...</p>}
-                {!activity.loading && (activity.data?.items?.length ?? 0) === 0 && (
+                {!activity.loading && (activity.data?.items.length ?? 0) === 0 && (
                   <p className="text-[var(--text-muted)]">Nenhuma atividade registrada.</p>
                 )}
-                {activity.data?.items?.map((item) => (
+                {activity.data?.items.map((item) => (
                   <div key={item.id} className="flex items-center justify-between gap-2 border-b border-[var(--border)] pb-2 last:border-0">
                     <span>{item.action} — {item.entityType}</span>
                     <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{formatDateTime(item.createdAt)}</span>

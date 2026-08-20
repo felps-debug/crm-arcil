@@ -14,10 +14,10 @@
 
 :root {
   /* ── Surfaces ─────────────────────────────────────────────────── */
-  --bg-base:    #edf2f5;
-  --bg-surface: #f8fafb;
-  --bg-subtle:  #e3ebef;
-  --bg-inset:   #eef3f6;
+  --bg-base:    #f5f5f7;
+  --bg-surface: #ffffff;
+  --bg-subtle:  #f0f0f2;
+  --bg-inset:   #fafafa;
 
   /* ── Text ─────────────────────────────────────────────────────────
      Contraste medido sobre --bg-surface (#fff) e --bg-base (#f5f5f7).
@@ -25,74 +25,74 @@
      exige para texto normal — e ele responde por ~180 usos, então um quinto
      da interface clara ficava ilegível. O antigo secondary desceu para muted
      e o secondary escureceu, o que mantém os três níveis distintos. */
-  --text-primary:   #142631;
-  --text-secondary: #4b626e;
-  --text-muted:     #667b86;
+  --text-primary:   #1d1d1f; /* 16.83 · 15.46 */
+  --text-secondary: #55555a; /*  7.41 ·  6.81 */
+  --text-muted:     #6e6e73; /*  5.07 ·  4.66 */
 
   /* ── Borders ──────────────────────────────────────────────────── */
-  --border:        #cbd8de;
-  --border-strong: #aebfc8;
+  --border:        rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
 
   /* ── Accents ──────────────────────────────────────────────────── */
-  --blue:    #1f4f86;
-  --emerald: #2b8068;
-  --amber:   #b77b28;
-  --red:     #b74444;
-  --violet:  #566fa8;
-  --sky:     #6895b2;
+  --blue:    #0071e3;
+  --emerald: #34c759;
+  --amber:   #ff9f0a;
+  --red:     #ff3b30;
+  --violet:  #bf5af2;
+  --sky:     #32ade6;
 
   /* ── Sidebar (azul-marinho) ────────────────────────────────────────
      Escura nos dois temas de propósito: é o azul da marca. As cores do texto
      viviam fixas no JSX; aqui elas ficam controláveis pelo tema, mesmo que
      hoje os dois temas usem o mesmo valor. Contraste: 11.15 e 10.21. */
-  --sidebar-bg:       #172959;
-  --sidebar-border:   #263d70;
-  --sidebar-text:     #d7e4f1;
-  --sidebar-dim:      #a8bfd4;
-  --sidebar-logo:     #f7f8f9;
-  --sidebar-active:   #2e5e98;
-  --sidebar-divider:  #263d70;
+  --sidebar-bg:       #0d1b34;
+  --sidebar-border:   rgba(255,255,255,0.08);
+  --sidebar-text:     #c8d1df; /* 11.15 */
+  --sidebar-dim:      #7f8ca3; /*  5.05 */
+  --sidebar-logo:     #a9c9ff; /* 10.21 */
+  --sidebar-active:   #2d7dff;
+  --sidebar-divider:  #1f2b3d;
   --sidebar-w-closed: 64px;
-  --sidebar-w-open:   244px;
+  --sidebar-w-open:   220px;
 
   /* ── Shadows (very subtle — Apple style) ────────────────────────── */
-  --shadow-xs:   0 1px 2px rgba(20,38,49,0.06);
-  --shadow-sm:   0 2px 8px rgba(20,38,49,0.07);
-  --shadow-card: 0 1px 2px rgba(20,38,49,0.08), 0 8px 24px rgba(20,38,49,0.06);
-  --shadow-md:   0 4px 16px rgba(20,38,49,0.1), 0 1px 4px rgba(20,38,49,0.07);
-  --shadow-lg:   0 12px 32px rgba(20,38,49,0.13), 0 2px 8px rgba(20,38,49,0.08);
-  --shadow-xl:   0 24px 64px rgba(20,38,49,0.18), 0 8px 24px rgba(20,38,49,0.1);
+  --shadow-xs:   0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-md:   0 4px 16px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04);
+  --shadow-lg:   0 8px 32px rgba(0,0,0,0.09), 0 2px 8px rgba(0,0,0,0.05);
+  --shadow-xl:   0 20px 60px rgba(0,0,0,0.12), 0 6px 20px rgba(0,0,0,0.06);
 }
 
 .dark {
   /* Deep Space Console — surfaces */
-  --bg-base:    #0b1720;
-  --bg-surface: #132530;
-  --bg-subtle:  #193440;
-  --bg-inset:   #0f1f29;
+  --bg-base:    #070a0f;
+  --bg-surface: #161d27;
+  --bg-subtle:  #1e2733;
+  --bg-inset:   #10151d;
 
-  --text-primary:   #e7f0f3;
-  --text-secondary: #9bb2bd;
+  --text-primary:   #f1f4f8; /* 15.36 · 17.97 */
+  --text-secondary: #a7b3c2; /*  7.97 ·  9.32 */
   /* Era #6b7788: 3.73:1 sobre o card, abaixo do mínimo. */
-  --text-muted:     #75909d;
+  --text-muted:     #8592a5; /*  5.37 ·  6.28 */
 
-  --border:        #264450;
-  --border-strong: #3c626f;
+  --border:        #232c38;
+  --border-strong: #3d4a5a;
 
-  --sidebar-bg:     #172959;
-  --sidebar-border: #263d70;
-  --sidebar-text:   #d7e4f1;
-  --sidebar-dim:    #a8bfd4;
-  --sidebar-logo:   #f7f8f9;
-  --sidebar-active: #2e5e98;
-  --sidebar-divider: #263d70;
+  --sidebar-bg:     #070a0f;
+  --sidebar-border: #1a222d;
+  --sidebar-text:   #c8d1df; /* 12.88 */
+  --sidebar-dim:    #7f8ca3; /*  5.84 */
+  --sidebar-logo:   #a9c9ff; /* 11.79 */
+  --sidebar-active: #2d7dff;
+  --sidebar-divider: #1f2b3d;
 
-  --blue:    #8fb1c8;
-  --emerald: #72c4a5;
-  --amber:   #e0ad60;
-  --red:     #ef8a84;
-  --violet:  #a8b9df;
-  --sky:     #aacfe8;
+  --blue:    #4c93ff;
+  --emerald: #4fe0a6;
+  --amber:   #ffb545;
+  --red:     #ff7a68;
+  --violet:  #b98bff;
+  --sky:     #4c93ff;
 
   --shadow-xs:   0 1px 2px rgba(0,0,0,0.4);
   --shadow-sm:   0 1px 2px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3);
@@ -102,12 +102,12 @@
   --shadow-xl:   0 4px 8px rgba(0,0,0,0.6), 0 24px 60px rgba(0,0,0,0.5);
 
   /* Deep Space Console — semantic + glow */
-  --dsc-primary:    #8fb1c8;
-  --dsc-primary-2:  #1f4f86;
-  --dsc-success:    #72c4a5;
-  --dsc-warning:    #e0ad60;
-  --dsc-error:      #ef8a84;
-  --dsc-ai:         #a8b9df;
+  --dsc-primary:    #4c93ff;
+  --dsc-primary-2:  #2f6fe0;
+  --dsc-success:    #4fe0a6;
+  --dsc-warning:    #ffb545;
+  --dsc-error:      #ff7a68;
+  --dsc-ai:         #b98bff;
 
   --glow-primary: 0 0 16px rgba(76,147,255,0.25);
   --glow-success: 0 0 16px rgba(79,224,166,0.25);
@@ -116,7 +116,9 @@
   --glow-ai:      0 0 16px rgba(185,139,255,0.25);
 }
 
-.dark body { background: var(--bg-base); }
+.dark body {
+  background: radial-gradient(ellipse 1200px 600px at 50% -10%, #10151f 0%, #070a0f 55%);
+}
 
 .dark .glow-primary { box-shadow: var(--glow-primary); }
 .dark .glow-success { box-shadow: var(--glow-success); }
@@ -160,12 +162,12 @@ body {
 /* ── Header glass ─────────────────────────────────────────────────── */
 
 .header-glass {
-  background: rgba(248, 250, 251, 0.9);
-  backdrop-filter: blur(18px) saturate(1.3);
-  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  background: rgba(245, 245, 247, 0.88);
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
 }
 .dark .header-glass {
-  background: rgba(8, 27, 35, 0.86);
+  background: rgba(0, 0, 0, 0.72);
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────────── */
@@ -237,25 +239,7 @@ body {
   -webkit-backdrop-filter: blur(20px) saturate(1.8);
 }
 .dark .glass {
-  background: rgba(19, 37, 48, 0.9);
-}
-
-/* ARCIL Signal Atlas: shared cartographic texture and semantic utility layer. */
-.console-grid-bg { background-image: none; }
-
-.dark .console-grid-bg { background-image: none; }
-
-.signal-rule {
-  height: 1px;
-  background: linear-gradient(90deg, var(--blue), transparent 72%);
-}
-
-.signal-marker {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--blue);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 16%, transparent);
+  background: rgba(28, 28, 30, 0.85);
 }
 
 /* ── Badge dark mode ─────────────────────────────────────────────── */
@@ -383,44 +367,33 @@ body {
   border-radius: 18px 18px 4px 18px;
 }
 
-/* ARCIL Signal Atlas finish layer */
+/* ARCIL Broadcast Operations System */
 .dark {
-  --bg-base: #0c1930;
-  --bg-surface: #142744;
-  --bg-subtle: #1b3557;
-  --bg-inset: #10203a;
-  --bg-surface: #132530;
-  --bg-subtle: #193440;
-  --bg-inset: #0f1f29;
-  --text-primary: #e7f0f3;
-  --text-secondary: #9bb2bd;
-  --text-muted: #75909d;
-  --border: #264450;
-  --border-strong: #3c626f;
-  --blue: #8fb1c8;
-  --emerald: #72c4a5;
-  --amber: #e0ad60;
-  --red: #ef8a84;
-  --violet: #a8b9df;
-  --sky: #aacfe8;
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.35);
+  --bg-base: #071321;
+  --bg-surface: #0b1d2f;
+  --bg-subtle: #102842;
+  --bg-inset: #091827;
+  --text-primary: #f0f5fb;
+  --text-secondary: #c1d0df;
+  --text-muted: #91a7bc;
+  --border: #203c56;
+  --border-strong: #3d6688;
+  --blue: #5b9cf3;
+  --emerald: #62c779;
+  --amber: #efb332;
+  --red: #ed7a68;
+  --violet: #b58aff;
+  --sky: #46cddd;
+  --shadow-card: 0 14px 30px rgba(1, 8, 15, 0.22);
 }
 
-.dark body { background: var(--bg-base); }
+.dark body {
+  background: #071321;
+}
 
-.console-grid-bg { background-color: var(--bg-base); }
-
-/* ARCIL brand bridge: legacy Tailwind utility colors inherit the official mark palette. */
-.text-blue-200, .text-blue-300, .text-blue-400, .text-blue-500 { color: var(--blue) !important; }
-.text-sky-300, .text-sky-400, .text-sky-500 { color: var(--sky) !important; }
-.text-emerald-300, .text-emerald-400, .text-emerald-500 { color: var(--emerald) !important; }
-.text-amber-300, .text-amber-400, .text-amber-500 { color: var(--amber) !important; }
-.text-violet-300, .text-violet-400, .text-violet-500 { color: var(--violet) !important; }
-.bg-blue-500 { background-color: var(--sidebar-active) !important; }
-[class~="bg-blue-500/10"], [class~="bg-blue-500/8"], [class~="bg-blue-500/5"] { background-color: color-mix(in srgb, var(--blue) 10%, transparent) !important; }
-[class~="bg-emerald-500/10"], [class~="bg-emerald-500/8"] { background-color: color-mix(in srgb, var(--emerald) 10%, transparent) !important; }
-[class~="bg-violet-500/15"], [class~="bg-violet-500/10"] { background-color: color-mix(in srgb, var(--violet) 12%, transparent) !important; }
-[class~="border-blue-500/20"], [class~="border-blue-500/25"] { border-color: color-mix(in srgb, var(--blue) 28%, var(--border)) !important; }
+.console-grid-bg {
+  background: var(--bg-base);
+}
 
 /* Deslocamento do conteúdo pelo trilho lateral. A largura chega por
    `--rail-w` (definida inline no MainWrapper, que sabe se está recolhido);

@@ -1,0 +1,301 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-12T00:00:00.000Z",
+  "title": "Design System: ARCIL Operations Console",
+  "extensions": {
+    "colorMeta": {
+      "bg-base": {
+        "role": "neutral",
+        "displayName": "Console Base",
+        "canonical": "#edf2f5",
+        "darkValue": "#0b1720",
+        "note": "Page field behind every panel.",
+        "tonalRamp": ["#06111a", "#0b1720", "#132530", "#193440", "#2b4553", "#6a8a99", "#c3d4dd", "#edf2f5"]
+      },
+      "bg-surface": {
+        "role": "neutral",
+        "displayName": "Panel Surface",
+        "canonical": "#f8fafb",
+        "darkValue": "#132530",
+        "note": "Card and panel fill."
+      },
+      "bg-subtle": {
+        "role": "neutral",
+        "displayName": "Subtle Fill",
+        "canonical": "#e3ebef",
+        "darkValue": "#193440",
+        "note": "Neutral chip fill, empty progress tracks, sidebar hover."
+      },
+      "bg-inset": {
+        "role": "neutral",
+        "displayName": "Inset Fill",
+        "canonical": "#eef3f6",
+        "darkValue": "#0f1f29",
+        "note": "Table headers, input fills, row hover inside panels."
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Primary Ink",
+        "canonical": "#142631",
+        "darkValue": "#e7f0f3",
+        "tonalRamp": ["#0a141b", "#142631", "#25404f", "#3a5b6d", "#4b626e", "#849aa5", "#b8c9d1", "#e7f0f3"]
+      },
+      "text-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Ink",
+        "canonical": "#4b626e",
+        "darkValue": "#9bb2bd"
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "#667b86",
+        "darkValue": "#75909d",
+        "note": "Contrast floor. Raised from earlier values that failed AA in both themes."
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#cbd8de",
+        "darkValue": "#264450"
+      },
+      "border-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "#aebfc8",
+        "darkValue": "#3c626f"
+      },
+      "signal-blue": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "#1f4f86",
+        "darkValue": "#8fb1c8",
+        "note": "Default accent: primary/active controls, focus outline, links, progress fill, info severity.",
+        "tonalRamp": ["#0a1a2e", "#10294a", "#163a66", "#1f4f86", "#2f6ba8", "#4e8cc4", "#8fb1c8", "#d6e5f0"]
+      },
+      "signal-emerald": {
+        "role": "secondary",
+        "displayName": "Signal Emerald",
+        "canonical": "#2b8068",
+        "darkValue": "#72c4a5",
+        "note": "Healthy or completed state: enabled agents, positive helper lines, synced stock.",
+        "tonalRamp": ["#06201a", "#0b3329", "#17553f", "#2b8068", "#3fa085", "#72c4a5", "#a9ddc9", "#dcf1e8"]
+      },
+      "signal-amber": {
+        "role": "secondary",
+        "displayName": "Signal Amber",
+        "canonical": "#b77b28",
+        "darkValue": "#e0ad60",
+        "note": "Factual attention that has not yet failed: overdue queues, urgent follow-ups.",
+        "tonalRamp": ["#2b1c05", "#452d0a", "#6d4712", "#b77b28", "#d69a45", "#e0ad60", "#eeca97", "#f8e9d2"]
+      },
+      "signal-red": {
+        "role": "tertiary",
+        "displayName": "Signal Red",
+        "canonical": "#b74444",
+        "darkValue": "#ef8a84",
+        "note": "Real exception: danger severity, error surfaces, destructive controls.",
+        "tonalRamp": ["#2c0d0d", "#471616", "#6f2424", "#b74444", "#d46464", "#ef8a84", "#f3b4b0", "#fadfdd"]
+      },
+      "signal-violet": {
+        "role": "tertiary",
+        "displayName": "Signal Violet",
+        "canonical": "#566fa8",
+        "darkValue": "#a8b9df",
+        "note": "The AI-automation domain: agent state and agent metrics.",
+        "tonalRamp": ["#131a2c", "#1f2a47", "#33456f", "#566fa8", "#7a90c4", "#a8b9df", "#c9d4ec", "#e8edf7"]
+      },
+      "signal-sky": {
+        "role": "tertiary",
+        "displayName": "Signal Sky",
+        "canonical": "#6895b2",
+        "darkValue": "#aacfe8",
+        "note": "Supporting cool accent for secondary data emphasis.",
+        "tonalRamp": ["#12222c", "#1d3846", "#2f5a70", "#6895b2", "#8ab3cb", "#aacfe8", "#cbe2f1", "#e8f3fa"]
+      },
+      "sidebar-bg": {
+        "role": "primary",
+        "displayName": "Anchor Navy",
+        "canonical": "#172959",
+        "darkValue": "#172959",
+        "note": "Declared identically in both themes. The sidebar is a brand surface, not a content surface.",
+        "tonalRamp": ["#0a1229", "#0f1c3d", "#172959", "#1f3670", "#2e5e98", "#4d84c0", "#a8bfd4", "#d7e4f1"]
+      },
+      "sidebar-border": {
+        "role": "primary",
+        "displayName": "Anchor Rule",
+        "canonical": "#263d70",
+        "darkValue": "#263d70"
+      },
+      "sidebar-text": {
+        "role": "primary",
+        "displayName": "Anchor Ink",
+        "canonical": "#d7e4f1",
+        "darkValue": "#d7e4f1"
+      },
+      "sidebar-dim": {
+        "role": "primary",
+        "displayName": "Anchor Dim",
+        "canonical": "#a8bfd4",
+        "darkValue": "#a8bfd4"
+      },
+      "sidebar-active": {
+        "role": "primary",
+        "displayName": "Anchor Active",
+        "canonical": "#2e5e98",
+        "darkValue": "#2e5e98"
+      }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Page Title", "purpose": "The page name in the console header. One per screen." },
+      "heading": { "displayName": "Panel Heading", "purpose": "Card and panel headings." },
+      "body": { "displayName": "Body", "purpose": "Row content, table cells, descriptive text." },
+      "label": { "displayName": "Label", "purpose": "Uppercase metric labels and table column headers." },
+      "chip": { "displayName": "Chip", "purpose": "Status chip text. One word or number." },
+      "data": { "displayName": "Data", "purpose": "Metric readings and all numerals. Tabular figures, never used for prose." }
+    },
+    "shadows": [
+      { "name": "shadow-xs", "value": "0 1px 2px rgba(20,38,49,0.06)", "purpose": "Barely-there contact shadow on small controls." },
+      { "name": "shadow-sm", "value": "0 2px 8px rgba(20,38,49,0.07)", "purpose": "Raised controls and small popovers." },
+      { "name": "shadow-card", "value": "0 1px 2px rgba(20,38,49,0.08), 0 8px 24px rgba(20,38,49,0.06)", "purpose": "Every card, panel and metric tile. The system default." },
+      { "name": "shadow-md", "value": "0 4px 16px rgba(20,38,49,0.1), 0 1px 4px rgba(20,38,49,0.07)", "purpose": "Hover lift on interactive cards." },
+      { "name": "shadow-lg", "value": "0 12px 32px rgba(20,38,49,0.13), 0 2px 8px rgba(20,38,49,0.08)", "purpose": "Dropdowns and menus." },
+      { "name": "shadow-xl", "value": "0 24px 64px rgba(20,38,49,0.18), 0 8px 24px rgba(20,38,49,0.1)", "purpose": "Drawers and dialogs." }
+    ],
+    "motion": [
+      { "name": "fade-in", "value": "fade-in 0.25s ease-out forwards", "purpose": "Content arriving in place; 5px rise." },
+      { "name": "slide-up", "value": "slide-up 0.3s ease-out forwards", "purpose": "Panels and drawers entering; 12px rise." },
+      { "name": "scale-in", "value": "scale-in 0.18s ease-out forwards", "purpose": "Dialogs and popovers; 0.97 → 1." },
+      { "name": "shimmer", "value": "shimmer 1.6s ease-in-out infinite", "purpose": "Skeleton placeholders while data loads." },
+      { "name": "state-transition", "value": "150ms–300ms ease-out", "purpose": "Hover, focus and colour state changes on controls." },
+      { "name": "reduced-motion", "value": "@media (prefers-reduced-motion: reduce) → 0.01ms", "purpose": "All animation and transition durations collapse; honoured globally." }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "768px" },
+      { "name": "xl", "value": "1280px" },
+      { "name": "2xl", "value": "1536px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Console Card",
+      "kind": "card",
+      "refersTo": "console-card",
+      "description": "The panel every screen is built from. Padded by default; unpadded when it holds a table or a divided row list.",
+      "html": "<section class=\"ds-card\"><h2 class=\"ds-card-title\">Agenda operacional</h2><p class=\"ds-card-sub\">Estado atual de cada domínio e o próximo passo de quem responde por ele</p></section>",
+      "css": ".ds-card { background: var(--bg-surface, #f8fafb); border: 1px solid var(--border, #cbd8de); border-radius: 14px; box-shadow: 0 1px 2px rgba(20,38,49,0.08), 0 8px 24px rgba(20,38,49,0.06); padding: 16px; font-family: Montserrat, sans-serif; } .ds-card-title { margin: 0; font-size: 13px; font-weight: 700; color: var(--text-primary, #142631); } .ds-card-sub { margin: 2px 0 0; font-size: 11px; color: var(--text-muted, #667b86); }"
+    },
+    {
+      "name": "Metric Tile",
+      "kind": "card",
+      "refersTo": "console-metric",
+      "description": "One reading per tile: uppercase label, monospaced value, optional helper line, tinted icon square carrying the tone.",
+      "html": "<section class=\"ds-metric\"><div class=\"ds-metric-body\"><p class=\"ds-metric-label\">Total leads</p><div class=\"ds-metric-value\">1.284</div><div class=\"ds-metric-helper\">base completa</div></div><div class=\"ds-metric-icon\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/></svg></div></section>",
+      "css": ".ds-metric { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-height: 128px; background: var(--bg-surface, #f8fafb); border: 1px solid var(--border, #cbd8de); border-radius: 14px; box-shadow: 0 1px 2px rgba(20,38,49,0.08), 0 8px 24px rgba(20,38,49,0.06); padding: 16px; font-family: Montserrat, sans-serif; } .ds-metric-label { margin: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted, #667b86); } .ds-metric-value { margin-top: 20px; font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; font-size: 30px; font-weight: 700; line-height: 1; color: var(--text-primary, #142631); } .ds-metric-helper { margin-top: 8px; font-size: 11px; font-weight: 600; color: var(--emerald, #2b8068); } .ds-metric-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 6px; border: 1px solid rgba(59,130,246,0.2); background: rgba(59,130,246,0.1); color: var(--blue, #1f4f86); }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "console-status",
+      "description": "One factual word or number: a state, a severity count, a domain. Text colour is read from a theme variable so it survives the light/dark swap.",
+      "html": "<span class=\"ds-chip ds-chip-blue\">8 na base</span> <span class=\"ds-chip ds-chip-emerald\">Ativo</span> <span class=\"ds-chip ds-chip-amber\">6</span> <span class=\"ds-chip ds-chip-slate\">Pausado</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; border-radius: 4px; border: 1px solid; padding: 2px 8px; font-family: Montserrat, sans-serif; font-size: 10px; font-weight: 700; text-transform: uppercase; } .ds-chip-blue { border-color: rgba(59,130,246,0.25); background: rgba(59,130,246,0.1); color: var(--blue, #1f4f86); } .ds-chip-emerald { border-color: rgba(16,185,129,0.25); background: rgba(16,185,129,0.1); color: var(--emerald, #2b8068); } .ds-chip-amber { border-color: rgba(245,158,11,0.25); background: rgba(245,158,11,0.1); color: var(--amber, #b77b28); } .ds-chip-red { border-color: rgba(239,68,68,0.25); background: rgba(239,68,68,0.1); color: var(--red, #b74444); } .ds-chip-violet { border-color: rgba(139,92,246,0.25); background: rgba(139,92,246,0.1); color: var(--violet, #566fa8); } .ds-chip-slate { border-color: var(--border, #cbd8de); background: var(--bg-subtle, #e3ebef); color: var(--text-secondary, #4b626e); }"
+    },
+    {
+      "name": "Console Button",
+      "kind": "button",
+      "refersTo": "console-button",
+      "description": "The default control. Hover raises the border to Signal Blue and the label to primary ink.",
+      "html": "<button class=\"ds-btn\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/><path d=\"M21 3v5h-5\"/><path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/><path d=\"M8 16H3v5\"/></svg>Atualizar</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--border, #cbd8de); background: var(--bg-surface, #f8fafb); color: var(--text-secondary, #4b626e); font-family: Montserrat, sans-serif; font-size: 12px; font-weight: 700; cursor: pointer; transition: border-color 200ms ease-out, color 200ms ease-out; } .ds-btn:hover { border-color: rgba(59,130,246,0.5); color: var(--text-primary, #142631); } .ds-btn:focus-visible { outline: 2px solid var(--blue, #1f4f86); outline-offset: 2px; }"
+    },
+    {
+      "name": "Console Button (active)",
+      "kind": "button",
+      "refersTo": "console-button-active",
+      "description": "The selected item in a button-group tab row. Solid Signal Blue, white label.",
+      "html": "<button class=\"ds-btn-active\">Monitoramento <span class=\"ds-btn-count\">12</span></button>",
+      "css": ".ds-btn-active { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid #3b82f6; background: #3b82f6; color: #fff; font-family: Montserrat, sans-serif; font-size: 12px; font-weight: 700; cursor: pointer; } .ds-btn-count { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; opacity: 0.8; } .ds-btn-active:focus-visible { outline: 2px solid var(--blue, #1f4f86); outline-offset: 2px; }"
+    },
+    {
+      "name": "Console Input",
+      "kind": "input",
+      "refersTo": "console-input",
+      "description": "A full pill so a search field is unmistakable next to a rectangular button.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Buscar agentes...\" />",
+      "css": ".ds-input { height: 40px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--border, #cbd8de); background: var(--bg-inset, #eef3f6); color: var(--text-primary, #142631); font-family: Montserrat, sans-serif; font-size: 13px; outline: none; transition: border-color 200ms ease-out; } .ds-input::placeholder { color: var(--text-muted, #667b86); } .ds-input:focus { border-color: rgba(59,130,246,0.6); } .ds-input:focus-visible { outline: 2px solid var(--blue, #1f4f86); outline-offset: 2px; }"
+    },
+    {
+      "name": "Console Table",
+      "kind": "custom",
+      "refersTo": "console-table-header",
+      "description": "Uppercase tracked headers on the inset fill, hairline row dividers, inset hover. Lives inside a horizontally scrolling container.",
+      "html": "<div class=\"ds-table-wrap\"><table class=\"ds-table\"><thead><tr><th>Domínio</th><th>Estado atual</th><th>Responsável</th></tr></thead><tbody><tr><td class=\"ds-td-strong\">Leads</td><td><span class=\"ds-chip ds-chip-blue\">8 na base</span></td><td>Comercial</td></tr><tr><td class=\"ds-td-strong\">Agentes IA</td><td><span class=\"ds-chip ds-chip-violet\">5 habilitados</span></td><td>Automação</td></tr></tbody></table></div>",
+      "css": ".ds-table-wrap { overflow-x: auto; } .ds-table { width: 100%; border-collapse: collapse; text-align: left; font-family: Montserrat, sans-serif; font-size: 12px; color: var(--text-secondary, #4b626e); } .ds-table thead tr { background: var(--bg-inset, #eef3f6); border-bottom: 1px solid var(--border, #cbd8de); } .ds-table th { white-space: nowrap; padding: 8px 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted, #667b86); } .ds-table td { padding: 10px 12px; border-bottom: 1px solid var(--border, #cbd8de); } .ds-table tbody tr:last-child td { border-bottom: 0; } .ds-table tbody tr:hover { background: var(--bg-inset, #eef3f6); } .ds-td-strong { font-weight: 700; color: var(--text-primary, #142631); } .ds-chip { display: inline-flex; align-items: center; border-radius: 4px; border: 1px solid; padding: 2px 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; } .ds-chip-blue { border-color: rgba(59,130,246,0.25); background: rgba(59,130,246,0.1); color: var(--blue, #1f4f86); } .ds-chip-violet { border-color: rgba(139,92,246,0.25); background: rgba(139,92,246,0.1); color: var(--violet, #566fa8); }"
+    },
+    {
+      "name": "Sidebar Item",
+      "kind": "nav",
+      "refersTo": "sidebar-item-active",
+      "description": "The navy rail item. Rest, hover wash and active fill. The rail is theme-independent.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-nav-item-active\" href=\"#\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m16 12-4-4-4 4\"/></svg>Dashboard</a><a class=\"ds-nav-item\" href=\"#\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/></svg>Leads</a></nav>",
+      "css": ".ds-nav { display: flex; flex-direction: column; gap: 4px; padding: 12px; background: var(--sidebar-bg, #172959); border-radius: 12px; font-family: Montserrat, sans-serif; } .ds-nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--sidebar-text, #d7e4f1); text-decoration: none; transition: background 200ms ease-out; } .ds-nav-item:hover { background: rgba(255,255,255,0.06); } .ds-nav-item-active { background: var(--sidebar-active, #2e5e98); }"
+    },
+    {
+      "name": "Error Card",
+      "kind": "custom",
+      "refersTo": "console-card",
+      "description": "The error state: a card with a 30% red border, a 5% red wash, a warning glyph and the message.",
+      "html": "<section class=\"ds-error\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/></svg><span>Erro interno. Tente novamente.</span></section>",
+      "css": ".ds-error { display: flex; align-items: center; gap: 12px; background: rgba(239,68,68,0.05); border: 1px solid rgba(239,68,68,0.3); border-radius: 14px; padding: 16px; font-family: Montserrat, sans-serif; font-size: 14px; font-weight: 600; color: var(--red, #b74444); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Instrument Panel",
+    "overview": "ARCIL is an operations console, not a reporting dashboard. Every screen answers the same two questions — what is the state right now, and who acts next — using one small vocabulary of parts: a titled page, a row of measured metrics, and panels that are either a table or a list of rows. A team member moving from Leads to Cobranças to Estoque should never have to relearn where to look; the furniture is identical and only the readings change.\n\nThe surface is quiet on purpose. Neutral panels carry the structure, and color appears only where it reports something factual: a severity, a domain, a connection state, a stock condition. Numbers are set in a monospaced face with tabular figures so a column of readings lines up and a changing value does not reflow its neighbours. Everything else is Montserrat, the same face as arcil.com.br.\n\nThe system is dual-theme by construction. Light and dark are not two skins over one palette; they are two sets of values behind the same variable names, including the accents. The one element that does not flip is the sidebar, which stays deep navy in both themes as the fixed brand anchor of the product.",
+    "keyCharacteristics": [
+      "One page shell — title, subtitle, actions, then stacked sections — reused by every route.",
+      "Cards are gently rounded (14px), hairline-bordered and softly shadowed; they never nest.",
+      "Numerals live in IBM Plex Mono with tabular figures; prose and labels live in Montserrat.",
+      "Accent colour is state reporting, never decoration, and always read from a theme variable.",
+      "The navy sidebar is theme-independent and frames every screen."
+    ],
+    "rules": [
+      {
+        "name": "The Theme-Variable Rule",
+        "body": "Accent text must be set from var(--blue), var(--emerald), var(--amber), var(--red), var(--violet) or var(--sky), never from a fixed Tailwind shade. The theme swaps those variables; a literal text-blue-300 survives the swap and lands at roughly 1.9:1 on the light field. Tinted backgrounds and borders may stay as blue-500/10 and blue-500/25, because a 10% tint reads correctly over either field.",
+        "section": "colors"
+      },
+      {
+        "name": "The State-Only Colour Rule",
+        "body": "A coloured value identifies a state, a severity or a domain. Structure — panels, rules, headers, page chrome — stays neutral. No colour fields, no gradient surfaces, no accent used because a section needed variety.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono-for-Measurement Rule",
+        "body": "The .font-data class goes on numbers, currency, timestamps and identifiers. It never goes on prose, labels or headings — monospace here is for alignment, not for flavour.",
+        "section": "typography"
+      },
+      {
+        "name": "The No-Nesting Rule",
+        "body": "A card never contains another card. Sub-sections inside a panel are separated by a hairline divider or a tonal step, never by a second bordered, shadowed box.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do build new screens from ConsolePage, ConsoleCard, ConsoleMetric, ConsoleStatus, ConsoleTable, ConsoleButton and ConsoleInput rather than hand-rolling a layout.",
+      "Do read every colour from a theme variable, and verify both themes before calling a screen done.",
+      "Do put numerals in .font-data so columns align and live values do not reflow.",
+      "Do give every list and table an empty state that names what belongs there.",
+      "Do let wide tables scroll inside their own container."
+    ],
+    "donts": [
+      "Don't use a fixed Tailwind colour for accent text; the theme swap will strand it at unreadable contrast.",
+      "Don't nest a card inside a card.",
+      "Don't use monospace for prose, labels or headings.",
+      "Don't introduce a per-page visual language — a route with its own CSS module and its own header is a defect, not a feature.",
+      "Don't colour a surface for variety; colour reports state.",
+      "Don't rely on the dark: Tailwind variant for anything the CSS variables already express; theming here runs through :root / .dark variable declarations."
+    ]
+  }
+}
