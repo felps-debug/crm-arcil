@@ -121,36 +121,36 @@ function passosPara(tipoEquipamento: string): string[] {
 }
 
 function spec(rotulo: string, valor: string): No {
-  return el("div", { flexDirection: "column", marginBottom: 8 },
-    el("div", { fontSize: 12, color: CINZA }, rotulo),
-    el("div", { fontSize: 16, color: CLARO, fontWeight: 600, marginTop: 1 }, valor)
+  return el("div", { flexDirection: "column", marginBottom: 5 },
+    el("div", { fontSize: 10, color: CINZA }, rotulo),
+    el("div", { fontSize: 13, color: CLARO, fontWeight: 600, marginTop: 1 }, valor)
   );
 }
 
 function cartao(titulo: string, corpo: No, flex = 1): No {
   return el("div", {
-    flexDirection: "column", flex, padding: "14px 16px", borderRadius: 12,
+    flexDirection: "column", flex, padding: "10px 12px", borderRadius: 10,
     border: "1px solid " + BORDA, background: "rgba(6,12,22,0.55)",
   },
-    el("div", { fontSize: 11, fontWeight: 700, letterSpacing: 1.4, color: AZUL, marginBottom: 10 }, titulo),
+    el("div", { fontSize: 10, fontWeight: 700, letterSpacing: 1.2, color: AZUL, marginBottom: 6 }, titulo),
     corpo
   );
 }
 
 function topo(d: DadosOverlay): No {
-  return el("div", { flexDirection: "column", padding: "30px 36px 0" },
-    el("div", { fontSize: 40, fontWeight: 700, color: "#ffffff", lineHeight: 1.05 }, "PRÉVIA TÉCNICA DE INSTALAÇÃO"),
-    el("div", { fontSize: 19, marginTop: 8, color: CINZA },
+  return el("div", { flexDirection: "column", padding: "18px 30px 0" },
+    el("div", { fontSize: 28, fontWeight: 700, color: "#ffffff", lineHeight: 1.05 }, "PRÉVIA TÉCNICA DE INSTALAÇÃO"),
+    el("div", { fontSize: 15, marginTop: 5, color: CINZA },
       el("span", { color: AZUL, fontWeight: 700 }, d.produto),
-      d.sku ? el("span", { marginLeft: 10 }, "· " + d.sku) : null
+      d.sku ? el("span", { marginLeft: 8 }, "· " + d.sku) : null
     ),
-    el("div", { width: 190, height: 2, background: AZUL, marginTop: 14, marginBottom: 12 }),
+    el("div", { width: 150, height: 2, background: AZUL, marginTop: 9, marginBottom: 8 }),
     el("div", { alignItems: "center" },
       // Marcador desenhado, não caractere: "✓" (U+2713) não existe na Montserrat
       // e saía como quadradinho de glifo ausente. Um disco resolve sem depender
       // da cobertura da fonte.
-      el("div", { width: 9, height: 9, borderRadius: 5, background: AZUL, marginRight: 11 }),
-      el("div", { fontSize: 16, color: CLARO },
+      el("div", { width: 7, height: 7, borderRadius: 4, background: AZUL, marginRight: 9 }),
+      el("div", { fontSize: 12, color: CLARO },
         "Posicionamento conforme manual preserva a garantia de fábrica.")
     )
   );
@@ -194,65 +194,68 @@ function base(d: DadosOverlay): No {
   const specs = especificacoes(d);
 
   const passos = passosPara(d.tipoEquipamento).map((p, i) =>
-    el("div", { alignItems: "center", marginBottom: 10 },
+    el("div", { alignItems: "center", marginBottom: 6 },
       el("div", {
-        alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 13,
-        border: "1.5px solid " + AZUL, color: AZUL, fontSize: 13, fontWeight: 700, marginRight: 12,
+        alignItems: "center", justifyContent: "center", width: 20, height: 20, borderRadius: 10,
+        border: "1.5px solid " + AZUL, color: AZUL, fontSize: 11, fontWeight: 700, marginRight: 9,
       }, String(i + 1)),
-      el("div", { fontSize: 15, color: CLARO, flex: 1 }, p)
+      el("div", { fontSize: 12, color: CLARO, flex: 1 }, p)
     )
   );
 
   const equipamento = el("div", { flexDirection: "column", alignItems: "center" },
     d.produtoImagemBase64
-      ? img(d.produtoImagemBase64, { width: 132, height: 96, objectFit: "contain" })
+      ? img(d.produtoImagemBase64, { width: 96, height: 70, objectFit: "contain" })
       : el("div", {
-          alignItems: "center", justifyContent: "center", width: 132, height: 96,
-          borderRadius: 8, border: "1px dashed " + CINZA, color: CINZA, fontSize: 11,
+          alignItems: "center", justifyContent: "center", width: 96, height: 70,
+          borderRadius: 8, border: "1px dashed " + CINZA, color: CINZA, fontSize: 10,
         }, "sem foto"),
-    el("div", { fontSize: 15, fontWeight: 700, color: CLARO, marginTop: 10 }, d.marca ?? "—"),
-    el("div", { fontSize: 12, color: CINZA, marginTop: 2 }, d.tipoEquipamento)
+    el("div", { fontSize: 13, fontWeight: 700, color: CLARO, marginTop: 7 }, d.marca ?? "—"),
+    el("div", { fontSize: 10, color: CINZA, marginTop: 1 }, d.tipoEquipamento)
   );
 
   // Janela é monobloco de fábrica: não tem tubulação de cobre nem vácuo pra
   // testar em campo. Repetir a lista do hi-wall ali seria orientar o instalador
   // a fazer um serviço que aquele aparelho não tem.
   const garantia = d.tipoEquipamento.trim().toLowerCase() === "janela"
-    ? el("div", { flexDirection: "column", fontSize: 13, color: CLARO, lineHeight: 1.5 },
-        el("div", { marginBottom: 3 }, "· vedação completa do vão, sem frestas"),
-        el("div", { marginBottom: 3 }, "· caimento para o dreno de fábrica"),
+    ? el("div", { flexDirection: "column", fontSize: 11, color: CLARO, lineHeight: 1.4 },
+        el("div", { marginBottom: 2 }, "· vedação completa do vão, sem frestas"),
+        el("div", { marginBottom: 2 }, "· caimento para o dreno de fábrica"),
         el("div", {}, "· ponto elétrico exclusivo e aterrado")
       )
-    : el("div", { flexDirection: "column", fontSize: 13, color: CLARO, lineHeight: 1.5 },
-        el("div", { marginBottom: 3 }, "· tubulação de cobre isolada"),
-        el("div", { marginBottom: 3 }, "· vácuo e teste de estanqueidade"),
-        el("div", { marginBottom: 3 }, "· dreno com caimento contínuo"),
+    : el("div", { flexDirection: "column", fontSize: 11, color: CLARO, lineHeight: 1.4 },
+        el("div", { marginBottom: 2 }, "· tubulação de cobre isolada"),
+        el("div", { marginBottom: 2 }, "· vácuo e teste de estanqueidade"),
+        el("div", { marginBottom: 2 }, "· dreno com caimento contínuo"),
         el("div", {}, "· ponto elétrico exclusivo e aterrado")
       );
 
-  return el("div", { flexDirection: "column", padding: "0 36px 26px" },
-    el("div", { gap: 18 },
+  return el("div", { flexDirection: "column", padding: "0 30px 16px" },
+    el("div", { gap: 12 },
       el("div", { flexDirection: "column", flex: 1.05 },
-        el("div", { fontSize: 11, fontWeight: 700, letterSpacing: 1.4, color: AZUL, marginBottom: 12 }, "PASSO A PASSO"),
+        el("div", { fontSize: 10, fontWeight: 700, letterSpacing: 1.2, color: AZUL, marginBottom: 8 }, "PASSO A PASSO"),
         ...passos
       ),
       cartao("ESPECIFICAÇÕES", el("div", { flexDirection: "column" }, ...specs), 0.85),
       cartao("EQUIPAMENTO", equipamento, 0.7),
       cartao("GARANTIA DE FÁBRICA", garantia, 0.95)
     ),
-    el("div", { marginTop: 16, fontSize: 12, color: CINZA, lineHeight: 1.45 },
+    el("div", { marginTop: 8, fontSize: 10, color: CINZA, lineHeight: 1.3 },
       "Prévia para visualização. A instalação final deve ser validada no local por profissional habilitado, conforme o manual do fabricante e a ABNT NBR 16401.")
   );
 }
 
 /** Véu escuro só nas faixas de texto: um gradiente do topo e outro da base,
- *  deixando o miolo da cena — que é o que o cliente quer ver — sem filtro. */
+ *  deixando o miolo da cena — que é o que o cliente quer ver — sem filtro.
+ *  Cards e título encolheram (pedido do Luke: "tampou muito o ambiente"), e
+ *  as paradas do gradiente encolheram junto — senão o véu ficaria sobrando
+ *  em cima de texto que não está mais lá, sem abrir mais janela nenhuma. */
 function camada(d: DadosOverlay, largura: number, altura: number): No {
   return el("div", {
     width: largura, height: altura, flexDirection: "column", justifyContent: "space-between",
     backgroundImage:
-      "linear-gradient(to bottom, rgba(4,9,18,0.86) 0%, rgba(4,9,18,0.55) 13%, rgba(4,9,18,0) 24%," +
-      " rgba(4,9,18,0) 46%, rgba(4,9,18,0.72) 62%, rgba(4,9,18,0.94) 76%)",
+      "linear-gradient(to bottom, rgba(4,9,18,0.86) 0%, rgba(4,9,18,0.5) 9%, rgba(4,9,18,0) 18%," +
+      " rgba(4,9,18,0) 56%, rgba(4,9,18,0.72) 70%, rgba(4,9,18,0.94) 82%)",
     fontFamily: "Montserrat",
   },
     topo(d),
