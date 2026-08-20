@@ -383,12 +383,23 @@ async function comporEEnviar(imageUrl: string, leadId: string, dados: DadosOverl
     if (!res.ok) throw new Error(`fetch cena -> HTTP ${res.status}`);
     const composta = await comporPrevia(Buffer.from(await res.arrayBuffer()), dados);
 
+    // O selo ARCIL só era carimbado no caminho de fallback (watermarkImage),
+    // que só roda quando a camada técnica FALHA. Com a camada técnica no ar,
+    // a prévia saía sem selo nenhum — corrigido carimbando aqui também, mesmo
+    // badge e posição do watermarkImage.
+    const { width: larguraComposta = 1536 } = await sharp(composta).metadata();
+    const leftBadge = Math.max(0, larguraComposta - ARCIL_WATERMARK_BADGE_WIDTH - 16);
+    const comSelo = await sharp(composta)
+      .composite([{ input: Buffer.from(ARCIL_WATERMARK_BADGE_BASE64, "base64"), top: 16, left: leftBadge }])
+      .jpeg({ quality: 94 })
+      .toBuffer();
+
     const admin = createAdminClient();
     const storagePath = `previa/${leadId}.jpg`;
     // Blob e não Buffer: o SDK de storage embaralhava o Buffer no bundle da
     // Vercel, devolvendo bytes de substituição UTF-8 (ef bf bd). Mesmo motivo
     // documentado no watermarkImage.
-    const blob = new Blob([new Uint8Array(composta)], { type: "image/jpeg" });
+    const blob = new Blob([new Uint8Array(comSelo)], { type: "image/jpeg" });
     const { error } = await admin.storage.from("PDF").upload(storagePath, blob, { contentType: "image/jpeg", upsert: true });
     if (error) throw new Error(`upload -> ${error.message}`);
 
