@@ -6,6 +6,7 @@ import { requireApiPermission } from "@/lib/server/api-auth";
 import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK } from "@/lib/env";
 import { assertEnv } from "@/lib/server/env-guard";
 import { ARCIL_WATERMARK_BADGE_BASE64, ARCIL_WATERMARK_BADGE_WIDTH } from "@/lib/watermark-badge";
+import { comporPrevia, type DadosOverlay } from "@/lib/server/installation-overlay";
 
 interface ApiMessage {
   role: "user" | "assistant";
@@ -118,6 +119,10 @@ export async function POST(request: NextRequest) {
   if (answers?.tipo_equipamento) collectedData.tipo_equipamento = answers.tipo_equipamento;
   if (answers?.marca) collectedData.marca = answers.marca;
   if (answers?.modelo) collectedData.modelo = answers.modelo;
+  // Vem do seletor de produto. Com ele a foto oficial é lookup exato; sem ele
+  // (histórico antigo, antes do seletor existir) cai na busca por semelhança.
+  if (answers?.codigo_erp) collectedData.codigo_erp = answers.codigo_erp;
+  if (answers?.sku) collectedData.sku = answers.sku;
   if (answers?.pe_direito) collectedData.pe_direito = answers.pe_direito;
   if (answers?.tubulacao) collectedData.tubulacao = answers.tubulacao;
   if (answers?.unidade_externa) collectedData.unidade_externa = answers.unidade_externa;
@@ -185,7 +190,14 @@ export async function POST(request: NextRequest) {
   }
 
   const productLookup = [collectedData.marca, collectedData.modelo].filter(Boolean).join(" ");
-  const productImageUrl = await getProductImageUrl(supabase, String(productLookup), collectedData.tipo_equipamento);
+  const productImageUrl = await getProductImageUrl(
+    supabase,
+    String(productLookup),
+    collectedData.tipo_equipamento,
+    typeof collectedData.codigo_erp === "string" ? collectedData.codigo_erp : undefined
+  );
+
+  const productImageBase64 = await fetchProductImageBase64(productImageUrl);
 
   // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node
   const n8nRes = await fetch(N8N_CHATBOT_WEBHOOK, {
@@ -197,6 +209,7 @@ export async function POST(request: NextRequest) {
       image_base64: imageBase64,
       image_description: imageDescription,
       product_image_url: productImageUrl,
+      product_image_base64: productImageBase64,
       reference_image_url: referenceImageUrl ?? null,
       revision_prompt: revisionPrompt?.trim() ?? null,
       generation_mode: referenceImageUrl ? "revision" : "initial",
@@ -207,19 +220,50 @@ export async function POST(request: NextRequest) {
     }),
   });
 
+  // O corpo é lido como texto antes de virar JSON porque o n8n responde vazio
+  // quando um nó do meio falha: o "Respond to Webhook" nunca é alcançado, e
+  // `res.json()` estourava com "Unexpected end of JSON input". O que chegava na
+  // tela era um 500 genérico enquanto o n8n sabia exatamente o problema — numa
+  // ocasião, "You have no credits remaining" da OpenAI.
+  const n8nBody = await n8nRes.text();
+
   if (!n8nRes.ok) {
-    return Response.json({ error: "Erro ao processar no n8n" }, { status: 500 });
+    console.error(`[generate-image] n8n HTTP ${n8nRes.status}:`, n8nBody.slice(0, 600) || "(corpo vazio)");
+    return Response.json(
+      { error: `A automação de imagem respondeu ${n8nRes.status}. Verifique a execução no n8n.` },
+      { status: 502 }
+    );
   }
 
-  const n8nData = await n8nRes.json();
+  if (!n8nBody.trim()) {
+    console.error("[generate-image] n8n respondeu 200 com corpo vazio — algum nó falhou antes do Respond to Webhook.");
+    return Response.json(
+      { error: "A automação de imagem parou no meio e não devolveu resultado. Verifique a última execução no n8n." },
+      { status: 502 }
+    );
+  }
+
+  let n8nData: Record<string, unknown>;
+  try {
+    n8nData = JSON.parse(n8nBody);
+  } catch {
+    console.error("[generate-image] n8n devolveu algo que não é JSON:", n8nBody.slice(0, 600));
+    return Response.json(
+      { error: "A automação de imagem devolveu uma resposta inesperada. Verifique a última execução no n8n." },
+      { status: 502 }
+    );
+  }
 
   // Accept the image URL under any field n8n might return
-  const rawUrl: string | null =
-    n8nData.url_imagem_final ??
-    n8nData.image_url ??
-    n8nData.imageUrl ??
-    n8nData.url ??
-    null;
+  const primeiraString = (...valores: unknown[]): string | null =>
+    valores.find((v): v is string => typeof v === "string" && v.length > 0) ?? null;
+
+  const rawUrl = primeiraString(
+    n8nData.url_imagem_final,
+    n8nData.image_url,
+    n8nData.imageUrl,
+    n8nData.url
+  );
 
   // Strip _{timestamp} suffix that n8n may append to storage filenames
   const generatedImageUrl = rawUrl ? rawUrl.replace(/_\d+$/, "") : null;
@@ -228,7 +272,22 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
   }
 
-  const finalImageUrl = await watermarkImage(generatedImageUrl, leadId);
+  // A camada técnica (título, cotas, passo a passo, cards) é composta aqui, não
+  // desenhada pelo modelo: texto de modelo de imagem sai errado. Já veio "2,80m"
+  // onde o vendedor respondeu 2,70. Agora o número vem do que ele respondeu.
+  const finalImageUrl = await comporEEnviar(generatedImageUrl, leadId, {
+    produto: String(collectedData.modelo ?? "Ar-condicionado"),
+    marca: typeof collectedData.marca === "string" ? collectedData.marca : null,
+    sku: typeof collectedData.sku === "string" ? collectedData.sku : null,
+    tipoEquipamento: String(collectedData.tipo_equipamento ?? "Split Hi-Wall"),
+    peDireito: typeof collectedData.pe_direito === "string" ? formatarMetros(collectedData.pe_direito) : null,
+    alturaInstalacao: "aprox. 2,20 m",
+    distanciaTeto: "15 a 20 cm",
+    espacamentoLateral: "mín. 15 cm",
+    tubulacao: typeof collectedData.tubulacao === "string" ? collectedData.tubulacao : null,
+    pontoEletrico: typeof collectedData.ponto_eletrico === "boolean" ? collectedData.ponto_eletrico : null,
+    produtoImagemBase64: productImageBase64 ? `data:image/jpeg;base64,${productImageBase64}` : null,
+  });
 
   const { installationNotes, notesSource } = await getInstallationNotes(
     supabase,
@@ -250,38 +309,175 @@ export async function POST(request: NextRequest) {
   return Response.json({ imageUrl: finalImageUrl, installationNotes, installationNotesSource: notesSource });
 }
 
+/** Minúsculas, sem acento, só palavras — para comparar "Q/F" com "q f" e
+ *  "INVERTER" com "inverter" sem depender de como o cliente digitou. */
+function normalizar(texto: string): string[] {
+  return texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/** "2,70" e "2.70" viram "2,70 m"; "2,70 m" fica como está. O vendedor digita
+ *  livre e o card não pode expor essa variação. */
+function formatarMetros(valor: string): string | null {
+  const n = Number(valor.replace(",", ".").replace(/[^\d.]/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return `${n.toFixed(2).replace(".", ",")} m`;
+}
+
 /**
- * Looks up a curated reference photo for the selected model/brand
- * (product_reference_images, populated manually — empty until real product
- * photos are uploaded). Passed to n8n as `product_image_url` so the image
- * generation prompt can use it as a real visual reference instead of
- * inventing a generic unit.
+ * Compõe a camada técnica sobre a cena e sobe o resultado no mesmo lugar onde a
+ * marca d'água já subia. Se qualquer etapa falhar, cai no caminho antigo (só a
+ * marca d'água) — a prévia sem moldura ainda vende, um erro não.
+ */
+async function comporEEnviar(imageUrl: string, leadId: string, dados: DadosOverlay): Promise<string> {
+  try {
+    const res = await fetch(imageUrl);
+    if (!res.ok) throw new Error(`fetch cena -> HTTP ${res.status}`);
+    const composta = await comporPrevia(Buffer.from(await res.arrayBuffer()), dados);
+
+    const admin = createAdminClient();
+    const storagePath = `previa/${leadId}.jpg`;
+    // Blob e não Buffer: o SDK de storage embaralhava o Buffer no bundle da
+    // Vercel, devolvendo bytes de substituição UTF-8 (ef bf bd). Mesmo motivo
+    // documentado no watermarkImage.
+    const blob = new Blob([new Uint8Array(composta)], { type: "image/jpeg" });
+    const { error } = await admin.storage.from("PDF").upload(storagePath, blob, { contentType: "image/jpeg", upsert: true });
+    if (error) throw new Error(`upload -> ${error.message}`);
+
+    return admin.storage.from("PDF").getPublicUrl(storagePath).data.publicUrl;
+  } catch (err) {
+    console.error("[comporPrevia] falhou, caindo na marca d'água:", err instanceof Error ? err.message : err);
+    return watermarkImage(imageUrl, leadId);
+  }
+}
+
+/**
+ * Baixa a foto do produto e devolve o base64 dos bytes, sem o prefixo `data:`.
+ *
+ * A foto precisa chegar ao Gemini como IMAGEM, não como link: até aqui ela ia
+ * dentro do texto do prompt ("reference image URL: https://…"), e modelo de
+ * imagem não abre URL. O resultado era o aparelho desenhado genérico em toda
+ * geração, mesmo com a marca escrita no rótulo.
+ *
+ * Normaliza para JPEG e limita a 768 px porque o ERP serve PNG de até 620 KB —
+ * uma referência de forma e acabamento não precisa disso, e o payload do webhook
+ * carrega a foto da parede junto.
+ *
+ * Devolve `null` em qualquer falha: gerar sem a referência é pior que gerar com,
+ * mas é muito melhor que não gerar.
+ */
+async function fetchProductImageBase64(url: string | null): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const original = Buffer.from(await res.arrayBuffer());
+    const normalizada = await sharp(original)
+      .resize({ width: 768, height: 768, fit: "inside", withoutEnlargement: true })
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: 86 })
+      .toBuffer();
+    return normalizada.toString("base64");
+  } catch (err) {
+    console.error("[generate-image] foto do produto indisponível:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/** O ERP quebra um split em quatro cadastros: o aparelho, as duas metades
+ *  (UNID EXT / UNID INT), o PAINEL do cassete e o KIT de controle remoto. Só o
+ *  primeiro serve de referência visual — com as metades dentro, uma busca por
+ *  "springer cassete 24000" empatava e o gerador desenhava a moldura. */
+const APARELHO_INTEIRO = /^\s*(SPLIT|BISPLIT|TRISPLIT|QUADRISPLIT|ACJ|CJTO|AR)\b/i;
+
+type ReferenciaVisual = { marca: string; padrao: string; url: string };
+
+/**
+ * Looks up a reference photo for the selected model/brand. Passed to n8n as
+ * `product_image_url` so the image generation prompt can use it as a real visual
+ * reference instead of inventing a generic unit.
+ *
+ * Duas fontes, nesta ordem: `product_reference_images` é curadoria manual e
+ * ganha; `products_*.imagem_url` é a foto oficial que o ERP entrega, sincronizada
+ * de hora em hora. A curadoria existe justamente para corrigir ou cobrir o que o
+ * ERP não fotografou, então não pode perder para ele.
+ *
+ * A busca é texto livre que o GPT extraiu da conversa ("hisense 12000 wifi"),
+ * não o nome de catálogo. `busca.includes(padrão)` só acertava quando o cliente
+ * repetia a descrição inteira na ordem exata, então a comparação é por token:
+ * vence quem casa mais palavras. É isso que separa o modelo WiFi do irmão sem
+ * WiFi, já que os dois só diferem por uma palavra.
  */
 async function getProductImageUrl(
   supabase: SupabaseClient,
   modelo: string,
-  tipoEquipamento?: unknown
+  tipoEquipamento?: unknown,
+  codigoErp?: string
 ): Promise<string | null> {
-  const busca = modelo.trim().toLowerCase();
-  const tipo = typeof tipoEquipamento === "string" ? tipoEquipamento.trim().toLowerCase() : "";
-  if (!busca && !tipo) return null;
+  // Caminho exato: o vendedor escolheu o produto do catálogo, então não há o que
+  // adivinhar. Só as três tabelas com `marca` interessam — o gerador desenha ar
+  // condicionado, e é onde eles estão.
+  if (codigoErp) {
+    for (const tabela of ["products_consumer", "products_reseller", "products_installer"]) {
+      const { data } = await supabase.from(tabela).select("imagem_url").eq("codigo_erp", codigoErp).limit(1);
+      const url = data?.[0]?.imagem_url;
+      if (url) return url as string;
+    }
+    // Sem foto para esse código, segue para a busca por semelhança: uma foto de
+    // outro aparelho do mesmo tipo erra menos que nenhuma referência.
+  }
 
-  const { data: refs } = await supabase.from("product_reference_images").select("brand,model_pattern,image_url");
-  const linhas = refs ?? [];
+  const busca = normalizar(modelo);
+  const tipo = normalizar(typeof tipoEquipamento === "string" ? tipoEquipamento : "");
+  if (!busca.length && !tipo.length) return null;
 
-  // 1ª passada: marca E padrão, a referência exata.
-  const exata = busca
-    ? linhas.find((r) => busca.includes(r.brand.toLowerCase()) && busca.includes(r.model_pattern.toLowerCase()))
-    : undefined;
-  if (exata) return exata.image_url;
+  const [curadas, doErp] = await Promise.all([
+    supabase.from("product_reference_images").select("brand,model_pattern,image_url"),
+    supabase.from("products_consumer").select("nome,marca,imagem_url").not("imagem_url", "is", null),
+  ]);
+
+  const linhas: ReferenciaVisual[] = [
+    ...(curadas.data ?? []).map((r) => ({ marca: r.brand ?? "", padrao: r.model_pattern ?? "", url: r.image_url })),
+    ...(doErp.data ?? [])
+      .filter((r) => APARELHO_INTEIRO.test(r.nome ?? ""))
+      .map((r) => ({ marca: r.marca ?? "", padrao: r.nome ?? "", url: r.imagem_url as string })),
+  ];
+
+  const pontuar = (alvo: string[], padrao: string) => {
+    const tokens = normalizar(padrao);
+    if (!tokens.length) return 0;
+    return tokens.filter((t) => alvo.includes(t)).length;
+  };
+
+  // Curadas vêm primeiro no array e a comparação é `>`, não `>=`: em empate de
+  // pontuação quem chegou antes fica, que é como a precedência se sustenta.
+  const melhorDe = (alvo: string[], minimo: number, exigirMarca: boolean) => {
+    let melhor: { url: string; pontos: number } | null = null;
+    for (const r of linhas) {
+      if (exigirMarca && !pontuar(alvo, r.marca)) continue;
+      const pontos = pontuar(alvo, r.padrao);
+      if (pontos >= minimo && (!melhor || pontos > melhor.pontos)) melhor = { url: r.url, pontos };
+    }
+    return melhor?.url ?? null;
+  };
+
+  // 1ª passada: exige a marca e pontua o modelo. Dois tokens é o piso — casar só
+  // "12000" acha qualquer aparelho daquela capacidade, de qualquer tipo.
+  if (busca.length) {
+    const exata = melhorDe(busca, 2, true);
+    if (exata) return exata;
+  }
 
   // 2ª passada: só o tipo. Exigir a marca deixava a geração sem referência
   // nenhuma quando o vendedor abreviava ou errava o nome dela — e aí o gerador
   // inventava o equipamento. Uma foto do tipo certo de outra marca erra menos
   // que nenhuma foto, porque o que precisa acertar é onde e como se instala.
-  if (!tipo) return null;
-  const porTipo = linhas.find((r) => tipo.includes(r.model_pattern.toLowerCase()));
-  return porTipo?.image_url ?? null;
+  if (!tipo.length) return null;
+  return melhorDe(tipo, 1, false);
 }
 
 /**

@@ -55,20 +55,26 @@ export function ConsoleCard({
   );
 }
 
+type MetricTone = "blue" | "green" | "amber" | "red" | "violet" | "slate";
+
 export function ConsoleMetric({
   label,
   value,
   helper,
+  trend,
   icon: Icon,
   tone = "blue",
 }: {
   label: string;
   value: React.ReactNode;
   helper?: React.ReactNode;
+  /** Variação contra o período anterior. Um valor sozinho não diz se o dia foi
+   *  bom; "R$ 12.400" com "+18% vs. período anterior" diz. */
+  trend?: { delta: number; label?: string } | null;
   icon?: LucideIcon;
-  tone?: "blue" | "green" | "amber" | "red" | "violet" | "slate";
+  tone?: MetricTone;
 }) {
-  const tones = {
+  const selo: Record<MetricTone, string> = {
     blue: "text-blue-400 bg-blue-500/10 border-blue-500/20",
     green: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
     amber: "text-amber-400 bg-amber-500/10 border-amber-500/20",
@@ -77,16 +83,49 @@ export function ConsoleMetric({
     slate: "text-[var(--text-muted)] bg-[var(--bg-subtle)] border-[var(--border)]",
   };
 
+  // O auxiliar era verde fixo: "Em aberto" (âmbar, dinheiro que não entrou)
+  // exibia seu texto na cor de sucesso. Agora acompanha o tom do card, e o tom
+  // aparece também numa régua no topo — antes ele vivia só num ícone de 8×8,
+  // pequeno demais para diferenciar um card de alerta de um card neutro.
+  const textoDoTom: Record<MetricTone, string> = {
+    blue: "text-[var(--blue)]",
+    green: "text-[var(--emerald)]",
+    amber: "text-[var(--amber)]",
+    red: "text-[var(--red)]",
+    violet: "text-[var(--violet)]",
+    slate: "text-[var(--text-muted)]",
+  };
+  const regua: Record<MetricTone, string> = {
+    blue: "bg-blue-500/60",
+    green: "bg-emerald-500/60",
+    amber: "bg-amber-500/60",
+    red: "bg-red-500/60",
+    violet: "bg-violet-500/60",
+    slate: "bg-[var(--border)]",
+  };
+
   return (
-    <ConsoleCard className="min-h-[128px]">
+    <ConsoleCard className="relative min-h-[128px] overflow-hidden">
+      <span className={cn("absolute inset-x-0 top-0 h-[3px]", regua[tone])} aria-hidden />
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{label}</p>
           <div className="mt-5 font-data text-[30px] font-bold leading-none text-[var(--text-primary)]">{value}</div>
-          {helper && <div className="mt-2 text-[11px] font-semibold text-[var(--emerald)]">{helper}</div>}
+          {helper && <div className={cn("mt-2 text-[11px] font-semibold", textoDoTom[tone])}>{helper}</div>}
+          {trend && (
+            <div
+              className={cn(
+                "mt-2 text-[11px] font-semibold",
+                trend.delta > 0 ? "text-[var(--emerald)]" : trend.delta < 0 ? "text-[var(--red)]" : "text-[var(--text-muted)]"
+              )}
+            >
+              {trend.delta > 0 ? "▲" : trend.delta < 0 ? "▼" : "—"} {Math.abs(trend.delta).toFixed(0)}%
+              <span className="ml-1 font-medium text-[var(--text-muted)]">{trend.label ?? "vs. período anterior"}</span>
+            </div>
+          )}
         </div>
         {Icon && (
-          <div className={cn("grid h-8 w-8 place-items-center rounded-[6px] border", tones[tone])}>
+          <div className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-[6px] border", selo[tone])}>
             <Icon size={15} />
           </div>
         )}

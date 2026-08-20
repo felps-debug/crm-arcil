@@ -97,6 +97,8 @@ interface ChatwootSenderRaw {
   type?: string;
   phone_number?: string | null;
   email?: string | null;
+  /** Foto de perfil do WhatsApp, servida pelo próprio Chatwoot. */
+  thumbnail?: string | null;
 }
 
 interface ChatwootMessageRaw {
@@ -106,6 +108,17 @@ interface ChatwootMessageRaw {
   private?: boolean;
   created_at?: number; // unix seconds
   sender?: ChatwootSenderRaw | null;
+  attachments?: ChatwootAttachmentRaw[] | null;
+}
+
+/** Áudio, imagem e arquivo chegam aqui, não em `content`: uma mensagem de voz
+ *  vem com `content` vazio ou "[audio]" e o arquivo de verdade neste array. */
+interface ChatwootAttachmentRaw {
+  id?: number;
+  file_type?: string;
+  data_url?: string | null;
+  thumb_url?: string | null;
+  file_size?: number | null;
 }
 
 interface ChatwootConversationRaw {
@@ -125,9 +138,17 @@ interface ChatwootConversationRaw {
 
 /* ── Normalized shapes returned to API routes / the UI ──────────────────── */
 
+export interface ChatwootAttachment {
+  /** Como o Chatwoot classificou: "audio", "image", "video", "file". */
+  tipo: string;
+  url: string;
+  tamanho: number | null;
+}
+
 export interface ChatwootMessageItem {
   id: number;
   content: string;
+  attachments: ChatwootAttachment[];
   direction: "incoming" | "outgoing" | "activity";
   private: boolean;
   senderName: string | null;
@@ -148,6 +169,7 @@ export interface ChatwootConversationSummary {
   lastActivityAt: string | null; // ISO
   contactName: string | null;
   contactPhone: string | null;
+  contactAvatar: string | null;
   assigneeName: string | null;
   lastMessage: string | null;
   labels: ChatwootLabel[];
@@ -181,6 +203,12 @@ function normalizeMessage(m: ChatwootMessageRaw): ChatwootMessageItem {
     private: Boolean(m.private),
     senderName: m.sender?.name ?? null,
     createdAt: toIso(m.created_at),
+    // Sem isto a mensagem de voz aparecia como o texto "[audio]" e não havia
+    // como ouvir: o arquivo mora em `attachments[].data_url` e o normalizador
+    // descartava o campo inteiro.
+    attachments: (m.attachments ?? [])
+      .filter((a) => Boolean(a?.data_url))
+      .map((a) => ({ tipo: a.file_type ?? "file", url: a.data_url as string, tamanho: a.file_size ?? null })),
   };
 }
 
@@ -199,6 +227,10 @@ function normalizeConversation(
     lastActivityAt: toIso(c.timestamp ?? c.contact_last_seen_at),
     contactName: c.meta?.sender?.name ?? null,
     contactPhone: c.meta?.sender?.phone_number ?? null,
+    // O Chatwoot já entrega a foto do WhatsApp e o CRM descartava — mesmo
+    // descuido dos anexos de áudio. Vinte das 25 conversas da primeira página
+    // têm foto.
+    contactAvatar: c.meta?.sender?.thumbnail || null,
     assigneeName: c.meta?.assignee?.name ?? null,
     lastMessage: lastMessage?.content ?? null,
     labels: (c.labels ?? []).map((title) => ({ title, color: labelColors.get(title) ?? "#64748b" })),
@@ -231,15 +263,75 @@ async function fetchLookups() {
  * filter dropdown and to enforce per-vendor scoping server-side (see
  * requireAtendimentoScope in api-auth.ts).
  */
-export async function listConversations(opts?: { status?: string; inboxId?: number }): Promise<ChatwootConversationSummary[]> {
-  const params = new URLSearchParams();
-  if (opts?.status) params.set("status", opts.status);
-  if (opts?.inboxId != null) params.set("inbox_id", String(opts.inboxId));
-  const qs = params.toString() ? `?${params.toString()}` : "";
+/** O Chatwoot devolve 25 conversas por página, sempre. */
+const POR_PAGINA = 25;
 
-  const [body, { inboxNames, labelColors }] = await Promise.all([chatwootFetch<unknown>(`/conversations${qs}`), fetchLookups()]);
-  const raw = extractArray<ChatwootConversationRaw>(body);
-  return raw
+/**
+ * Só o total, sem trazer conversa nenhuma — o Chatwoot manda `meta.all_count`
+ * junto da primeira página, então uma requisição basta.
+ *
+ * Usado no dashboard, que precisa do número e não da lista.
+ */
+export async function contarConversas(status: "open" | "resolved" | "pending" | "all" = "open"): Promise<number> {
+  const body = await chatwootFetch<{ data?: { meta?: { all_count?: number } }; meta?: { all_count?: number } }>(
+    `/conversations?status=${status}&page=1`
+  );
+  return body?.data?.meta?.all_count ?? body?.meta?.all_count ?? 0;
+}
+
+export interface ListaDeConversas {
+  conversations: ChatwootConversationSummary[];
+  /** Quantas o Chatwoot tem no total, incluindo grupos e as não carregadas. */
+  totalNoChatwoot: number;
+  /** Quantas páginas foram lidas de fato. */
+  paginasLidas: number;
+  temMais: boolean;
+}
+
+/**
+ * Lista as conversas, paginando.
+ *
+ * Antes buscava só a primeira página e a tela dizia "16 no total" — eram 16 da
+ * primeira página de 3.096 conversas, com 9 grupos já descontados. O número
+ * parecia o total do Chatwoot e não era nem o total da página.
+ *
+ * `paginas` limita quanto se lê de uma vez: 3.096 conversas seriam 124 chamadas
+ * em série, e a tela não pode esperar isso para abrir. A UI pede mais quando
+ * precisa.
+ */
+export async function listConversations(opts?: {
+  status?: string;
+  inboxId?: number;
+  paginas?: number;
+}): Promise<ListaDeConversas> {
+  const paginas = Math.min(Math.max(opts?.paginas ?? 2, 1), 20);
+  const base = new URLSearchParams();
+  if (opts?.status) base.set("status", opts.status);
+  if (opts?.inboxId != null) base.set("inbox_id", String(opts.inboxId));
+
+  const { inboxNames, labelColors } = await fetchLookups();
+
+  const cruas: ChatwootConversationRaw[] = [];
+  let totalNoChatwoot = 0;
+  let temMais = false;
+  let paginasLidas = 0;
+
+  for (let pagina = 1; pagina <= paginas; pagina++) {
+    const params = new URLSearchParams(base);
+    params.set("page", String(pagina));
+    const body = await chatwootFetch<unknown>(`/conversations?${params.toString()}`);
+    const lote = extractArray<ChatwootConversationRaw>(body);
+    paginasLidas = pagina;
+
+    const meta = (body as { data?: { meta?: { all_count?: number } }; meta?: { all_count?: number } } | null);
+    totalNoChatwoot = meta?.data?.meta?.all_count ?? meta?.meta?.all_count ?? totalNoChatwoot;
+
+    cruas.push(...lote);
+    if (lote.length < POR_PAGINA) break;
+    if (pagina === paginas) temMais = true;
+  }
+
+  const conversations = cruas
     .map((c) => normalizeConversation(c, inboxNames, labelColors))
     // Every Arcil inbox is a WhatsApp number tied to a vendor; a real lead
     // always has a contact phone. A conversation with no phone is a WhatsApp
@@ -248,6 +340,8 @@ export async function listConversations(opts?: { status?: string; inboxId?: numb
     // leaking into the "Vinicius - Construtor" inbox), not an Arcil lead.
     .filter((c) => c.contactPhone !== null)
     .sort((a, b) => (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""));
+
+  return { conversations, totalNoChatwoot, paginasLidas, temMais };
 }
 
 /** GET /conversations/{id}/messages — full message thread, oldest first. */

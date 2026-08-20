@@ -5,13 +5,13 @@ import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
-  ArrowUpRight,
-  Bot,
+  ArrowUpRight,
   DollarSign,
   MessageCircleReply,
+  MessagesSquare,
+  PackageCheck,
   RefreshCw,
-  Tv,
-  Users,
+  Tv,
 } from "lucide-react";
 import {
   ConsoleButton,
@@ -300,11 +300,17 @@ export default function DashboardPage() {
           )}
 
           <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {/* "Total leads" e "Agentes habilitados" saíram daqui. O primeiro
+                mostrava dígito único (8 leads) enquanto a operação real tem
+                milhares de conversas no Chatwoot — o painel parecia uma empresa
+                parada. O segundo é a contagem de vendedores: muda uma vez por
+                mês e ocupava um dos seis lugares mais visíveis de uma tela que
+                se olha todo dia. */}
             <ConsoleMetric
-              label="Total leads"
-              value={metricValue(metrics.get("total_leads"), "0")}
-              helper="base completa"
-              icon={Users}
+              label="Atendimentos do agente"
+              value={metricValue(metrics.get("agent_conversations"), "—")}
+              helper="passaram pelo agente de IA"
+              icon={MessagesSquare}
               tone="blue"
             />
             <ConsoleMetric
@@ -315,10 +321,10 @@ export default function DashboardPage() {
               tone="green"
             />
             <ConsoleMetric
-              label="Agentes habilitados"
-              value={metricValue(metrics.get("agents_enabled"), "0")}
-              helper={`${agents.data?.agents.length ?? 0} cadastrados`}
-              icon={Bot}
+              label="Disponível para venda"
+              value={metricValue(metrics.get("produtos_disponiveis"), "0")}
+              helper="produtos com saldo"
+              icon={PackageCheck}
               tone="violet"
             />
             {/* Recebido e Em aberto no lugar de "Receita potencial": ela sai de

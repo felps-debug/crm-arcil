@@ -1,3 +1,4 @@
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { allTimePeriod, countBy, defaultPeriod, isOlderThan, metric, percent } from "@/lib/server/crm-metrics";
 import { labelSegment, labelStatus } from "@/lib/server/crm-labels";
@@ -64,6 +65,9 @@ type ConversationRow = {
   intent: string | null;
   status: string | null;
   vendor_id: string | null;
+  /** Id da conversa no Chatwoot. Preenchido pelo n8n quando o agente de IA
+   *  assume — é o que separa atendimento do agente de disparo de cobrança. */
+  chatwoot_conv_id: string | null;
   started_at: string | null;
   ended_at: string | null;
 };
@@ -187,6 +191,8 @@ type ProductRow = {
   voltagem?: string | null;
   preco_venda?: number | null;
   estoque?: number | null;
+  imagem_url?: string | null;
+  sku?: string | null;
 };
 
 type LeadFilters = {
@@ -452,10 +458,17 @@ async function fetchCore() {
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
-  const [{ leads, followups, vendors, quotes, sales, cobrancas }, handoffDecisions] = await Promise.all([
-    fetchCore(),
-    coreTables.handoffDecisions(),
-  ]);
+  const [{ leads, followups, vendors, quotes, sales, cobrancas }, handoffDecisions, conversas, produtosDisponiveis] =
+    await Promise.all([
+      fetchCore(),
+      coreTables.handoffDecisions(),
+      coreTables.conversations(),
+      contarProdutosDisponiveis(createAdminClient()),
+    ]);
+  // `chatwoot_conv_id` preenchido é a marca de que o agente de IA assumiu a
+  // conversa — as linhas OUTBOUND de cobrança não têm, porque são disparo, não
+  // atendimento.
+  const conversasDoAgente = conversas.filter((c) => c.chatwoot_conv_id);
   const receivedRevenue = sumReceived(cobrancas, handoffDecisions);
   const openCollections = cobrancas
     .filter((cobranca) => !cobranca.pagamento_confirmado)
@@ -560,6 +573,37 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
         tooltip: "Agentes cadastrados como ativos. Não significa online em tempo real.",
         drilldown: { href: "/agentes", filters: { active: "true" } },
       }),
+      // Conta a tabela `conversations`, não o total do Chatwoot.
+      //
+      // Um inbox é um número de WhatsApp, e o mesmo número atende com IA e com
+      // humano: o agente responde primeiro e transfere, o vendedor segue na
+      // mesma conversa. Existem também conversas que nunca passaram pelo agente
+      // — cliente antigo falando direto com o vendedor. Contar o inbox inteiro
+      // misturava as três coisas e dava 3.107, número que não mede agente
+      // nenhum. Aqui entra só o que o agente atendeu, porque é o n8n que grava
+      // esta linha quando assume a conversa.
+      metric({
+        id: "agent_conversations",
+        label: "Atendimentos do agente",
+        value: conversasDoAgente.length,
+        formula: "count(conversations where chatwoot_conv_id is not null)",
+        period: allTimePeriod(),
+        previous: null,
+        tooltip:
+          "Conversas que passaram pelo agente de IA. O n8n registra aqui quando o agente assume — conversa que só teve humano não entra.",
+        drilldown: { href: "/agentes", filters: {} },
+      }),
+      metric({
+        id: "produtos_disponiveis",
+        label: "Disponível para venda",
+        value: produtosDisponiveis,
+        formula: "count(distinct codigo_erp em products_* where estoque > 0)",
+        period: allTimePeriod(),
+        previous: null,
+        tooltip:
+          "Produtos com saldo nos depósitos de venda (HLB MS, HLB Parana e Londrina PDV). O painel só mostrava o que faltava; isto é o que dá para vender.",
+        drilldown: { href: "/demanda-estoque", filters: {} },
+      }),
     ],
     commercialFunnel: [
       { id: "received", label: "Recebidos", value: leads.length },
@@ -620,23 +664,35 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
   // Antes ela trazia as 3.077 linhas das três tabelas para contar em memória, e
   // media 4,2s em produção — empatada com /api/inventory/summary, que repetia a
   // mesma carga. `head: true` faz o Postgres contar e devolver zero linha.
-  const outOfStockCount = (table: string) =>
-    supabase.from(table).select("id", { count: "exact", head: true }).not("estoque", "is", null).lte("estoque", 0);
+  // Traz o `codigo_erp` em vez de contar linhas: o mesmo produto tem uma linha
+  // por segmento comercial, então somar `count` das três tabelas contava a mesma
+  // geladeira até três vezes — o dashboard dizia 1.918 onde Demanda & Estoque,
+  // que já deduplica, dizia 1.045. Duas telas, o mesmo dado, números diferentes.
+  const semEstoque = async (table: string) => {
+    const codigos: string[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from(table)
+        .select("codigo_erp")
+        .not("estoque", "is", null)
+        .lte("estoque", 0)
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      for (const row of data ?? []) if (row.codigo_erp) codigos.push(String(row.codigo_erp));
+      if (!data || data.length < PAGE) break;
+    }
+    return codigos;
+  };
 
-  const [sheetSourcesRes, consumerCount, resellerCount, installerCount] = await Promise.all([
+  const [sheetSourcesRes, ...semEstoquePorTabela] = await Promise.all([
     supabase.from("sheet_sources").select("*"),
-    outOfStockCount("products_consumer"),
-    outOfStockCount("products_reseller"),
-    outOfStockCount("products_installer"),
+    ...PRODUCT_TABLES.slice(0, 3).map(semEstoque),
   ]);
 
-  for (const res of [sheetSourcesRes, consumerCount, resellerCount, installerCount]) {
-    if (res.error) throw res.error;
-  }
+  if (sheetSourcesRes.error) throw sheetSourcesRes.error;
 
   const sheetSources = (sheetSourcesRes.data ?? []) as SheetSourceRow[];
-  const outOfStockProducts =
-    (consumerCount.count ?? 0) + (resellerCount.count ?? 0) + (installerCount.count ?? 0);
+  const outOfStockProducts = new Set(semEstoquePorTabela.flat()).size;
   const leadIdsWithFollowup = new Set(followups.map((f) => f.lead_id).filter(Boolean));
   const today = new Date().toISOString().slice(0, 10);
 
@@ -717,10 +773,10 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
         label: "Produtos sem estoque",
         count: outOfStockProducts,
         severity: "warning",
-        formula: "count(products_* where estoque is not null and estoque <= 0)",
+        formula: "count(distinct codigo_erp em products_* where estoque <= 0)",
         period: allTimePeriod(),
         tooltip:
-          "Produtos com saldo zerado ou negativo. Enquanto o ERP não enviar quantidade, fica em zero — a demanda não atendida aparece em Demanda & Estoque.",
+          "Produtos sem saldo nos depósitos de venda (HLB MS, HLB Parana e Londrina PDV). Contados por produto, não por linha de segmento — é o mesmo número do card \"Zerados no ERP\" em Demanda & Estoque.",
         drilldown: { href: "/demanda-estoque", filters: { stock: "out" } },
       },
     ],
@@ -1265,13 +1321,108 @@ async function fetchProducts(): Promise<InventoryProduct[]> {
   return rows;
 }
 
+/** Só aparelho inteiro. O ERP cadastra um split em quatro linhas — o aparelho,
+ *  as duas metades (UNID EXT / UNID INT), o PAINEL do cassete e o KIT de
+ *  controle remoto. Numa busca por "cassete 24000" o vendedor não quer a moldura. */
+const APARELHO_INTEIRO = /^\s*(SPLIT|BISPLIT|TRISPLIT|QUADRISPLIT|ACJ|CJTO|AR)\b/i;
+
+/**
+ * Busca no catálogo para o seletor de produto do gerador de imagem.
+ *
+ * Reaproveita o cache de `fetchProducts` em vez de ir ao banco a cada tecla: são
+ * ~3 mil linhas já em memória e o filtro em JS responde na hora, sem somar uma
+ * query por caractere digitado.
+ *
+ * Casa por token, não por substring: "hisense 12000 wifi" precisa achar
+ * "SPLIT HI WALL 12000 FRIO HISENSE INVERTER WIFI" mesmo com as palavras fora de
+ * ordem. Código do ERP casa por prefixo, que é como o vendedor digita — "0129"
+ * traz a família toda.
+ */
+export async function searchProducts(opts: {
+  q: string;
+  limit?: number;
+  apenasAparelhos?: boolean;
+}): Promise<{ products: InventoryProduct[] }> {
+  const limite = Math.min(Math.max(Number(opts.limit) || 20, 1), 100);
+  const termos = normalizarTokens(opts.q);
+
+  let candidatos = await fetchProducts();
+  candidatos = dedupePorProduto(candidatos);
+  if (opts.apenasAparelhos) candidatos = candidatos.filter((p) => APARELHO_INTEIRO.test(p.name ?? ""));
+
+  if (!termos.length) {
+    // Sem busca, mostra o que dá para vender hoje — lista vazia numa caixa de
+    // busca não ensina nada sobre o que existe no catálogo.
+    return {
+      products: candidatos
+        .filter((p) => (p.stock ?? 0) > 0)
+        .sort((a, b) => (b.stock ?? 0) - (a.stock ?? 0))
+        .slice(0, limite),
+    };
+  }
+
+  const pontuados = candidatos
+    .map((p) => {
+      const alvo = normalizarTokens([p.name, p.brand, p.btu, p.category].filter(Boolean).join(" "));
+      // `sku` é a máscara (0129C1), que é o que o vendedor lê na tela do ERP;
+      // `erpCode` é o idProduto (13261), número interno. Os dois casam por
+      // prefixo porque "0129" tem que trazer a família inteira.
+      const codigos = [p.sku, p.erpCode].filter(Boolean).map((c) => c!.toLowerCase());
+      let pontos = 0;
+      for (const t of termos) {
+        if (codigos.some((c) => c.startsWith(t))) pontos += 10;
+        else if (alvo.includes(t)) pontos += 1;
+      }
+      return { p, pontos };
+    })
+    .filter((x) => x.pontos >= termos.length);
+
+  pontuados.sort((a, b) => b.pontos - a.pontos || (b.p.stock ?? 0) - (a.p.stock ?? 0));
+  return { products: pontuados.slice(0, limite).map((x) => x.p) };
+}
+
+function normalizarTokens(texto: string): string[] {
+  return texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/**
+ * Seleciona a tabela pedindo `imagem_url` e, se a coluna ainda não existir,
+ * repete sem ela.
+ *
+ * As migrations deste projeto são aplicadas à mão, então existe uma janela em
+ * que o código já está na Vercel e o schema não mudou. Sem esta tolerância essa
+ * janela derruba o catálogo inteiro e o dashboard junto — o custo de evitar isso
+ * é uma segunda query que só acontece durante a janela.
+ */
+async function selectProdutos(
+  supabase: SupabaseClient,
+  tabela: string,
+  colunas: string
+): Promise<{ data: ProductRow[] | null; error: PostgrestError | null }> {
+  // O cast passa por `unknown` porque o cliente tipado do Supabase interpreta a
+  // string do select em tempo de tipo, e aqui ela só existe em tempo de execução.
+  type Resultado = { data: ProductRow[] | null; error: PostgrestError | null };
+  const consultar = async (cols: string) =>
+    (await supabase.from(tabela).select(cols).order("nome")) as unknown as Resultado;
+
+  const comImagem = await consultar(`${colunas},imagem_url,sku`);
+  // 42703 = undefined_column. Qualquer outro erro é problema de verdade e sobe.
+  if (!comImagem.error || comImagem.error.code !== "42703") return comImagem;
+  return consultar(colunas);
+}
+
 async function loadProducts(): Promise<InventoryProduct[]> {
   const supabase = createAdminClient();
   const [consumerRes, resellerRes, installerRes, builderRes] = await Promise.all([
-    supabase.from("products_consumer").select("id,codigo_erp,nome,marca,btu,voltagem,preco_venda,estoque").order("nome"),
-    supabase.from("products_reseller").select("id,codigo_erp,nome,marca,preco_venda,estoque").order("nome"),
-    supabase.from("products_installer").select("id,codigo_erp,nome,categoria,preco_venda,estoque").order("nome"),
-    supabase.from("products_builder_architect").select("id,codigo_erp,nome,preco_venda").order("nome"),
+    selectProdutos(supabase, "products_consumer", "id,codigo_erp,nome,marca,btu,voltagem,preco_venda,estoque"),
+    selectProdutos(supabase, "products_reseller", "id,codigo_erp,nome,marca,preco_venda,estoque"),
+    selectProdutos(supabase, "products_installer", "id,codigo_erp,nome,categoria,preco_venda,estoque"),
+    selectProdutos(supabase, "products_builder_architect", "id,codigo_erp,nome,preco_venda"),
   ]);
 
   for (const res of [consumerRes, resellerRes, installerRes, builderRes]) {
@@ -1290,6 +1441,8 @@ async function loadProducts(): Promise<InventoryProduct[]> {
     stock: row.estoque ?? null,
     available: row.estoque ?? null,
     erpCode: row.codigo_erp,
+    sku: row.sku ?? null,
+    imageUrl: row.imagem_url ?? null,
   });
 
   return [
@@ -1315,6 +1468,10 @@ async function fetchOutOfStockRequests(): Promise<InventorySummaryResponse["outO
 
 const PRODUCT_TABLES = ["products_consumer", "products_reseller", "products_installer", "products_builder_architect"] as const;
 
+/** PostgREST corta o select em 1000 linhas por resposta; `products_reseller` tem
+ *  1.477, então sem paginar a contagem sai errada e sem erro nenhum. */
+const PAGE = 1000;
+
 /**
  * Só os números do catálogo, sem trazer linha nenhuma.
  *
@@ -1323,11 +1480,78 @@ const PRODUCT_TABLES = ["products_consumer", "products_reseller", "products_inst
  * 4,2s em produção — era, junto com a fila de pendências, o endpoint mais lento
  * da tela. `head: true` deixa a contagem no Postgres.
  */
+/**
+ * Colapsa as linhas de segmento em um produto do ERP.
+ *
+ * `codigo_erp` é a identidade real; `id` é da linha, e a mesma geladeira tem uma
+ * linha em consumer e outra em reseller para carregar o preço de cada canal.
+ * Linha sem `codigo_erp` não tem como ser pareada, então conta sozinha em vez de
+ * todas colidirem numa chave só.
+ */
+/**
+ * Conversas abertas no Chatwoot, direto do `meta.all_count` — uma requisição,
+ * sem paginar nada.
+ *
+ * Devolve `null` se o Chatwoot não responder. O painel inteiro não pode cair
+ * porque um serviço de fora saiu do ar: o resto dos números vem do Supabase e
+ * continua válido.
+ */
+async function contarConversasAbertasNoChatwoot(): Promise<number | null> {
+  try {
+    const { contarConversas } = await import("@/lib/chatwoot/client");
+    return await contarConversas("open");
+  } catch (err) {
+    console.error("[dashboard] Chatwoot indisponível:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/** Produtos distintos com saldo. Mesmo critério de dedupe do resto do painel:
+ *  a mesma geladeira tem uma linha por segmento comercial. */
+async function contarProdutosDisponiveis(supabase: SupabaseClient): Promise<number> {
+  const codigos = new Set<string>();
+  for (const table of PRODUCT_TABLES.slice(0, 3)) {
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from(table)
+        .select("codigo_erp")
+        .gt("estoque", 0)
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      for (const row of data ?? []) if (row.codigo_erp) codigos.add(String(row.codigo_erp));
+      if (!data || data.length < PAGE) break;
+    }
+  }
+  return codigos.size;
+}
+
+function dedupePorProduto<T extends { erpCode: string | null; id: string; source: string }>(rows: T[]): T[] {
+  const porChave = new Map<string, T>();
+  for (const row of rows) {
+    const chave = row.erpCode ?? `linha:${row.source}:${row.id}`;
+    if (!porChave.has(chave)) porChave.set(chave, row);
+  }
+  return [...porChave.values()];
+}
+
 async function getInventoryCounts(): Promise<InventorySummaryResponse> {
   const supabase = createAdminClient();
 
-  const totals = await Promise.all(
-    PRODUCT_TABLES.map((table) => supabase.from(table).select("id", { count: "exact", head: true }))
+  // `head: true` conta linhas, e linha não é produto: o mesmo `codigo_erp` tem uma
+  // linha por segmento, o que fazia este card dizer 3.162 onde existem 1.768.
+  // Buscar só essa coluna traz uma string por linha — ainda muito mais barato que
+  // as linhas inteiras, que carregam `embedding` e `content`.
+  const porTabela = await Promise.all(
+    PRODUCT_TABLES.map(async (table) => {
+      const codigos: string[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase.from(table).select("codigo_erp").range(from, from + PAGE - 1);
+        if (error) throw error;
+        for (const row of data ?? []) codigos.push(row.codigo_erp ? String(row.codigo_erp) : `linha:${table}:${from}:${codigos.length}`);
+        if (!data || data.length < PAGE) break;
+      }
+      return codigos;
+    })
   );
   // builder_architect não tem a coluna `estoque`, por isso fica de fora daqui.
   const withStock = await Promise.all(
@@ -1336,11 +1560,11 @@ async function getInventoryCounts(): Promise<InventorySummaryResponse> {
     )
   );
 
-  for (const result of [...totals, ...withStock]) {
+  for (const result of withStock) {
     if (result.error) throw result.error;
   }
 
-  const totalProducts = totals.reduce((sum, result) => sum + (result.count ?? 0), 0);
+  const totalProducts = new Set(porTabela.flat()).size;
   const estoqueSincronizado = withStock.reduce((sum, result) => sum + (result.count ?? 0), 0) > 0;
 
   return {
@@ -1352,10 +1576,10 @@ async function getInventoryCounts(): Promise<InventorySummaryResponse> {
         id: "total_products",
         label: "Total de produtos",
         value: totalProducts,
-        formula: "count(products_*)",
+        formula: "count(distinct codigo_erp em products_*)",
         period: allTimePeriod(),
         previous: null,
-        tooltip: "Produtos cadastrados nas quatro tabelas de segmento.",
+        tooltip: "Produtos distintos do ERP, sem contar duas vezes quem aparece em mais de um segmento.",
         drilldown: { href: "/demanda-estoque", filters: {} },
       }),
     ],
@@ -1382,7 +1606,14 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
   // products_builder_architect nem tem a coluna. Contar sobre isso devolve 0, e
   // "0 produtos com estoque baixo" se lê como "está tudo abastecido", que é o
   // oposto de "não medimos". Enquanto não houver dado, os cards dizem isso.
-  const comEstoqueConhecido = products.filter((p) => p.stock != null);
+  // Um produto do ERP tem uma linha por segmento: 1.394 dos 1.768 produtos vivem
+  // em duas tabelas. Contar linhas inflava os cards em 79% — "Total produtos"
+  // dizia 3.162 onde existem 1.768, e "Disponível" contava cada item duas vezes.
+  // A tabela segue por segmento, que é onde o preço de cada canal aparece; só a
+  // contagem passa a ser por produto.
+  const distintos = dedupePorProduto(products);
+
+  const comEstoqueConhecido = distintos.filter((p) => p.stock != null);
   const estoqueSincronizado = comEstoqueConhecido.length > 0;
   const SEM_DADO = "não sincronizado";
 
@@ -1391,6 +1622,9 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
     : SEM_DADO;
   const zerados = estoqueSincronizado
     ? comEstoqueConhecido.filter((p) => p.stock === 0).length
+    : SEM_DADO;
+  const disponivel = estoqueSincronizado
+    ? comEstoqueConhecido.filter((p) => p.stock! > 10).length
     : SEM_DADO;
 
   const topDemanda = agruparDemanda(
@@ -1406,9 +1640,10 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
       metric({
         id: "total_products",
         label: "Total produtos",
-        value: products.length,
-        formula: "count(products_consumer + products_reseller + products_installer + products_builder_architect)",
-        tooltip: "Total unificado das tabelas segmentadas de produtos.",
+        value: distintos.length,
+        formula: "count(distinct codigo_erp em products_*)",
+        tooltip:
+          "Produtos distintos do ERP. Cada um tem uma linha por segmento comercial, então a tabela abaixo mostra mais linhas do que este número.",
         drilldown: { href: "/demanda-estoque", filters: {} },
       }),
       metric({
@@ -1424,18 +1659,26 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
         id: "erp_zerado",
         label: "Zerados no ERP",
         value: zerados,
-        formula: "count(products where estoque = 0)",
+        formula: "count(distinct products where estoque = 0)",
         tooltip:
-          "Produtos cadastrados no ERP com estoque zero. Depende da sincronização trazer a quantidade, o que hoje não acontece.",
+          "Sem saldo nos depósitos de venda (HLB MS, HLB Parana e Londrina PDV). O ERP já desconta as reservas, então zero aqui significa nada disponível para vender.",
         drilldown: { href: "/demanda-estoque", filters: { stock: "out" } },
       }),
       metric({
         id: "low_stock",
         label: "Estoque baixo",
         value: lowStock,
-        formula: "count(products where estoque between 1 and 10)",
-        tooltip: "Produtos com estoque entre 1 e 10 unidades.",
+        formula: "count(distinct products where estoque between 1 and 10)",
+        tooltip: "Produtos com 1 a 10 unidades somando os três depósitos de venda.",
         drilldown: { href: "/demanda-estoque", filters: { stock: "low" } },
+      }),
+      metric({
+        id: "available",
+        label: "Disponível",
+        value: disponivel,
+        formula: "count(distinct products where estoque > 10)",
+        tooltip: "Produtos com mais de 10 unidades disponíveis.",
+        drilldown: { href: "/demanda-estoque", filters: {} },
       }),
     ],
     products: filtered.slice(0, limit),

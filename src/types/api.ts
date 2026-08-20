@@ -228,7 +228,14 @@ export type InventoryProduct = {
   price: number | null;
   stock: number | null;
   available: number | null;
+  /** `idProduto` do ERP (ex: "13261"). Número interno — não é o que aparece na
+   *  tela do NetOne nem o que o vendedor digita; para isso existe `sku`. */
   erpCode: string | null;
+  /** Máscara do produto no ERP (ex: "0129C1"), o código que o vendedor conhece. */
+  sku: string | null;
+  /** Foto oficial do ERP. `null` até a sincronização diária rodar, ou quando o
+   *  ERP não fotografou o produto — hoje 288 dos 925 de ar condicionado. */
+  imageUrl: string | null;
 };
 
 export type OutOfStockRequest = {

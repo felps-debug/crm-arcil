@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2, Link2Off, MessageCircle, Phone, PlugZap, RefreshCcw, Send, User } from "lucide-react";
+import { Loader2, Link2Off, MessageCircle, Paperclip, Phone, PlugZap, RefreshCcw, Send, User } from "lucide-react";
 import {
   ConsoleButton,
   ConsoleCard,
@@ -15,7 +15,7 @@ import {
 import { AccessGuard } from "@/components/layout/access-guard";
 import { useToast } from "@/components/ui/toast";
 import { formatDateTime } from "@/lib/client-api";
-import type { ChatwootConversationDetail, ChatwootConversationSummary, ChatwootInbox, ChatwootMessageItem } from "@/lib/chatwoot/client";
+import type { ChatwootAttachment, ChatwootConversationDetail, ChatwootConversationSummary, ChatwootInbox, ChatwootMessageItem } from "@/lib/chatwoot/client";
 
 const STATUS_LABELS: Record<string, string> = {
   open: "Aberta",
@@ -135,9 +135,18 @@ function AtendimentoPageInner() {
   const inboxesFetch = useAtendimentoFetch<{ inboxes: ChatwootInbox[] }>("/api/atendimento/inboxes");
   const inboxes = inboxesFetch.data?.inboxes ?? [];
 
-  const list = useAtendimentoFetch<{ conversations: ChatwootConversationSummary[]; scoped: boolean }>(
-    `/api/atendimento/conversations${inboxFilter ? `?inboxId=${inboxFilter}` : ""}`
-  );
+  // Quantas páginas de 25 pedir. O Chatwoot tem milhares de conversas e devolve
+  // 25 por vez; começar com 2 abre a tela rápido e o botão "carregar mais"
+  // busca o resto sob demanda.
+  const [paginas, setPaginas] = useState(2);
+  useEffect(() => setPaginas(2), [inboxFilter]);
+
+  const list = useAtendimentoFetch<{
+    conversations: ChatwootConversationSummary[];
+    totalNoChatwoot: number;
+    temMais: boolean;
+    scoped: boolean;
+  }>(`/api/atendimento/conversations?paginas=${paginas}${inboxFilter ? `&inboxId=${inboxFilter}` : ""}`);
   const detail = useAtendimentoFetch<{ conversation: ChatwootConversationDetail }>(
     selectedId ? `/api/atendimento/conversations/${selectedId}` : null
   );
@@ -264,7 +273,12 @@ function AtendimentoPageInner() {
           <ConsoleCard pad={false} className="flex h-[min(680px,75dvh)] flex-col">
             <div className="border-b border-[var(--border)] px-4 py-3">
               <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Conversas</h2>
-              <p className="text-[11px] text-[var(--text-muted)]">{filtered.length} no total</p>
+              {/* "N no total" mentia: eram N da primeira página, de milhares no
+                  Chatwoot. Agora diz quantas estão carregadas e quantas existem. */}
+              <p className="text-[11px] text-[var(--text-muted)]">
+                {filtered.length} carregada{filtered.length !== 1 ? "s" : ""}
+                {list.data?.totalNoChatwoot ? ` · ${list.data.totalNoChatwoot.toLocaleString("pt-BR")} no Chatwoot` : ""}
+              </p>
             </div>
             <div className="flex-1 overflow-y-auto">
               {filtered.length === 0 && (
@@ -279,8 +293,9 @@ function AtendimentoPageInner() {
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-[12px] font-bold text-[var(--text-primary)]">
-                      {c.contactName ?? "Contato sem nome"}
+                    <p className="flex min-w-0 items-center gap-2 truncate text-[12px] font-bold text-[var(--text-primary)]">
+                      <Avatar url={c.contactAvatar} nome={c.contactName} tamanho={22} />
+                      <span className="truncate">{c.contactName ?? "Contato sem nome"}</span>
                     </p>
                     <ConsoleStatus tone={STATUS_TONES[c.status] ?? "slate"}>
                       {STATUS_LABELS[c.status] ?? c.status}
@@ -310,6 +325,15 @@ function AtendimentoPageInner() {
                   </div>
                 </button>
               ))}
+              {list.data?.temMais && !search.trim() && (
+                <button
+                  onClick={() => setPaginas((p) => p + 4)}
+                  disabled={list.loading}
+                  className="w-full border-t border-[var(--border)] px-4 py-3 text-[12px] font-semibold text-blue-400 transition-colors hover:bg-[var(--bg-subtle)] disabled:opacity-50"
+                >
+                  {list.loading ? "Carregando..." : "Carregar mais conversas"}
+                </button>
+              )}
             </div>
           </ConsoleCard>
 
@@ -337,9 +361,7 @@ function AtendimentoPageInner() {
               <>
                 <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <div className="grid h-8 w-8 place-items-center rounded-full bg-blue-500/10 text-blue-300">
-                      <User size={15} />
-                    </div>
+                    <Avatar url={conv.contactAvatar} nome={conv.contactName} tamanho={32} />
                     <div>
                       <p className="text-[13px] font-bold text-[var(--text-primary)]">{conv.contactName ?? "Contato sem nome"}</p>
                       <p className="flex items-center gap-1 font-data text-[11px] text-[var(--text-muted)]">
@@ -420,6 +442,74 @@ function LabelChips({ labels }: { labels: { title: string; color: string }[] }) 
   );
 }
 
+/**
+ * Foto de perfil do WhatsApp, com a inicial do contato como reserva.
+ *
+ * O Chatwoot serve a imagem por uma URL de redirect do Active Storage que pode
+ * expirar ou vir de contato sem foto — daí o `onError`, para a lista não ficar
+ * com quadrado quebrado em vez de rosto.
+ */
+function Avatar({ url, nome, tamanho }: { url: string | null; nome: string | null; tamanho: number }) {
+  const [falhou, setFalhou] = useState(false);
+  const estilo = { width: tamanho, height: tamanho };
+  const inicial = (nome ?? "").trim().replace(/^~/, "").charAt(0).toUpperCase();
+
+  if (!url || falhou) {
+    return (
+      <span
+        style={estilo}
+        className="grid shrink-0 place-items-center rounded-full bg-blue-500/10 text-[11px] font-bold text-blue-300"
+      >
+        {inicial || <User size={Math.round(tamanho * 0.5)} />}
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt=""
+      style={estilo}
+      onError={() => setFalhou(true)}
+      className="shrink-0 rounded-full object-cover"
+    />
+  );
+}
+
+/**
+ * Renderiza o anexo pelo que ele é: áudio vira player, imagem vira imagem, o
+ * resto vira link. O Chatwoot serve o arquivo em `data_url`, e até aqui o CRM
+ * descartava esse campo — mensagem de voz aparecia como o texto "[audio]" e
+ * não havia como ouvir sem abrir o Chatwoot por fora.
+ */
+function Anexo({ anexo, isOutgoing }: { anexo: ChatwootAttachment; isOutgoing: boolean }) {
+  if (anexo.tipo === "audio") {
+    return <audio controls preload="none" src={anexo.url} className="mt-1 w-[260px] max-w-full" />;
+  }
+  if (anexo.tipo === "image") {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <a href={anexo.url} target="_blank" rel="noopener noreferrer">
+        <img src={anexo.url} alt="Imagem recebida" className="mt-1 max-h-[260px] rounded-[8px]" />
+      </a>
+    );
+  }
+  if (anexo.tipo === "video") {
+    return <video controls preload="none" src={anexo.url} className="mt-1 max-h-[260px] rounded-[8px]" />;
+  }
+  return (
+    <a
+      href={anexo.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`mt-1 flex items-center gap-1.5 text-[12px] underline ${isOutgoing ? "text-blue-100" : "text-blue-400"}`}
+    >
+      <Paperclip size={12} />
+      Abrir anexo
+    </a>
+  );
+}
+
 function MessageBubble({ message }: { message: ChatwootMessageItem }) {
   if (message.direction === "activity") {
     return (
@@ -441,7 +531,12 @@ function MessageBubble({ message }: { message: ChatwootMessageItem }) {
             : "rounded-tl-none border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)]"
         }`}
       >
-        {message.content}
+        {/* Mensagem de voz vem com `content` "[audio]" ou vazio — o texto sozinho
+            não vale nada, e repeti-lo acima do player é ruído. */}
+        {message.content && !(message.attachments.length && /^\[\w+\]$/.test(message.content.trim())) && message.content}
+        {message.attachments.map((a) => (
+          <Anexo key={a.url} anexo={a} isOutgoing={isOutgoing} />
+        ))}
         {message.createdAt && (
           <p className={`mt-1 text-[10px] ${isOutgoing ? "text-blue-100/70" : "text-[var(--text-muted)]"}`}>
             {formatDateTime(message.createdAt)}

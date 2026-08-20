@@ -27,6 +27,8 @@ import { createClient } from "@/lib/supabase/client";
 import { getImageGenerationHistory, type ImageGeneration } from "@/lib/supabase/queries";
 import { formatDateTime } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
+import { ProdutoPicker } from "./_components/produto-picker";
+import type { InventoryProduct } from "@/types/api";
 
 async function downloadImage(url: string, filename: string): Promise<void> {
   const res = await fetch(url);
@@ -48,17 +50,18 @@ interface ChatMessage {
 type Step =
   | { key: string; question: string; type: "text" }
   | { key: string; question: string; type: "file" }
+  | { key: string; question: string; type: "produto" }
   | { key: string; question: string; type: "choice"; options: string[] };
 
 const STEPS: Step[] = [
   { key: "ambiente", question: "Qual o ambiente da instalacao?", type: "text" },
   { key: "tipo_parede", question: "Qual o tipo da parede?", type: "choice", options: ["Alvenaria", "Drywall", "Outro"] },
   { key: "foto", question: "Envie uma foto da parede", type: "file" },
-  // Sem "Outro": a opção não descrevia geometria nenhuma, e o gerador de imagem
-  // precisa saber onde o equipamento se instala. Estes quatro são a linha atual.
-  { key: "tipo_equipamento", question: "Qual o tipo do ar-condicionado?", type: "choice", options: ["Split Hi-Wall", "Cassete", "Piso-teto", "Dutado"] },
-  { key: "marca", question: "Qual a marca do ar-condicionado?", type: "text" },
-  { key: "modelo", question: "Qual o modelo do ar-condicionado?", type: "text" },
+  // Um passo no lugar de três (tipo, marca e modelo). Escolher do catálogo dá o
+  // código do ERP, e com ele a foto oficial do produto é lookup exato — antes o
+  // modelo vinha como texto livre e a foto tinha que ser adivinhada por
+  // semelhança de palavras, o que confundia modelos que só diferem por "WIFI".
+  { key: "produto", question: "Qual o aparelho? Busque pelo código do ERP, modelo ou marca.", type: "produto" },
   { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
   { key: "ponto_eletrico", question: "Já existe ponto elétrico na parede?", type: "choice", options: ["Sim", "Não"] },
   { key: "unidade_externa", question: "Onde ficara a unidade externa (condensadora) e a que distancia aproximada?", type: "text" },
@@ -236,6 +239,28 @@ function ChatbotPageInner() {
     advance({ ...answers, [current.key]: textValue.trim() }, { role: "user", content: textValue.trim() });
   }, [current, textValue, answers, advance]);
 
+  /** Um passo, cinco respostas. `codigo_erp` é a que importa mais: é ela que faz
+   *  a foto oficial ser um lookup exato em vez de palpite por semelhança. */
+  const handleProduto = useCallback(
+    (produto: InventoryProduct, tipo: string) => {
+      if (!current || current.type !== "produto") return;
+      const rotulo = `${produto.name} (${produto.sku ?? produto.erpCode})`;
+      advance(
+        {
+          ...answers,
+          produto: rotulo,
+          codigo_erp: produto.erpCode ?? "",
+          sku: produto.sku ?? "",
+          marca: produto.brand ?? "",
+          modelo: produto.name ?? "",
+          tipo_equipamento: tipo,
+        },
+        { role: "user", content: rotulo }
+      );
+    },
+    [current, answers, advance]
+  );
+
   const handleChoice = useCallback(
     (opt: string) => {
       if (!current || current.type !== "choice") return;
@@ -308,6 +333,13 @@ function ChatbotPageInner() {
     [answers, wallImageUrl]
   );
 
+  /** O último passo não avança o `step` — ele dispara a geração. Se a geração
+   *  falha, o input daquele passo voltava a aparecer e responder de novo
+   *  duplicava a bolha no histórico ("Embutida na parede" duas vezes) sem que o
+   *  questionário tivesse mudado. Com tudo respondido a tela oferece repetir a
+   *  geração, que é a ação que a pessoa realmente quer ali. */
+  const tudoRespondido = answeredSteps === STEPS.length;
+
   return (
     <ConsolePage title="Gerador de Imagem" subtitle="Simulação de instalação com IA">
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Seções do gerador de imagem">
@@ -364,6 +396,15 @@ function ChatbotPageInner() {
                 </ConsoleButton>
               ) : typing || generating ? (
                 <div className="flex h-10 items-center justify-center text-[12px] text-[var(--text-muted)]">Aguarde...</div>
+              ) : tudoRespondido ? (
+                <ConsoleButton
+                  icon={RefreshCcw}
+                  active
+                  onClick={() => void requestGeneration(answers)}
+                  className="w-full justify-center"
+                >
+                  Gerar novamente
+                </ConsoleButton>
               ) : current.type === "text" ? (
                 <div className="flex items-center gap-2">
                   <input
@@ -393,6 +434,8 @@ function ChatbotPageInner() {
                     {uploading ? "Enviando..." : "Selecionar foto"}
                   </ConsoleButton>
                 </div>
+              ) : current.type === "produto" ? (
+                <ProdutoPicker onConfirm={handleProduto} disabled={generating} />
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {current.options.map((opt) => (

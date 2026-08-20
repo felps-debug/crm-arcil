@@ -40,13 +40,15 @@ const METRIC_ICON: Record<string, typeof Package> = {
   out_of_stock: PackageX,
   erp_zerado: PackageX,
   low_stock: AlertTriangle,
+  available: PackageCheck,
 };
 
-const METRIC_TONE: Record<string, "blue" | "red" | "amber"> = {
+const METRIC_TONE: Record<string, "blue" | "red" | "amber" | "green"> = {
   total_products: "blue",
   out_of_stock: "red",
   erp_zerado: "red",
   low_stock: "amber",
+  available: "green",
 };
 
 export default function DemandaEstoquePage() {
@@ -128,13 +130,6 @@ function DemandaEstoquePageInner() {
               />
             ))}
             <ConsoleMetric label="Categorias" value={data.breakdowns.bySource.length} helper="Segmentos comerciais" icon={Boxes} tone="violet" />
-            <ConsoleMetric
-              label="Disponível"
-              value={estoqueSincronizado ? formatNumber(products.filter((p) => (p.stock ?? 0) > 10).length) : "não sincronizado"}
-              helper="Produtos com estoque normal"
-              icon={PackageCheck}
-              tone="green"
-            />
           </section>
 
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -184,8 +179,13 @@ function DemandaEstoquePageInner() {
                 placeholder="Filtrar por modelo, BTU ou marca..."
                 className="w-full bg-transparent text-[12px] font-semibold text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]"
               />
-              {tableFilter && (
+              {tableFilter ? (
                 <span className="shrink-0 font-data text-[11px] text-[var(--text-muted)]">{filteredProducts.length} resultado{filteredProducts.length !== 1 ? "s" : ""}</span>
+              ) : (
+                /* Sem isto o card "Total produtos" e a contagem de linhas se
+                   contradizem na mesma tela: o produto repete uma vez por
+                   segmento, porque cada canal tem seu preço. */
+                <span className="hidden shrink-0 text-[11px] text-[var(--text-muted)] sm:block">uma linha por segmento comercial</span>
               )}
             </div>
             <ConsoleTable headers={["Produto", "Marca", "BTU", "Categoria", "Preço", "Estoque", "Disponível", "Status"]}>
