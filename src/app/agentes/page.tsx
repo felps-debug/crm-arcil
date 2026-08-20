@@ -49,11 +49,11 @@ export default function AgentesPage() {
       {!loading && !error && data && (
         <>
           <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            {data.metrics.slice(0, 3).map((m, index) => (
+            {data.metrics?.slice(0, 3).map((m, index) => (
               <ConsoleMetric
                 key={m.id}
-                label={m.label}
-                value={formatNumber(m.value)}
+                label={m.label || ""}
+                value={formatNumber(m.value ?? 0)}
                 icon={[Bot, CheckCircle2, PlugZap][index]}
                 tone={index === 1 ? "green" : index === 2 ? "violet" : "blue"}
               />
@@ -69,11 +69,11 @@ export default function AgentesPage() {
                   </div>
                   <ConsoleStatus tone={agent.enabled ? "green" : "slate"}>{agent.enabled ? "Habilitado" : "Pausado"}</ConsoleStatus>
                 </div>
-                <h2 className="mt-4 text-[14px] font-bold text-[var(--text-primary)]">{agent.name}</h2>
-                <p className="mt-1 text-[11px] text-[var(--text-muted)]">{agent.segment.join(", ") || "Sem segmento"}</p>
-                <p className="mt-3 font-data text-[12px] text-[var(--text-secondary)]">{agent.waPhone ?? "-"}</p>
+                <h2 className="mt-4 text-[14px] font-bold text-[var(--text-primary)]">{agent.name || "—"}</h2>
+                <p className="mt-1 text-[11px] text-[var(--text-muted)]">{agent.segment?.join(", ") || "Sem segmento"}</p>
+                <p className="mt-3 font-data text-[12px] text-[var(--text-secondary)]">{(agent as any).waPhone ?? "-"}</p>
                 <div className="mt-4 grid grid-cols-3 gap-2">
-                  <Mini label="Leads" value={agent.totalLeads} />
+                  <Mini label="Leads" value={(agent as any).totalLeads ?? 0} />
                   <Mini label="Ativos" value={agent.activeLeads} />
                   <Mini label="Conv." value={agent.conversations} />
                 </div>

@@ -35,11 +35,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="pt-BR" className={`dark h-full ${montserrat.variable} ${ibmPlexMono.variable}`}>
       <body className="h-full flex overflow-hidden" style={{ background: "var(--bg-base)" }}>
         {/*
-          THESIS: ARCIL is an open operational wall, not a dashboard that hides work behind cards and destinations.
-          OWN-WORLD: Matte split-flap board, warm off-white type, steel dividers, restrained blue live data, amber for attention and red only for an actual exception.
-          STORY: The owner reads every queue, domain state, agent and event at once from a TV; the team reads the same factual state before acting elsewhere.
-          FIRST VIEWPORT: A broadcast masthead sits above open queues, a central operations agenda, a continuous event stream, and a bottom status ledger.
-          FORM: Operational split-flap board; direction seed 560c4a34.
+          THESIS: ARCIL is an executive pulse for the operation, not a generic dashboard of detached cards.
+          OWN-WORLD: Deep teal working surfaces, mineral text, disciplined signal colors and editorial hierarchy that makes the business state legible at a glance.
+          STORY: Paulo understands the company's health first, then the domains, decisions and live events that explain it.
+          FIRST VIEWPORT: A statement of operational health leads into measurable signals, a domain agenda, decision queue, event stream and commercial ledger.
+          FORM: Executive Pulse; desktop command surface with explicit TV mode and mobile decision sequence.
           FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
         */}
         <Providers>
