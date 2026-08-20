@@ -32,12 +32,12 @@
     "react-dom": "19.2.4",
     "recharts": "^3.8.1",
     "satori": "^0.29.0",
-    "sharp": "^0.35.3",
+    "sharp": "0.34.5",
     "tailwind-merge": "^3.5.0",
     "xlsx": "^0.18.5"
   },
   "overrides": {
-    "sharp": "^0.35.3"
+    "sharp": "0.34.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
