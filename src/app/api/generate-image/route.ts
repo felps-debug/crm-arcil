@@ -212,12 +212,21 @@ export async function POST(request: NextRequest) {
   }
 
   const productLookup = [collectedData.marca, collectedData.modelo].filter(Boolean).join(" ");
-  const productImageUrl = await getProductImageUrl(
-    supabase,
-    String(productLookup),
-    collectedData.tipo_equipamento,
-    typeof collectedData.codigo_erp === "string" ? collectedData.codigo_erp : undefined
-  );
+  // Sem try/catch, uma falha aqui (Supabase fora do ar, timeout) derrubava a
+  // rota inteira ANTES do fetch pro n8n — mesmo sintoma do fetch sem guarda:
+  // "Erro de conexao" genérico na tela e nenhuma execução criada no n8n. Uma
+  // foto de referência ausente não devia custar a geração inteira.
+  let productImageUrl: string | null = null;
+  try {
+    productImageUrl = await getProductImageUrl(
+      supabase,
+      String(productLookup),
+      collectedData.tipo_equipamento,
+      typeof collectedData.codigo_erp === "string" ? collectedData.codigo_erp : undefined
+    );
+  } catch (err) {
+    console.error("[generate-image] busca da foto de referência falhou:", err instanceof Error ? err.message : err);
+  }
 
   const productImageBase64 = await fetchProductImageBase64(productImageUrl);
 
