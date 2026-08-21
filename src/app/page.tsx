@@ -141,7 +141,7 @@ export default function DashboardPage() {
     [summary.data]
   );
 
-  const pendingItems = pending.data?.items ?? [];
+  const pendingItems = useMemo(() => pending.data?.items ?? [], [pending.data]);
   const openQueue = pendingItems.reduce((total, item) => total + item.count, 0);
 
   // A faixa de alerta só disparava por follow-up urgente. Isso está em zero
