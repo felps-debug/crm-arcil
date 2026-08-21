@@ -139,6 +139,7 @@ export type LeadDetailResponse = {
   timeline: LeadTimelineItem[];
   financialHandoff: {
     eligible: boolean;
+    handoffStaffOkAt: string | null;
     cobrancaLogId: string | null;
     boletos: {
       empresa: string;

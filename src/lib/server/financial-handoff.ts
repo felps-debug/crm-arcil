@@ -38,6 +38,7 @@ export type FinancialBoardItem = {
   paidAmount: number;
   paidBoletoCount: number;
   handoffAcceptedAt: string | null;
+  handoffStaffOkAt: string | null;
   column: FinancialBoardColumn;
   followupAt: string | null;
   resolutionId: string | null;
