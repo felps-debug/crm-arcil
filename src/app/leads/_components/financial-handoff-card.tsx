@@ -22,6 +22,10 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 }
 
+function assumedTime(value: string | null) {
+  return value ? new Date(value).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : null;
+}
+
 export function FinancialHandoffCard({ detail }: { detail: LeadDetailResponse }) {
   const handoff = detail.financialHandoff;
   if (!handoff?.eligible) return null;
@@ -34,6 +38,7 @@ export function FinancialHandoffCard({ detail }: { detail: LeadDetailResponse })
     )
   );
   const pending = boletos.filter((boleto) => !decided.has(`${boleto.empresa} ${boleto.documento}`));
+  const assumedAt = assumedTime(handoff.handoffStaffOkAt);
 
   return (
     <ConsoleCard className="mt-5 border-amber-500/30 bg-amber-500/[0.04]">
@@ -45,6 +50,7 @@ export function FinancialHandoffCard({ detail }: { detail: LeadDetailResponse })
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[13px] font-bold text-[var(--text-primary)]">Em atendimento financeiro</h3>
             <ConsoleStatus tone="amber">{pending.length} em aberto</ConsoleStatus>
+            {assumedAt && <ConsoleStatus tone="green">Assumido {assumedAt}</ConsoleStatus>}
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
             {boletos.length} boleto{boletos.length === 1 ? "" : "s"} somando {formatCurrency(openAmount)}. As baixas e a

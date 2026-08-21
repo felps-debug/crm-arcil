@@ -42,6 +42,7 @@ type LeadRow = {
   handoff_vendor_id?: string | null;
   handoff_sent_at?: string | null;
   handoff_accepted_at?: string | null;
+  handoff_staff_ok_at?: string | null;
 };
 
 type FollowupRow = {
@@ -217,7 +218,7 @@ type LeadFilters = {
   limit?: string | null;
 };
 
-const LEAD_SELECT = "id,wa_phone,name,company,region,channel_origin,segment,status,lead_score,created_at,updated_at,owner_name,city,origem,handoff_vendor_id,handoff_sent_at,handoff_accepted_at";
+const LEAD_SELECT = "id,wa_phone,name,company,region,channel_origin,segment,status,lead_score,created_at,updated_at,owner_name,city,origem,handoff_vendor_id,handoff_sent_at,handoff_accepted_at,handoff_staff_ok_at";
 
 function nowIso() {
   return new Date().toISOString();
@@ -928,6 +929,7 @@ export async function getFinancialHandoffBoard(): Promise<FinancialBoardItem[]> 
       paidAmount: paidBoletos.reduce((sum, boleto) => sum + boleto.valor, 0),
       paidBoletoCount: paidBoletos.length,
       handoffAcceptedAt: lead.handoff_accepted_at ?? null,
+      handoffStaffOkAt: lead.handoff_staff_ok_at ?? null,
       column,
       followupAt: resolution?.followup_at ?? null,
       resolutionId: resolution?.id ?? null,
@@ -984,6 +986,7 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
   const financialHandoff = isCobranca
     ? {
         eligible: Boolean(lead.handoff_accepted_at),
+        handoffStaffOkAt: lead.handoff_staff_ok_at ?? null,
         cobrancaLogId: latestCobranca?.id ?? null,
         boletos: latestCobranca ? parseSnapshotBoletos(latestCobranca.metadata) : [],
         activeDecisions: ((handoffDecisionsRes.data ?? []) as FinancialHandoffDecisionRow[])

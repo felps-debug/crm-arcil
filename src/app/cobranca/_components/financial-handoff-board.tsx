@@ -30,6 +30,10 @@ function returnDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : null;
 }
 
+function assumedTime(value: string | null) {
+  return value ? new Date(value).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : null;
+}
+
 export function FinancialHandoffBoard() {
   const [items, setItems] = useState<FinancialBoardItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,6 +196,7 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
   // A coluna continua informando o estado; ela não decide mais quem pode agir.
   const editable = Boolean(item.cobrancaLogId) && item.boletos.length > 0;
   const scheduledDate = returnDate(item.followupAt);
+  const assumedAt = assumedTime(item.handoffStaffOkAt);
 
   const invalidRenegotiation = item.boletos.some((boleto) => choices[key(boleto.empresa, boleto.documento)] === "renegociado" && !notes[key(boleto.empresa, boleto.documento)]?.trim());
 
@@ -233,7 +238,7 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
         <div className="min-w-0"><p className="truncate text-[12px] font-bold text-[var(--text-primary)]">{item.name ?? "Sem nome"}</p><p className="mt-0.5 font-data text-[10px] text-[var(--text-muted)]">{item.phone}</p></div>
         {editable && <ChevronDown size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform ${open ? "rotate-180" : ""}`} />}
       </div>
-      <div className="mt-3 flex items-end justify-between gap-2"><div><p className="font-data text-[14px] font-bold text-[var(--text-primary)]">{money(item.openAmount)}</p><p className="text-[10px] text-[var(--text-muted)]">{item.openBoletoCount} boleto{item.openBoletoCount !== 1 ? "s" : ""} em aberto</p></div>{scheduledDate && <ConsoleStatus tone="amber">Retoma {scheduledDate}</ConsoleStatus>}</div>
+      <div className="mt-3 flex items-end justify-between gap-2"><div><p className="font-data text-[14px] font-bold text-[var(--text-primary)]">{money(item.openAmount)}</p><p className="text-[10px] text-[var(--text-muted)]">{item.openBoletoCount} boleto{item.openBoletoCount !== 1 ? "s" : ""} em aberto</p></div>{assumedAt ? <ConsoleStatus tone="green">Assumido {assumedAt}</ConsoleStatus> : scheduledDate && <ConsoleStatus tone="amber">Retoma {scheduledDate}</ConsoleStatus>}</div>
     </button>
     <AnimatePresence initial={false}>{open && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-[var(--border)]"><div className="space-y-2 p-3">
       <div className="flex items-baseline justify-between gap-2 text-[10px]">
