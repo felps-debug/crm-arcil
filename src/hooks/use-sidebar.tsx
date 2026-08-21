@@ -17,6 +17,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
+    // localStorage só existe no cliente — lendo aqui, não no inicializador,
+    // é o que evita a divergência de hidratação descrita acima.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCollapsed(localStorage.getItem(STORAGE_KEY) === "collapsed");
   }, []);
 

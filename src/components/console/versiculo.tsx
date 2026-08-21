@@ -15,6 +15,10 @@ export function VersiculoDoDia() {
   const [versiculo, setVersiculo] = useState<Versiculo | null>(null);
 
   useEffect(() => {
+    // versiculoDoDia() usa a data do relógio do cliente — não pode rodar
+    // durante o render (é isso que a regra normalmente evita), senão volta a
+    // quebrar o prerender que o comentário acima descreve.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVersiculo(versiculoDoDia());
   }, []);
 

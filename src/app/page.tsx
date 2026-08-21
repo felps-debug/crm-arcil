@@ -5,13 +5,13 @@ import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
-  ArrowUpRight,
+  ArrowUpRight,
   DollarSign,
   MessageCircleReply,
   MessagesSquare,
   PackageCheck,
   RefreshCw,
-  Tv,
+  Tv,
 } from "lucide-react";
 import {
   ConsoleButton,
@@ -141,7 +141,7 @@ export default function DashboardPage() {
     [summary.data]
   );
 
-  const pendingItems = pending.data?.items ?? [];
+  const pendingItems = useMemo(() => pending.data?.items ?? [], [pending.data]);
   const openQueue = pendingItems.reduce((total, item) => total + item.count, 0);
 
   // A faixa de alerta só disparava por follow-up urgente. Isso está em zero
