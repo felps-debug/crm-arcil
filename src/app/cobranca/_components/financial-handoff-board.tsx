@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronDown, Loader2, MessageSquare, RefreshCw, ShieldAlert } from "lucide-react";
+import { CheckCircle2, ChevronDown, Loader2, MessageSquare, RefreshCw, Search, ShieldAlert } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ConsoleButton, ConsoleCard, ConsoleError, ConsoleLoading, ConsoleStatus } from "@/components/console/console-shell";
 import { createClient } from "@/lib/supabase/client";
@@ -26,6 +26,27 @@ function key(empresa: string, documento: string) {
   return `${empresa}\u0000${documento}`;
 }
 
+/** "dd/mm/aaaa" -> Date, ou null se ilegível. O boleto guarda vencimento como texto solto do ERP; sem isso não dá pra saber quem está mais atrasado. */
+function parseVencimento(texto: string | null): Date | null {
+  if (!texto) return null;
+  const m = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (!m) return null;
+  const [, dia, mes, anoStr] = m;
+  const ano = anoStr.length === 2 ? 2000 + Number(anoStr) : Number(anoStr);
+  const data = new Date(ano, Number(mes) - 1, Number(dia));
+  return Number.isNaN(data.getTime()) ? null : data;
+}
+
+/** Vencimento mais antigo entre os boletos em aberto do card — é o que decide prioridade de cobrança, não o mais recente. */
+function vencimentoMaisAntigo(item: FinancialBoardItem): { data: Date; texto: string } | null {
+  let melhor: { data: Date; texto: string } | null = null;
+  for (const boleto of item.boletos) {
+    const data = parseVencimento(boleto.vencimento);
+    if (data && (!melhor || data < melhor.data)) melhor = { data, texto: boleto.vencimento! };
+  }
+  return melhor;
+}
+
 function returnDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : null;
 }
@@ -38,6 +59,7 @@ export function FinancialHandoffBoard() {
   const [items, setItems] = useState<FinancialBoardItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,7 +87,20 @@ export function FinancialHandoffBoard() {
     return () => { supabase.removeChannel(channel); };
   }, [load]);
 
-  const grouped = useMemo(() => new Map(columns.map((column) => [column.id, items.filter((item) => item.column === column.id)])), [items]);
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((item) => item.name?.toLowerCase().includes(q) || item.phone.includes(q));
+  }, [items, search]);
+
+  const grouped = useMemo(() => new Map(columns.map((column) => [
+    column.id,
+    // Vencimento mais antigo primeiro — quem está mais atrasado sobe pro topo
+    // da coluna, em vez de ficar perdido atrás de cards mais recentes.
+    filteredItems
+      .filter((item) => item.column === column.id)
+      .sort((a, b) => (vencimentoMaisAntigo(a)?.data.getTime() ?? Infinity) - (vencimentoMaisAntigo(b)?.data.getTime() ?? Infinity)),
+  ])), [filteredItems]);
   const totals = useMemo(() => items.reduce(
     (sum, item) => ({ open: sum.open + item.openAmount, paid: sum.paid + item.paidAmount }),
     { open: 0, paid: 0 }
@@ -97,14 +132,29 @@ export function FinancialHandoffBoard() {
           </button>
         </div>
       </div>
+      <div className="relative w-64">
+        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+        <input
+          type="text"
+          placeholder="Nome ou telefone..."
+          aria-label="Buscar por nome ou telefone"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] py-1.5 pl-7 pr-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-blue-500/60"
+        />
+      </div>
       {error && <ConsoleError message={error} />}
       <div className="grid gap-3 xl:grid-cols-4">
         {columns.map((column) => {
           const columnItems = grouped.get(column.id) ?? [];
+          const columnTotal = columnItems.reduce((sum, item) => sum + item.openAmount, 0);
           return <section key={column.id} className="min-w-0 rounded-[12px] border border-[var(--border)] bg-[var(--bg-inset)] p-2.5">
             <div className="mb-2 flex items-center justify-between px-1">
               <h3 className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-secondary)]">{column.label}</h3>
-              <span className="font-data text-[11px] text-[var(--text-muted)]">{columnItems.length}</span>
+              <span className="flex items-center gap-1.5 font-data text-[11px] text-[var(--text-muted)]">
+                {columnTotal > 0 && <span className="text-[var(--text-secondary)]">{money(columnTotal)}</span>}
+                {columnItems.length}
+              </span>
             </div>
             <div className="space-y-2">
               {columnItems.map((item) => <FinancialCard key={item.leadId} item={item} onSaved={load} />)}
@@ -197,6 +247,8 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
   const editable = Boolean(item.cobrancaLogId) && item.boletos.length > 0;
   const scheduledDate = returnDate(item.followupAt);
   const assumedAt = assumedTime(item.handoffStaffOkAt);
+  const vencido = vencimentoMaisAntigo(item);
+  const vencidoAtrasado = vencido ? vencido.data.getTime() < new Date().setHours(0, 0, 0, 0) : false;
 
   const invalidRenegotiation = item.boletos.some((boleto) => choices[key(boleto.empresa, boleto.documento)] === "renegociado" && !notes[key(boleto.empresa, boleto.documento)]?.trim());
 
@@ -238,7 +290,7 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
         <div className="min-w-0"><p className="truncate text-[12px] font-bold text-[var(--text-primary)]">{item.name ?? "Sem nome"}</p><p className="mt-0.5 font-data text-[10px] text-[var(--text-muted)]">{item.phone}</p></div>
         {editable && <ChevronDown size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform ${open ? "rotate-180" : ""}`} />}
       </div>
-      <div className="mt-3 flex items-end justify-between gap-2"><div><p className="font-data text-[14px] font-bold text-[var(--text-primary)]">{money(item.openAmount)}</p><p className="text-[10px] text-[var(--text-muted)]">{item.openBoletoCount} boleto{item.openBoletoCount !== 1 ? "s" : ""} em aberto</p></div>{assumedAt ? <ConsoleStatus tone="green">Assumido {assumedAt}</ConsoleStatus> : scheduledDate && <ConsoleStatus tone="amber">Retoma {scheduledDate}</ConsoleStatus>}</div>
+      <div className="mt-3 flex items-end justify-between gap-2"><div><p className="font-data text-[14px] font-bold text-[var(--text-primary)]">{money(item.openAmount)}</p><p className="text-[10px] text-[var(--text-muted)]">{item.openBoletoCount} boleto{item.openBoletoCount !== 1 ? "s" : ""} em aberto{vencido && <span className={vencidoAtrasado ? "ml-1 font-semibold text-red-300" : "ml-1"}> · vence {vencido.texto}</span>}</p></div>{assumedAt ? <ConsoleStatus tone="green">Assumido {assumedAt}</ConsoleStatus> : scheduledDate && <ConsoleStatus tone="amber">Retoma {scheduledDate}</ConsoleStatus>}</div>
     </button>
     <AnimatePresence initial={false}>{open && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-[var(--border)]"><div className="space-y-2 p-3">
       <div className="flex items-baseline justify-between gap-2 text-[10px]">
@@ -246,7 +298,7 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
         <span className="font-data font-bold text-[var(--emerald)]">{money(markedAmount)}</span>
       </div>
       <div className="max-h-[264px] space-y-2 overflow-y-auto pr-1">
-      {item.boletos.map((boleto) => { const boletoKey = key(boleto.empresa, boleto.documento); const choice = choices[boletoKey] ?? "em_aberto"; return <div key={boletoKey} className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] p-2.5"><div className="flex gap-2"><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold text-[var(--text-primary)]">{boleto.documento}</p><p className="mt-1 text-[10px] text-[var(--text-muted)]">{boleto.empresa} · {money(boleto.valor)}</p></div><select value={choice} onChange={(event) => setChoices((current) => ({ ...current, [boletoKey]: event.target.value as Choice }))} className="rounded-[6px] border border-[var(--border)] bg-[var(--bg-base)] px-1.5 py-1 text-[10px] font-semibold text-[var(--text-primary)]"><option value="em_aberto">Em aberto</option><option value="pago">Pago</option><option value="renegociado">Renegociado</option></select></div>{choice === "renegociado" && <textarea value={notes[boletoKey] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [boletoKey]: event.target.value }))} rows={2} placeholder="Condições da renegociação" className="mt-2 w-full resize-none rounded-[6px] border border-[var(--border)] bg-[var(--bg-base)] px-2 py-1.5 text-[10px] text-[var(--text-primary)]" />}</div>; })}
+      {item.boletos.map((boleto) => { const boletoKey = key(boleto.empresa, boleto.documento); const choice = choices[boletoKey] ?? "em_aberto"; return <div key={boletoKey} className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] p-2.5"><div className="flex gap-2"><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold text-[var(--text-primary)]">{boleto.documento}</p><p className="mt-1 text-[10px] text-[var(--text-muted)]">{boleto.empresa} · {money(boleto.valor)}{boleto.vencimento && <> · vence {boleto.vencimento}</>}</p></div><select value={choice} onChange={(event) => setChoices((current) => ({ ...current, [boletoKey]: event.target.value as Choice }))} className="rounded-[6px] border border-[var(--border)] bg-[var(--bg-base)] px-1.5 py-1 text-[10px] font-semibold text-[var(--text-primary)]"><option value="em_aberto">Em aberto</option><option value="pago">Pago</option><option value="renegociado">Renegociado</option></select></div>{choice === "renegociado" && <textarea value={notes[boletoKey] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [boletoKey]: event.target.value }))} rows={2} placeholder="Condições da renegociação" className="mt-2 w-full resize-none rounded-[6px] border border-[var(--border)] bg-[var(--bg-base)] px-2 py-1.5 text-[10px] text-[var(--text-primary)]" />}</div>; })}
       </div>
 
       {/* Antes de baixar um boleto ou devolver ao bot, ver o que o cliente

@@ -122,33 +122,44 @@ function adiarParaJanela(alvo: Date): Date {
 
 export type ProximoToque = { texto: string; tone: "blue" | "amber" | "slate" };
 
+type FollowupLike = {
+  created_at?: string | null;
+  followup_step?: number | null;
+  respondeu?: boolean | null;
+  status?: string | null;
+};
+
+/** Quando o próximo toque cairia, sem formatar — a base que `proximoToque()` e
+ *  a ordenação da tela usam, cada um com sua própria regra de exibição. */
+function quandoSeriaOProximoToque(followup: FollowupLike): Date | null {
+  if (followup.respondeu) return null;
+  if (followup.status && followup.status !== "PENDING") return null;
+  if (!followup.created_at) return null;
+
+  const step = followup.followup_step ?? 0;
+  const horas = REGUA_HORAS[step];
+  if (horas == null) return null;
+
+  const criado = new Date(followup.created_at);
+  if (Number.isNaN(criado.getTime())) return null;
+
+  return adiarParaJanela(new Date(criado.getTime() + horas * 3_600_000));
+}
+
 /**
  * Quando o próximo follow-up deste cliente deve sair.
  *
  * A aba mostrava só o número do step, que não diz nada sozinho. Com a régua
  * fixa dá para dizer quem recebe mensagem hoje — que é a pergunta de quem opera.
  */
-export function proximoToque(
-  followup: {
-    created_at?: string | null;
-    followup_step?: number | null;
-    respondeu?: boolean | null;
-    status?: string | null;
-  },
-  agora: Date = new Date(),
-): ProximoToque {
+export function proximoToque(followup: FollowupLike, agora: Date = new Date()): ProximoToque {
   if (followup.respondeu) return { texto: "respondeu", tone: "slate" };
   if (followup.status && followup.status !== "PENDING") return { texto: "encerrado", tone: "slate" };
   if (!followup.created_at) return { texto: "—", tone: "slate" };
 
-  const step = followup.followup_step ?? 0;
-  const horas = REGUA_HORAS[step];
-  if (horas == null) return { texto: "encerrado", tone: "slate" };
+  const quando = quandoSeriaOProximoToque(followup);
+  if (!quando) return { texto: "encerrado", tone: "slate" };
 
-  const criado = new Date(followup.created_at);
-  if (Number.isNaN(criado.getTime())) return { texto: "—", tone: "slate" };
-
-  const quando = adiarParaJanela(new Date(criado.getTime() + horas * 3_600_000));
   const faltamMin = Math.round((quando.getTime() - agora.getTime()) / 60_000);
 
   // Vencido: o cron roda a cada minuto, então ou sai já ou está fora da janela.
@@ -156,6 +167,13 @@ export function proximoToque(
   if (faltamMin < 60) return { texto: `em ${faltamMin}min`, tone: "blue" };
   if (faltamMin < 48 * 60) return { texto: `em ${Math.round(faltamMin / 60)}h`, tone: "blue" };
   return { texto: `em ${Math.round(faltamMin / 1440)}d`, tone: "blue" };
+}
+
+/** Timestamp pra ordenar "quem toca primeiro" no topo. Quem já respondeu ou
+ *  não tem mais toque agendado vai pro fim da lista (Infinity), não pro
+ *  início — `-Infinity` colocaria "encerrado" antes de quem ainda falta tocar. */
+export function proximoToqueTimestamp(followup: FollowupLike): number {
+  return quandoSeriaOProximoToque(followup)?.getTime() ?? Infinity;
 }
 
 // Colunas de data do relatório do ERP. normalizeKey já removeu o "ã" de "Emissão".
