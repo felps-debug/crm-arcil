@@ -114,6 +114,55 @@ async function waitForRows(
   }
 }
 
+/** Data em America/Sao_Paulo no formato AAAA-MM-DD, pra comparar "mesmo dia"
+ *  sem se preocupar com fuso — en-CA já formata nessa ordem. */
+function dataSaoPauloISO(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(d);
+}
+
+type DuplicataHoje = { telefone: string; nome: string | null; valorExistente: string | null; dataDisparo: string | null };
+
+/**
+ * Telefone que já recebeu disparo hoje não pode receber outro — mesmo com
+ * boletos diferentes na planilha nova, o cliente recebe duas mensagens de
+ * cobrança no mesmo dia com valores diferentes, o que já aconteceu de verdade
+ * em 2026-08-24 (duas planilhas subidas no mesmo dia, 7 clientes cobrados
+ * duas vezes, valores incompatíveis entre si — risco real de cobrança
+ * indevida). Consulta ANTES de mandar pro Python: quem já tem linha hoje sai
+ * da lista e não é reenviado; quem sobrar segue normal.
+ */
+async function separarDuplicatasDeHoje(
+  admin: ReturnType<typeof createAdminClient>,
+  leads: DisparoLead[]
+): Promise<{ leadsParaEnviar: DisparoLead[]; duplicatasHoje: DuplicataHoje[] }> {
+  const telefones = [...new Set(leads.map((l) => l["numero"]).filter(Boolean))];
+  if (!telefones.length) return { leadsParaEnviar: leads, duplicatasHoje: [] };
+
+  const hoje = dataSaoPauloISO(new Date().toISOString());
+  const { data } = await admin
+    .from("cobranca_log")
+    .select("telefone, nome, valor, data_disparo")
+    .in("telefone", telefones)
+    .order("data_disparo", { ascending: false });
+
+  const jaHoje = new Map<string, DuplicataHoje>();
+  for (const row of data ?? []) {
+    if (!row.telefone || jaHoje.has(row.telefone)) continue;
+    if (dataSaoPauloISO(row.data_disparo) === hoje) {
+      jaHoje.set(row.telefone, { telefone: row.telefone, nome: row.nome, valorExistente: row.valor, dataDisparo: row.data_disparo });
+    }
+  }
+
+  if (!jaHoje.size) return { leadsParaEnviar: leads, duplicatasHoje: [] };
+  return {
+    leadsParaEnviar: leads.filter((l) => !jaHoje.has(l["numero"])),
+    duplicatasHoje: [...jaHoje.values()],
+  };
+}
+
 function validateLeads(leads: DisparoLead[]): string | null {
   if (leads.length > MAX_LEADS_PER_DISPARO) {
     return `Máximo de ${MAX_LEADS_PER_DISPARO} leads por disparo (recebido: ${leads.length})`;
@@ -139,6 +188,23 @@ export async function POST(req: NextRequest) {
 
   const admin = createAdminClient();
 
+  const { leadsParaEnviar: leads2, duplicatasHoje } = await separarDuplicatasDeHoje(admin, leads);
+
+  // Recusados sempre gravam, mesmo se todo o resto for duplicata de hoje —
+  // não têm relação com o bloqueio de redisparo.
+  if (!leads2.length) {
+    const recusadosGravados = await gravarRecusados(admin, recusados);
+    return Response.json({
+      ok: true,
+      recusados: recusadosGravados,
+      inserted: 0,
+      sent: 0,
+      missing: [],
+      duplicatasHoje,
+      pythonStatus: "pulado:todos_ja_disparados_hoje",
+    });
+  }
+
   // Build phone → boletos_json map before dispatch
   const boletosByPhone: Record<string, string> = {};
   // O valor que o CRM calculou a partir da planilha, por telefone. O serviço de
@@ -147,7 +213,7 @@ export async function POST(req: NextRequest) {
   // separado, fora deste repositório. Enquanto ele não for corrigido, o CRM
   // reescreve o campo com o número que ele mesmo somou da planilha.
   const valorByPhone: Record<string, string> = {};
-  for (const lead of leads) {
+  for (const lead of leads2) {
     const phone = lead["numero"];
     if (!phone) continue;
     if (lead["boletos_json"]) boletosByPhone[phone] = lead["boletos_json"];
@@ -165,7 +231,7 @@ export async function POST(req: NextRequest) {
     const r = await fetch(PYTHON_COBRANCA_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leads }),
+      body: JSON.stringify({ leads: leads2 }),
     });
     pythonStatus = `ok:${r.status}`;
     if (!r.ok) {
@@ -189,7 +255,7 @@ export async function POST(req: NextRequest) {
   // logo após o fetch pega a tabela vazia — foi o que fez o CRM anunciar "3 não
   // entraram" e pular a correção de valor. Espera as linhas aparecerem.
   const cutoff = new Date(Date.now() - 90_000).toISOString();
-  const allPhones = [...new Set(leads.map((l) => l["numero"]).filter(Boolean))];
+  const allPhones = [...new Set(leads2.map((l) => l["numero"]).filter(Boolean))];
   const landedRows = await waitForRows(admin, allPhones, cutoff);
   const confirmedPhones = [...new Set(landedRows.map((r) => r.telefone).filter(Boolean) as string[])];
   const missingPhones = allPhones.filter((p) => !confirmedPhones.includes(p));
@@ -237,6 +303,7 @@ export async function POST(req: NextRequest) {
       confirmed: confirmedPhones.length,
       missing: missingPhones,
       recusados: recusadosGravados,
+      duplicatasHoje: duplicatasHoje.length,
       valoresCorrigidos,
       pythonStatus,
       actor_id: user!.id,
@@ -253,6 +320,7 @@ export async function POST(req: NextRequest) {
     inserted: confirmedPhones.length,
     sent: allPhones.length,
     missing: missingPhones,
+    duplicatasHoje,
     pythonStatus,
   });
 }

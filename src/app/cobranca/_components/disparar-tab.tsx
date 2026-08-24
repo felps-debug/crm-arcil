@@ -38,6 +38,13 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
   const [redisparoWarnings, setRedisparoWarnings] = useState<
     { telefone: string; nome: string | null; data_disparo: string | null }[]
   >([]);
+  // Telefone que já tinha disparo HOJE: a API recusa mandar de novo (2026-08-24,
+  // 7 clientes receberam 2 mensagens de cobrança com valores diferentes no
+  // mesmo dia por causa de 2 planilhas subidas no mesmo dia). Isso é sobre o
+  // resultado do disparo, não sobre o preview — só aparece depois de disparar.
+  const [duplicatasHoje, setDuplicatasHoje] = useState<
+    { telefone: string; nome: string | null; valorExistente: string | null; dataDisparo: string | null }[]
+  >([]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -110,14 +117,21 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
       setLinhasDisparo([]);
     setRecusados([]);
       setFileName(null);
+      setDuplicatasHoje(data.duplicatasHoje ?? []);
       onDispatched();
       // O serviço de cobrança responde 200 mesmo descartando lead. Antes o CRM
       // anunciava o número enviado como se fosse o gravado — um disparo de 2
       // com 1 gravado dizia "2 leads inseridos".
       const perdidos: string[] = data.missing ?? [];
+      const puladosHoje: number = data.duplicatasHoje?.length ?? 0;
       if (perdidos.length > 0) {
         toast(
           `${data.inserted} de ${data.sent} gravados. Não entraram: ${perdidos.join(", ")}`,
+          "error"
+        );
+      } else if (puladosHoje > 0) {
+        toast(
+          `${data.inserted} leads inseridos · ${puladosHoje} pulado${puladosHoje !== 1 ? "s" : ""} por já ter disparo hoje — veja abaixo`,
           "error"
         );
       } else {
@@ -171,6 +185,34 @@ export function DispararTab({ onDispatched }: { onDispatched: () => void }) {
             {dispatchResult.ok
               ? `${dispatchResult.inserted} leads inseridos — acompanhe no Monitoramento`
               : dispatchResult.error}
+          </div>
+        )}
+
+        {duplicatasHoje.length > 0 && (
+          <div className="rounded-[10px] border border-red-500/30 bg-red-500/10 px-4 py-3">
+            <p className="flex items-center gap-2 text-[13px] font-bold text-red-300">
+              <AlertTriangle size={14} />
+              {duplicatasHoje.length} cliente{duplicatasHoje.length !== 1 ? "s" : ""} NÃO disparado{duplicatasHoje.length !== 1 ? "s" : ""} — já tinham cobrança hoje
+            </p>
+            <p className="mt-1 text-[12px] text-red-200/80">
+              Mandar de novo geraria duas mensagens com valores diferentes pro mesmo cliente no mesmo dia. Se o valor mudou de verdade, corrija manualmente no Monitoramento em vez de subir de novo.
+            </p>
+            <div className="mt-3 max-h-40 overflow-y-auto">
+              <table className="w-full text-left text-[12px]">
+                <tbody>
+                  {duplicatasHoje.map((d) => (
+                    <tr key={d.telefone} className="border-t border-red-500/15 first:border-0">
+                      <td className="py-1.5 pr-3 font-semibold text-red-100">{d.nome || "—"}</td>
+                      <td className="py-1.5 pr-3 font-data text-red-200/70">{d.telefone}</td>
+                      <td className="py-1.5 pr-3 font-data text-red-200/70">já em aberto: {d.valorExistente || "—"}</td>
+                      <td className="py-1.5 text-red-200/70">
+                        disparado {d.dataDisparo ? new Date(d.dataDisparo).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
