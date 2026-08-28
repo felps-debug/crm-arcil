@@ -930,6 +930,12 @@ export async function getFinancialHandoffBoard(): Promise<FinancialBoardItem[]> 
       paidBoletoCount: paidBoletos.length,
       handoffAcceptedAt: lead.handoff_accepted_at ?? null,
       handoffStaffOkAt: lead.handoff_staff_ok_at ?? null,
+      // Como este cliente foi parar em atendimento humano. `card` = a Priscila
+      // encaminhou e o financeiro recebeu aviso no WhatsApp; `manual` = alguém
+      // simplesmente respondeu pelo Chatwoot e o bot calou. Os dois são
+      // atendimento humano legítimo, mas só o primeiro gerou mensagem — sem
+      // essa distinção a conta entre o board e o WhatsApp nunca fecha.
+      origemAtendimento: lead.handoff_accepted_at ? (lead.handoff_sent_at ? ("card" as const) : ("manual" as const)) : null,
       column,
       followupAt: resolution?.followup_at ?? null,
       resolutionId: resolution?.id ?? null,

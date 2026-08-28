@@ -39,6 +39,10 @@ export type FinancialBoardItem = {
   paidBoletoCount: number;
   handoffAcceptedAt: string | null;
   handoffStaffOkAt: string | null;
+  /** `card` = veio de handoff do agente (o financeiro recebeu aviso no
+   *  WhatsApp); `manual` = alguém assumiu direto pelo Chatwoot, sem card.
+   *  `null` = ainda não está com humano. */
+  origemAtendimento: "card" | "manual" | null;
   column: FinancialBoardColumn;
   followupAt: string | null;
   resolutionId: string | null;
@@ -142,6 +146,9 @@ export async function notifyFinancialHandoffN8n(input: {
   leadId: string;
   phone: string;
   destination: FinancialHandoffDestination;
+  /** ISO de quando o bot pode voltar. Null em `devolver_ao_bot`, onde ele volta
+   *  na hora. */
+  followupAt?: string | null;
 }) {
   if (!N8N_FINANCIAL_HANDOFF_WEBHOOK || !N8N_FINANCIAL_HANDOFF_SECRET) {
     throw new FinancialHandoffWebhookError("Integração de handoff financeiro não configurada");
@@ -159,6 +166,14 @@ export async function notifyFinancialHandoffN8n(input: {
       phone: normalizeFinancialHandoffPhone(input.phone),
       destination: input.destination,
       botName: "cobranca",
+      followupAt: input.followupAt ?? null,
+      // Segundos que o bloqueio do bot ainda deve durar. Vai calculado daqui
+      // porque a data de retomada é decidida no banco, junto da resolução — o
+      // n8n só aplica. Piso de uma hora para uma data já vencida não virar TTL
+      // zero (que o Redis trata como "sem expiração").
+      blockSeconds: input.followupAt
+        ? Math.max(3600, Math.round((new Date(input.followupAt).getTime() - Date.now()) / 1000))
+        : null,
     }),
     cache: "no-store",
   });
