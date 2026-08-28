@@ -27,8 +27,81 @@ import { createClient } from "@/lib/supabase/client";
 import { getImageGenerationHistory, type ImageGeneration } from "@/lib/supabase/queries";
 import { formatDateTime } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
-import { ProdutoPicker } from "./_components/produto-picker";
+import { ProdutoPicker, type TipoEquipamento } from "./_components/produto-picker";
+import { MarcadorInstalacao } from "./_components/marcador-instalacao";
+import { parseMarcacao, type Marcacao } from "@/lib/marcacao";
 import type { InventoryProduct } from "@/types/api";
+
+/**
+ * Nome de arquivo aceito como chave do Supabase Storage.
+ *
+ * O nome vinha direto do arquivo escolhido pelo vendedor, e no Brasil ele
+ * costuma ter acento, espaco e parenteses ("Foto da sala (1).jpeg",
+ * "WhatsApp Image 2026-08-27 as 10.30.11.jpeg"). O Storage recusa a chave e o
+ * upload falhava com um toast generico — o vendedor via "erro ao enviar a
+ * foto" sem nenhuma pista de que o problema era o nome do proprio arquivo.
+ *
+ * O uuid na frente ja garante unicidade, entao aqui basta reduzir o resto ao
+ * que o Storage aceita, preservando a extensao.
+ */
+function nomeSeguroDeArquivo(nome: string): string {
+  const limpo = nome
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .toLowerCase();
+  // Nome inteiro invalido (ex: so caracteres em outro alfabeto) ainda precisa
+  // de algo: sem isso a chave terminaria no hifen do uuid.
+  return limpo.slice(-80) || "foto.jpg";
+}
+
+/**
+ * Reduz a foto no navegador antes de subir.
+ *
+ * Dois motivos, os dois com consequencia real:
+ *
+ * 1. O bucket `chatbot-images` recusa arquivo acima de 10 MB, e foto de celular
+ *    moderno passa disso com facilidade. O vendedor via so "erro ao enviar a
+ *    foto" e nao tinha como saber que o problema era o tamanho.
+ * 2. Essa mesma foto viaja em base64 dentro do corpo do webhook do n8n (e de
+ *    novo na imagem-guia). Cada MB aqui vira ~1,37 MB de payload, duas vezes.
+ *
+ * 2000 px no maior lado e mais que suficiente: o Gemini recebe a cena
+ * redimensionada de qualquer forma, e a camada tecnica e vetorial.
+ *
+ * Devolve o arquivo original quando nao consegue processar (formato que o
+ * canvas nao decodifica, por exemplo) — subir a foto grande e melhor que nao
+ * subir foto nenhuma, e o limite do bucket ainda pega o caso extremo.
+ */
+const LADO_MAXIMO = 2000;
+
+async function comprimirFoto(file: File): Promise<File> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const escala = Math.min(1, LADO_MAXIMO / Math.max(bitmap.width, bitmap.height));
+    const largura = Math.round(bitmap.width * escala);
+    const altura = Math.round(bitmap.height * escala);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = largura;
+    canvas.height = altura;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, largura, altura);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
+    if (!blob) return file;
+    // Arquivo ja pequeno e bem comprimido: reencodar so perderia qualidade.
+    if (blob.size >= file.size && escala === 1) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch (err) {
+    console.error("[chatbot] nao consegui comprimir a foto, subindo original:", err);
+    return file;
+  }
+}
 
 async function downloadImage(url: string, filename: string): Promise<void> {
   const res = await fetch(url);
@@ -51,6 +124,12 @@ type Step =
   | { key: string; question: string; type: "text" }
   | { key: string; question: string; type: "file" }
   | { key: string; question: string; type: "produto" }
+  | { key: string; question: string; type: "marcacao" }
+  // Medida com unidade explícita. Substitui campo livre nas perguntas
+  // numéricas: chegava "60cm", "2,90", "60M", "uns 2 metros" e "NAO SEI DIZER"
+  // na mesma pergunta, e um parser tinha que adivinhar a unidade — já errou uma
+  // vez transformando 60 cm em 60,00 m no cartão que vai pro cliente.
+  | { key: string; question: string; type: "medida"; unidades: ("m" | "cm")[] }
   | { key: string; question: string; type: "choice"; options: string[] };
 
 const NIVEL_CONDENSADORA: Step = {
@@ -63,6 +142,12 @@ const UNIDADE_EXTERNA: Step = {
   key: "unidade_externa",
   question: "Onde ficara a unidade externa (condensadora) e a que distancia aproximada?",
   type: "text",
+};
+const METRAGEM_INFRA: Step = {
+  key: "metragem_infra",
+  question: "Quantos metros de tubulação, dreno e cabo elétrico serão usados, aproximadamente?",
+  type: "medida",
+  unidades: ["m"],
 };
 
 /**
@@ -85,18 +170,27 @@ function buildSteps(tipo: string | null): Step[] {
     // "WIFI".
     { key: "produto", question: "Qual o aparelho? Busque pelo código do ERP, modelo ou marca.", type: "produto" },
     { key: "foto", question: "Envie uma foto do ambiente", type: "file" },
+    // A marcacao vem logo depois da foto e antes das perguntas tecnicas: e o
+    // unico passo que precisa da foto ja no ar, e responde-lo cedo deixa o
+    // vendedor com a imagem fresca na cabeca. Pode ser pulado.
+    {
+      key: "marcacao",
+      question: "Marque na foto onde o aparelho vai, por onde passa a tubulacao e onde fica o ponto eletrico.",
+      type: "marcacao",
+    },
   ];
 
   if (tipo === "Cassete") {
     return [
       ...inicio,
       { key: "tipo_forro", question: "Qual o tipo do forro?", type: "choice", options: ["Gesso", "PVC", "Modular", "Outro"] },
-      { key: "pe_direito", question: "Qual a altura entre a laje e o forro (plenum), no ponto de instalação?", type: "text" },
-      { key: "alcapao", question: "Já existe alçapão de inspeção próximo ao ponto de instalação?", type: "choice", options: ["Sim", "Não"] },
+      { key: "pe_direito", question: "Qual a altura entre a laje e o forro (plenum), no ponto de instalação?", type: "medida", unidades: ["cm", "m"] },
+      { key: "alcapao", question: "A instalação deve incluir alçapão de inspeção?", type: "choice", options: ["Sim", "Não"] },
       { key: "ponto_eletrico", question: "Já existe ponto elétrico no forro, no local de instalação?", type: "choice", options: ["Sim", "Não"] },
       UNIDADE_EXTERNA,
       NIVEL_CONDENSADORA,
       { key: "tubulacao", question: "Tubulação e dreno correm embutidos ou aparentes sob o forro?", type: "choice", options: ["Embutidos no forro", "Aparentes sob o forro"] },
+      METRAGEM_INFRA,
     ];
   }
 
@@ -104,11 +198,12 @@ function buildSteps(tipo: string | null): Step[] {
     return [
       ...inicio,
       { key: "tipo_forro", question: "Qual o tipo do forro onde a rede de dutos vai correr?", type: "choice", options: ["Gesso", "PVC", "Modular", "Outro"] },
-      { key: "pe_direito", question: "Qual o espaço técnico disponível entre a laje e o forro (plenum)?", type: "text" },
+      { key: "pe_direito", question: "Qual o espaço técnico disponível entre a laje e o forro (plenum)?", type: "medida", unidades: ["cm", "m"] },
       { key: "rede_dutos", question: "Já existe rede de dutos instalada ou sera nova?", type: "choice", options: ["Nova instalação", "Rede existente"] },
       { key: "ponto_eletrico", question: "Já existe ponto elétrico no espaço técnico?", type: "choice", options: ["Sim", "Não"] },
       UNIDADE_EXTERNA,
       NIVEL_CONDENSADORA,
+      METRAGEM_INFRA,
     ];
   }
 
@@ -116,11 +211,12 @@ function buildSteps(tipo: string | null): Step[] {
     return [
       ...inicio,
       { key: "superficie_fixacao", question: "A unidade interna sera fixada no piso ou no teto?", type: "choice", options: ["Piso", "Teto"] },
-      { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
+      { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "medida", unidades: ["m", "cm"] },
       { key: "ponto_eletrico", question: "Já existe ponto elétrico no local de instalação?", type: "choice", options: ["Sim", "Não"] },
       UNIDADE_EXTERNA,
       NIVEL_CONDENSADORA,
       { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente", "Sem canaleta"] },
+      METRAGEM_INFRA,
     ];
   }
 
@@ -133,6 +229,7 @@ function buildSteps(tipo: string | null): Step[] {
       { key: "vao_janela", question: "O vão da janela/parede já existe ou sera aberto para instalação?", type: "choice", options: ["Vão já existe", "Sera aberto/adaptado"] },
       { key: "pe_direito", question: "Quais as medidas aproximadas do vão (largura x altura)?", type: "text" },
       { key: "ponto_eletrico", question: "Já existe ponto elétrico exclusivo próximo ao vão?", type: "choice", options: ["Sim", "Não"] },
+      METRAGEM_INFRA,
     ];
   }
 
@@ -142,15 +239,41 @@ function buildSteps(tipo: string | null): Step[] {
   return [
     ...inicio,
     { key: "tipo_parede", question: "Qual o tipo da parede?", type: "choice", options: ["Alvenaria", "Drywall", "Outro"] },
-    { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "text" },
+    { key: "pe_direito", question: "Qual a altura do pe-direito?", type: "medida", unidades: ["m", "cm"] },
     { key: "ponto_eletrico", question: "Já existe ponto elétrico na parede?", type: "choice", options: ["Sim", "Não"] },
     UNIDADE_EXTERNA,
     NIVEL_CONDENSADORA,
     { key: "tubulacao", question: "Tipo de tubulacao?", type: "choice", options: ["Embutida na parede", "Canaleta aparente", "Sem canaleta"] },
+    METRAGEM_INFRA,
   ];
 }
 
 type Tab = "chat" | "historico";
+
+/** O que a tela precisa para reabrir — e retomar — uma geração antiga. */
+type ItemPreview = {
+  wallImageUrl: string | null;
+  generatedImageUrl: string;
+  installationNotes: string | null;
+  installationNotesSource: "manual" | "ia" | null;
+  answers: Record<string, unknown> | null;
+};
+
+type Posicionamento = { ok: boolean; mensagem: string };
+
+type Versao = {
+  imageUrl: string;
+  notes: string | null;
+  notesSource: "manual" | "ia" | null;
+  /** Conferência do servidor: o aparelho saiu onde foi marcado? `null` quando
+   *  não houve marcação ou a conferência falhou. */
+  posicionamento: Posicionamento | null;
+  origem: "geracao" | "ajuste";
+};
+
+/** Custo aproximado de uma geração, em reais. Serve só para o vendedor saber
+ *  que o botão gasta algo — o número exato varia com o tamanho da conversa. */
+const CUSTO_APROX_GERACAO = "R$ 0,80";
 
 export default function ChatbotPage() {
   return (
@@ -172,21 +295,40 @@ function ChatbotPageInner() {
   const [transcript, setTranscript] = useState<ChatMessage[]>([{ role: "assistant", content: buildSteps(null)[0].question }]);
   const [typing, setTyping] = useState(false);
   const [textValue, setTextValue] = useState("");
+  const [unidadeMedida, setUnidadeMedida] = useState<"m" | "cm">("m");
   const [wallImageUrl, setWallImageUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+  /**
+   * Cada geração vira uma versão, e a anterior continua acessível.
+   *
+   * Antes a tela guardava só a última URL: o vendedor clicava em "gerar outra
+   * versão", saía pior, e não havia como voltar — mesmo com todas as gerações
+   * salvas em `image_generations`. Custava R$ 0,80 para recuperar algo que já
+   * estava no banco.
+   */
+  const [versoes, setVersoes] = useState<Versao[]>([]);
+  const [versaoAtiva, setVersaoAtiva] = useState(0);
+  const versaoAtual = versoes[versaoAtiva] ?? null;
+  const generatedImageUrl = versaoAtual?.imageUrl ?? null;
+  // Guardado à parte de `answers` (que só tem string) — precisa da foto real
+  // pra mandar como referência quando o vendedor pedir a opção de local da
+  // condensadora, gerada sob demanda (custo à parte, ver comentário abaixo).
+  const [productImageUrl, setProductImageUrl] = useState<string | null>(null);
+  // Fora de `answers` (que so guarda string) porque a marcacao e um objeto com
+  // caixa, rota e ponto — serializar isso pra string e reparsear so criaria uma
+  // chance de divergencia entre o que o vendedor desenhou e o que e enviado.
+  const [marcacao, setMarcacao] = useState<Marcacao | null>(null);
+  const [condensadoraTipo, setCondensadoraTipo] = useState<"telhado" | "laje_tecnica" | "sacada_tecnica" | null>(null);
+  const [condensadoraLoading, setCondensadoraLoading] = useState(false);
+  const [condensadoraImageUrl, setCondensadoraImageUrl] = useState<string | null>(null);
+  const [downloadingCondensadora, setDownloadingCondensadora] = useState(false);
   const [revisionPrompt, setRevisionPrompt] = useState("");
-  const [installationNotes, setInstallationNotes] = useState<string | null>(null);
-  const [installationNotesSource, setInstallationNotesSource] = useState<"manual" | "ia" | null>(null);
+  const installationNotes = versaoAtual?.notes ?? null;
+  const installationNotesSource = versaoAtual?.notesSource ?? null;
   const [dividerPct, setDividerPct] = useState(50);
   const [dragging, setDragging] = useState(false);
-  const [previewItem, setPreviewItem] = useState<{
-    wallImageUrl: string | null;
-    generatedImageUrl: string;
-    installationNotes: string | null;
-    installationNotesSource: "manual" | "ia" | null;
-  } | null>(null);
+  const [previewItem, setPreviewItem] = useState<ItemPreview | null>(null);
   const [downloading, setDownloading] = useState(false);
 
   const [historyItems, setHistoryItems] = useState<ImageGeneration[]>([]);
@@ -217,6 +359,9 @@ function ChatbotPageInner() {
   // isto a cada resposta não pula nem repete pergunta, só troca o que vem depois.
   const steps = useMemo(() => buildSteps(answers.tipo_equipamento ?? null), [answers.tipo_equipamento]);
   const current = steps[step];
+  useEffect(() => {
+    if (current?.type === "medida") setUnidadeMedida(current.unidades[0]);
+  }, [current]);
   const isLastStep = step === steps.length - 1;
   const done = Boolean(generatedImageUrl);
 
@@ -227,7 +372,7 @@ function ChatbotPageInner() {
   const answered = current
     ? current.type === "file"
       ? Boolean(wallImageUrl)
-      : current.type === "text"
+      : current.type === "text" || current.type === "medida"
         ? Boolean(textValue.trim())
         : false
     : false;
@@ -241,6 +386,11 @@ function ChatbotPageInner() {
       messages.push({ role: "assistant", content: s.question });
       if (s.type === "file") {
         messages.push({ role: "user", content: "Foto enviada.", imageUrl: wallImageUrl ?? undefined });
+      } else if (s.type === "marcacao") {
+        // A marcacao vai estruturada no corpo da requisicao, nao no texto da
+        // conversa — o extrator de dados do route.ts le esta transcricao, e uma
+        // bolha vazia ali so daria a ele texto sem sinal pra interpretar.
+        messages.push({ role: "user", content: finalAnswers.marcacao ?? "Marcacao pulada." });
       } else {
         messages.push({ role: "user", content: finalAnswers[s.key] ?? "" });
       }
@@ -261,6 +411,7 @@ function ChatbotPageInner() {
             answers: finalAnswers,
             referenceImageUrl: revision?.referenceImageUrl,
             revisionPrompt: revision?.revisionPrompt,
+            marcacao,
           }),
         });
         const data = await res.json();
@@ -268,9 +419,20 @@ function ChatbotPageInner() {
           toast(data.error ?? "Não foi possível gerar a imagem.", "error");
           return;
         }
-        setGeneratedImageUrl(data.imageUrl);
-        setInstallationNotes(data.installationNotes ?? null);
-        setInstallationNotesSource(data.installationNotesSource ?? null);
+        setVersoes((atuais) => {
+          const proximas = [
+            ...atuais,
+            {
+              imageUrl: data.imageUrl as string,
+              notes: (data.installationNotes as string | null) ?? null,
+              notesSource: (data.installationNotesSource as "manual" | "ia" | null) ?? null,
+              posicionamento: (data.posicionamento as Posicionamento | null) ?? null,
+              origem: revision?.revisionPrompt ? ("ajuste" as const) : ("geracao" as const),
+            },
+          ];
+          setVersaoAtiva(proximas.length - 1);
+          return proximas;
+        });
         setDividerPct(50);
         setRevisionPrompt("");
         setHistoryLoaded(false);
@@ -280,13 +442,62 @@ function ChatbotPageInner() {
         setGenerating(false);
       }
     },
-    [buildAnswersForApi, wallImageUrl, toast]
+    [buildAnswersForApi, wallImageUrl, marcacao, toast]
   );
 
   const requestRevision = useCallback(() => {
     if (!generatedImageUrl || !revisionPrompt.trim() || generating) return;
     void requestGeneration(answers, { referenceImageUrl: generatedImageUrl, revisionPrompt: revisionPrompt.trim() });
   }, [answers, generatedImageUrl, generating, requestGeneration, revisionPrompt]);
+
+  /** Sob demanda, custo à parte da geração principal — só chama o Gemini
+   *  quando o vendedor escolhe um local específico. Cenário genérico
+   *  (telhado/laje/sacada quaisquer), não o local real do cliente — não
+   *  temos foto dele hoje. */
+  const gerarCondensadora = useCallback(
+    async (tipo: "telhado" | "laje_tecnica" | "sacada_tecnica") => {
+      setCondensadoraTipo(tipo);
+      setCondensadoraLoading(true);
+      setCondensadoraImageUrl(null);
+      try {
+        const res = await fetch("/api/generate-image/condensadora-local", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tipoLocal: tipo,
+            productImageUrl,
+            distanciaTexto: answers.unidade_externa || null,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          toast(data.error ?? "Não foi possível gerar a opção de local.", "error");
+          return;
+        }
+        setCondensadoraImageUrl(data.imageUrl);
+      } catch {
+        toast("Erro de conexao ao gerar a opção de local.", "error");
+      } finally {
+        setCondensadoraLoading(false);
+      }
+    },
+    [productImageUrl, answers.unidade_externa, toast]
+  );
+
+  /** A imagem do local vem como data URL (o route devolve o JPEG já composto,
+   *  sem subir no Storage). `fetch` lê data URL normalmente, então o mesmo
+   *  download da prévia principal serve aqui. */
+  const handleDownloadCondensadora = useCallback(async () => {
+    if (!condensadoraImageUrl) return;
+    setDownloadingCondensadora(true);
+    try {
+      await downloadImage(condensadoraImageUrl, `local-condensadora-${condensadoraTipo ?? "opcao"}-${Date.now()}.jpg`);
+    } catch {
+      toast("Erro ao baixar a imagem.", "error");
+    } finally {
+      setDownloadingCondensadora(false);
+    }
+  }, [condensadoraImageUrl, condensadoraTipo, toast]);
 
   const handleDownload = useCallback(async () => {
     if (!generatedImageUrl) return;
@@ -337,6 +548,7 @@ function ChatbotPageInner() {
     (produto: InventoryProduct, tipo: string) => {
       if (!current || current.type !== "produto") return;
       const rotulo = `${produto.name} (${produto.sku ?? produto.erpCode})`;
+      setProductImageUrl(produto.imageUrl ?? null);
       advance(
         {
           ...answers,
@@ -352,6 +564,16 @@ function ChatbotPageInner() {
     },
     [current, answers, advance]
   );
+
+  const handleMedida = useCallback(() => {
+    if (!current || current.type !== "medida") return;
+    const numero = Number(textValue.replace(",", "."));
+    if (!Number.isFinite(numero) || numero <= 0) return;
+    // Guarda já formatado e com unidade: o servidor não precisa mais adivinhar
+    // nada, e o cartão mostra exatamente o que o vendedor digitou.
+    const valor = `${textValue.trim().replace(".", ",")} ${unidadeMedida}`;
+    advance({ ...answers, [current.key]: valor }, { role: "user", content: valor });
+  }, [current, textValue, unidadeMedida, answers, advance]);
 
   const handleChoice = useCallback(
     (opt: string) => {
@@ -369,10 +591,16 @@ function ChatbotPageInner() {
       setUploading(true);
       try {
         const supabase = createClient();
-        const path = `${crypto.randomUUID()}-${file.name}`;
-        const { error: uploadError } = await supabase.storage.from("chatbot-images").upload(path, file);
+        const arquivo = await comprimirFoto(file);
+        const path = `${crypto.randomUUID()}-${nomeSeguroDeArquivo(arquivo.name)}`;
+        const { error: uploadError } = await supabase.storage
+          .from("chatbot-images")
+          .upload(path, arquivo, { contentType: arquivo.type || "image/jpeg" });
         if (uploadError) {
-          toast("Erro ao enviar a foto.", "error");
+          // O motivo real ia pro nada: a tela dizia so "Erro ao enviar a foto"
+          // e nao havia como distinguir chave invalida de bucket fora do ar.
+          console.error("[chatbot] upload da foto falhou:", uploadError);
+          toast(`Erro ao enviar a foto: ${uploadError.message}`, "error");
           return;
         }
         const { data } = supabase.storage.from("chatbot-images").getPublicUrl(path);
@@ -385,14 +613,78 @@ function ChatbotPageInner() {
     [current, answers, advance, toast]
   );
 
+  const handleMarcacao = useCallback(
+    (m: Marcacao) => {
+      if (!current || current.type !== "marcacao") return;
+      setMarcacao(m);
+      const partes = [
+        "Aparelho marcado na foto",
+        m.rota.length >= 2 ? "caminho da tubulacao tracado" : null,
+        m.pontoEletrico ? "ponto eletrico marcado" : null,
+      ].filter(Boolean);
+      const resumo = partes.join(", ") + ".";
+      advance({ ...answers, marcacao: resumo }, { role: "user", content: resumo });
+    },
+    [current, answers, advance]
+  );
+
+  const handlePularMarcacao = useCallback(() => {
+    if (!current || current.type !== "marcacao") return;
+    // Sem marcacao a previa cai no layout de cards e o Gemini volta a decidir a
+    // posicao sozinho — e o comportamento que existia antes desta ferramenta,
+    // mantido de proposito pra marcacao nunca bloquear uma geracao.
+    setMarcacao(null);
+    advance({ ...answers, marcacao: "Marcacao pulada." }, { role: "user", content: "Pulei a marcacao." });
+  }, [current, answers, advance]);
+
+  /**
+   * Traz uma geração do histórico de volta para a sessão, pronta para ajuste.
+   *
+   * O histórico só abria, mostrava e baixava. Para mexer numa prévia de ontem o
+   * vendedor tinha que refazer o questionário inteiro e pagar uma geração nova
+   * — sendo que as respostas e a marcação já estavam gravadas na linha.
+   */
+  const retomarDoHistorico = useCallback(
+    (item: ItemPreview) => {
+      const respostas = (item.answers ?? {}) as Record<string, unknown>;
+      const texto: Record<string, string> = {};
+      for (const [chave, valor] of Object.entries(respostas)) {
+        if (typeof valor === "string") texto[chave] = valor;
+        else if (typeof valor === "boolean") texto[chave] = valor ? "Sim" : "Não";
+      }
+      const marcacaoSalva = parseMarcacao(respostas.marcacao);
+
+      setAnswers(texto);
+      setMarcacao(marcacaoSalva);
+      setWallImageUrl(item.wallImageUrl);
+      setVersoes([
+        {
+          imageUrl: item.generatedImageUrl,
+          notes: item.installationNotes,
+          notesSource: item.installationNotesSource,
+          posicionamento: null,
+          origem: "geracao",
+        },
+      ]);
+      setVersaoAtiva(0);
+      // Marca o questionário como concluído: `steps.length` é o índice depois do
+      // último passo, que é o estado de "tudo respondido".
+      setStep(buildSteps(texto.tipo_equipamento ?? null).length);
+      setTranscript([{ role: "assistant", content: "Simulação retomada do histórico. Descreva o ajuste desejado." }]);
+      setPreviewItem(null);
+      setTab("chat");
+    },
+    []
+  );
+
   const handleRestart = useCallback(() => {
     setStep(0);
     setAnswers({});
     setTextValue("");
     setWallImageUrl(null);
-    setGeneratedImageUrl(null);
-    setInstallationNotes(null);
-    setInstallationNotesSource(null);
+    setMarcacao(null);
+    setVersoes([]);
+    setVersaoAtiva(0);
     setTranscript([{ role: "assistant", content: buildSteps(null)[0].question }]);
   }, []);
 
@@ -526,6 +818,52 @@ function ChatbotPageInner() {
                     {uploading ? "Enviando..." : "Selecionar foto"}
                   </ConsoleButton>
                 </div>
+              ) : current.type === "medida" ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    inputMode="decimal"
+                    value={textValue}
+                    onChange={(e) => setTextValue(e.target.value.replace(/[^\d.,]/g, ""))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleMedida();
+                    }}
+                    placeholder="0,00"
+                    className="w-24 rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2.5 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-blue-500/60"
+                  />
+                  <div className="flex gap-1">
+                    {current.unidades.map((unidade) => (
+                      <button
+                        key={unidade}
+                        onClick={() => setUnidadeMedida(unidade)}
+                        className={`rounded-[8px] border px-3 py-2.5 text-[12px] font-semibold transition ${
+                          unidadeMedida === unidade
+                            ? "border-blue-500 bg-blue-500/15 text-blue-300"
+                            : "border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                        }`}
+                      >
+                        {unidade}
+                      </button>
+                    ))}
+                  </div>
+                  <ConsoleButton active onClick={handleMedida} disabled={!answered} className="flex-1 justify-center">
+                    Enviar
+                  </ConsoleButton>
+                </div>
+              ) : current.type === "marcacao" ? (
+                wallImageUrl ? (
+                  <MarcadorInstalacao
+                    fotoUrl={wallImageUrl}
+                    tipo={(answers.tipo_equipamento as TipoEquipamento | undefined) ?? null}
+                    onConfirm={handleMarcacao}
+                    onSkip={handlePularMarcacao}
+                    disabled={generating}
+                  />
+                ) : (
+                  <ConsoleButton onClick={handlePularMarcacao} className="w-full justify-center">
+                    Continuar sem marcacao
+                  </ConsoleButton>
+                )
               ) : current.type === "produto" ? (
                 <ProdutoPicker onConfirm={handleProduto} disabled={generating} />
               ) : (
@@ -549,12 +887,15 @@ function ChatbotPageInner() {
                 </div>
               ) : generatedImageUrl && wallImageUrl ? (
                 <>
-                  <div ref={compareRef} className="relative h-[420px] select-none overflow-hidden rounded-[8px] border border-[var(--border)]">
+                  {/* `object-contain`, nao `object-cover`: a previa tem callout
+                      colado nas quatro bordas, e recortar para preencher a caixa
+                      corta justamente a informacao tecnica. */}
+                  <div ref={compareRef} className="relative h-[420px] select-none overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)]">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={wallImageUrl} alt="Antes" className="absolute inset-0 h-full w-full object-cover" />
+                    <img src={wallImageUrl} alt="Antes" className="absolute inset-0 h-full w-full object-contain" />
                     <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 0 0 ${dividerPct}%)` }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={generatedImageUrl} alt="Depois" className="h-full w-full object-cover" />
+                      <img src={generatedImageUrl} alt="Depois" className="h-full w-full object-contain" />
                     </div>
 
                     <div className="absolute inset-y-0 z-10 flex w-0 items-center justify-center" style={{ left: `${dividerPct}%` }}>
@@ -574,10 +915,43 @@ function ChatbotPageInner() {
                     <span className="absolute right-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[11px] font-bold text-white">Depois</span>
                   </div>
 
+                  {versoes.length > 1 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">Versoes</span>
+                      {versoes.map((versao, indice) => (
+                        <button
+                          key={indice}
+                          onClick={() => setVersaoAtiva(indice)}
+                          className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                            indice === versaoAtiva
+                              ? "border-blue-500 bg-blue-500/15 text-blue-300"
+                              : "border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                          }`}
+                        >
+                          {versao.origem === "ajuste" ? `Ajuste ${indice + 1}` : `V${indice + 1}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {versaoAtual?.posicionamento && !versaoAtual.posicionamento.ok && (
+                    <div className="mt-3 flex items-start gap-2 rounded-[8px] border border-amber-500/40 bg-amber-500/10 p-3">
+                      <ShieldAlert size={14} className="mt-0.5 flex-shrink-0 text-amber-400" />
+                      <p className="text-[11px] leading-relaxed text-amber-200">{versaoAtual.posicionamento.mensagem}</p>
+                    </div>
+                  )}
+
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                    <ConsoleButton icon={RefreshCcw} onClick={() => requestGeneration(answers)}>
-                      Gerar outra versao
-                    </ConsoleButton>
+                    <div className="flex flex-col gap-1">
+                      <ConsoleButton icon={RefreshCcw} onClick={() => requestGeneration(answers)}>
+                        Gerar outra versao
+                      </ConsoleButton>
+                      {/* O botao nao tinha friccao nenhuma e cada clique custa uma
+                          geracao inteira. O contador nao impede — so deixa visivel. */}
+                      <span className="text-[10px] text-[var(--text-muted)]">
+                        {versoes.length} {versoes.length === 1 ? "geracao" : "geracoes"} nesta simulacao · ~{CUSTO_APROX_GERACAO} cada
+                      </span>
+                    </div>
                     <ConsoleButton icon={downloading ? Loader2 : Download} active onClick={handleDownload} disabled={downloading}>
                       {downloading ? "Baixando..." : "Baixar imagem"}
                     </ConsoleButton>
@@ -603,6 +977,47 @@ function ChatbotPageInner() {
                     </div>
                   </div>
 
+                  <div className="mt-4 space-y-2 rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-primary)]">Opção de local da condensadora</p>
+                      <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                        Cenário ilustrativo genérico (não é o local real do cliente) com a condensadora real instalada. Cada opção gera uma imagem nova — custo à parte da simulação principal.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        [
+                          ["telhado", "No telhado"],
+                          ["laje_tecnica", "Laje técnica"],
+                          ["sacada_tecnica", "Sacada técnica"],
+                        ] as const
+                      ).map(([tipo, rotulo]) => (
+                        <ConsoleButton
+                          key={tipo}
+                          active={condensadoraTipo === tipo}
+                          disabled={condensadoraLoading}
+                          onClick={() => gerarCondensadora(tipo)}
+                        >
+                          {condensadoraLoading && condensadoraTipo === tipo ? "Gerando..." : rotulo}
+                        </ConsoleButton>
+                      ))}
+                    </div>
+                    {condensadoraImageUrl && (
+                      <div className="space-y-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={condensadoraImageUrl} alt="Opção de local da condensadora" className="w-full rounded-[8px] border border-[var(--border)]" />
+                        <ConsoleButton
+                          icon={downloadingCondensadora ? Loader2 : Download}
+                          onClick={handleDownloadCondensadora}
+                          disabled={downloadingCondensadora}
+                          className="w-full justify-center"
+                        >
+                          {downloadingCondensadora ? "Baixando..." : "Baixar imagem do local"}
+                        </ConsoleButton>
+                      </div>
+                    )}
+                  </div>
+
                   {installationNotes && <InstallationNotesCard notes={installationNotes} source={installationNotesSource} />}
                 </>
               ) : (
@@ -618,7 +1033,9 @@ function ChatbotPageInner() {
         <HistóricoTab loading={historyLoading} error={historyError} items={historyItems} onSelect={setPreviewItem} />
       )}
 
-      {previewItem && <PreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />}
+      {previewItem && (
+        <PreviewModal item={previewItem} onClose={() => setPreviewItem(null)} onContinuar={retomarDoHistorico} />
+      )}
     </ConsolePage>
   );
 }
@@ -695,12 +1112,7 @@ function HistóricoTab({
   loading: boolean;
   error: string | null;
   items: ImageGeneration[];
-  onSelect: (item: {
-    wallImageUrl: string | null;
-    generatedImageUrl: string;
-    installationNotes: string | null;
-    installationNotesSource: "manual" | "ia" | null;
-  }) => void;
+  onSelect: (item: ItemPreview) => void;
 }) {
   const { toast } = useToast();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -739,6 +1151,7 @@ function HistóricoTab({
               generatedImageUrl: item.generated_image_url,
               installationNotes: item.installation_notes,
               installationNotesSource: item.installation_notes_source,
+              answers: item.answers,
             })
           }
           className="text-left"
@@ -776,14 +1189,11 @@ function HistóricoTab({
 function PreviewModal({
   item,
   onClose,
+  onContinuar,
 }: {
-  item: {
-    wallImageUrl: string | null;
-    generatedImageUrl: string;
-    installationNotes: string | null;
-    installationNotesSource: "manual" | "ia" | null;
-  };
+  item: ItemPreview;
   onClose: () => void;
+  onContinuar: (item: ItemPreview) => void;
 }) {
   const { toast } = useToast();
   const [downloading, setDownloading] = useState(false);
@@ -812,13 +1222,13 @@ function PreviewModal({
               <div>
                 <span className="block px-3 pt-3 text-[10px] font-bold uppercase text-[var(--text-muted)]">Antes</span>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={item.wallImageUrl} alt="Antes" className="h-[260px] w-full object-cover p-3 pt-1 sm:h-[420px]" />
+                <img src={item.wallImageUrl} alt="Antes" className="h-[260px] w-full object-contain p-3 pt-1 sm:h-[420px]" />
               </div>
             )}
             <div>
               <span className="block px-3 pt-3 text-[10px] font-bold uppercase text-[var(--text-muted)]">Depois</span>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={item.generatedImageUrl} alt="Depois" className="h-[260px] w-full object-cover p-3 pt-1 sm:h-[420px]" />
+              <img src={item.generatedImageUrl} alt="Depois" className="h-[260px] w-full object-contain p-3 pt-1 sm:h-[420px]" />
             </div>
           </div>
           {item.installationNotes && (
@@ -827,6 +1237,9 @@ function PreviewModal({
             </div>
           )}
           <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] p-3">
+            <ConsoleButton icon={RefreshCcw} onClick={() => onContinuar(item)}>
+              Retomar e ajustar
+            </ConsoleButton>
             <ConsoleButton icon={downloading ? Loader2 : Download} active onClick={handleDownload} disabled={downloading}>
               {downloading ? "Baixando..." : "Baixar imagem"}
             </ConsoleButton>

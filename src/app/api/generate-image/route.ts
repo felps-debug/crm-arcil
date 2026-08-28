@@ -3,15 +3,37 @@ import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireApiPermission } from "@/lib/server/api-auth";
-import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK } from "@/lib/env";
+import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK, INFRA_VISUAL } from "@/lib/env";
 import { assertEnv } from "@/lib/server/env-guard";
-import { ARCIL_WATERMARK_BADGE_BASE64, ARCIL_WATERMARK_BADGE_WIDTH } from "@/lib/watermark-badge";
-import { comporPrevia, type DadosOverlay } from "@/lib/server/installation-overlay";
+import { ARCIL_WATERMARK_BADGE_BASE64, ARCIL_WATERMARK_BADGE_WIDTH, ARCIL_WATERMARK_BADGE_HEIGHT } from "@/lib/watermark-badge";
+import { comporPrevia } from "@/lib/server/installation-overlay";
+import type { DadosOverlay } from "@/lib/server/previa-tipos";
+import { parseMarcacao, descreverMarcacao, type Marcacao } from "@/lib/marcacao";
+import { renderGuideMask } from "@/lib/server/guide-mask";
+import { resolveEquipmentSpecs, type EquipmentSpecs, type HvacStandardRule } from "@/constants/hvac-standards";
 
 // A rota espera o n8n desenhar a imagem, o que passa de um minuto. O padrão da
 // plataforma corta antes e o vendedor recebe um erro genérico enquanto a geração
 // ainda está em pé do outro lado.
 export const maxDuration = 300;
+
+// Selo menor e mais discreto (pedido do Luke: "mais profissional") — em vez de
+// regenerar o PNG de origem, reduz o mesmo badge em 65% na hora de compor.
+// Cacheado porque o buffer de origem é sempre o mesmo, não precisa reprocessar
+// a cada geração.
+const SELO_ESCALA = 0.65;
+const SELO_LARGURA = Math.round(ARCIL_WATERMARK_BADGE_WIDTH * SELO_ESCALA);
+const SELO_ALTURA = Math.round(ARCIL_WATERMARK_BADGE_HEIGHT * SELO_ESCALA);
+let seloReduzidoCache: Buffer | null = null;
+async function seloReduzido(): Promise<Buffer> {
+  if (!seloReduzidoCache) {
+    seloReduzidoCache = await sharp(Buffer.from(ARCIL_WATERMARK_BADGE_BASE64, "base64"))
+      .resize(SELO_LARGURA, SELO_ALTURA)
+      .png()
+      .toBuffer();
+  }
+  return seloReduzidoCache;
+}
 
 interface ApiMessage {
   role: "user" | "assistant";
@@ -27,20 +49,35 @@ const EQUIPMENT_GUIDANCE: Record<string, string> = {
   janela: "Representar a unidade única embutida no vão da janela ou da parede, sem separar evaporadora e condensadora — é uma peça só, com a face traseira voltada para fora; não desenhar tubulação frigorígena externa nem unidade externa à parte.",
 };
 
-// Só o hi-wall tem cota fixa aqui, porque foi a única validada contra a
-// prática da ARCIL (era o único tipo que o gerador desenhava até hoje). Para
-// os demais tipos é melhor apontar para o manual do fabricante do que inventar
-// um número — foi exatamente inventar "2,80m" onde o vendedor respondeu 2,70
-// que fez este overlay nascer com valor vindo do banco, não do modelo de
-// imagem. Mesma regra vale aqui: sem confirmação, sem número.
-const CONSULTAR_MANUAL = "conforme manual do fabricante";
-
-function overlayCotas(type: unknown): { alturaInstalacao: string; distanciaTeto: string; espacamentoLateral: string } {
-  const normalized = typeof type === "string" ? type.trim().toLowerCase() : "";
-  if (normalized === "split hi-wall") {
-    return { alturaInstalacao: "aprox. 2,20 m", distanciaTeto: "15 a 20 cm", espacamentoLateral: "mín. 15 cm" };
-  }
-  return { alturaInstalacao: CONSULTAR_MANUAL, distanciaTeto: CONSULTAR_MANUAL, espacamentoLateral: CONSULTAR_MANUAL };
+// Até aqui só o hi-wall tinha cota fixa, porque era a única validada contra a
+// prática da ARCIL — pros demais tipos, "conforme manual do fabricante" era
+// mais seguro que inventar um número (foi exatamente inventar "2,80m" onde o
+// vendedor respondeu 2,70 que fez este overlay nascer com valor vindo do
+// banco, não do modelo de imagem). Isso mudou: `regra` agora vem do padrão
+// NBR 16655/5410 (hvac-standards.ts), que existe exatamente pra servir de
+// fallback de garantia enquanto não temos os PDFs dos manuais cadastrados —
+// não é mais "sem confirmação", é norma pública, igual ao que já alimenta o
+// `equipment_guidance` mandado pro n8n.
+//
+// `cota_teto` não significa a mesma coisa pra todo tipo: em Hi-Wall e
+// Piso-Teto é mesmo distância até o teto, mas em Cassete e Dutado (família
+// forro) é texto descritivo ("Embutido flush no forro") — a medida real de
+// vão de plenum desses dois vive em `regra.plenum_minimo`. Por isso o tipo
+// entra aqui: só pra decidir qual campo vira `distanciaTeto`.
+// A resposta real do vendedor (`peDireitoFormatado`) sempre ganha da norma
+// quando existe — mostrar "26 cm a 35 cm" (mínimo genérico da NBR) enquanto
+// o vendedor já respondeu "0,60 m" pra ESSA instalação é mostrar o dado menos
+// relevante pro cliente na frente do mais relevante. A norma só é fallback
+// pra quando ninguém confirmou nada ainda.
+function overlayCotas(
+  tipo: unknown,
+  regra: HvacStandardRule,
+  peDireitoFormatado: string | null
+): { alturaInstalacao: string; distanciaTeto: string; espacamentoLateral: string } {
+  const tipoNormalizado = typeof tipo === "string" ? tipo.trim().toLowerCase() : "";
+  const ehForro = tipoNormalizado === "cassete" || tipoNormalizado === "dutado";
+  const distanciaTeto = ehForro ? peDireitoFormatado ?? regra.plenum_minimo ?? regra.cota_teto : regra.cota_teto;
+  return { alturaInstalacao: regra.cota_piso, distanciaTeto, espacamentoLateral: regra.cota_lateral };
 }
 
 function equipmentGuidance(type: unknown) {
@@ -48,7 +85,40 @@ function equipmentGuidance(type: unknown) {
   return EQUIPMENT_GUIDANCE[normalized] ?? "Usar o tipo informado sem substituí-lo por outro; manter espaço para manutenção e respeitar o manual do fabricante.";
 }
 
+/**
+ * Acrescenta à diretriz de equipamento as distâncias mínimas de garantia da
+ * NBR 16655/NBR 5410 — fallback enquanto não temos os PDFs dos manuais dos
+ * fabricantes cadastrados. Isso NÃO substitui `overlayCotas()` (que só cravou
+ * número pro hi-wall depois de um "2,80m" inventado onde o vendedor respondeu
+ * 2,70 — ver comentário ali); aqui é padrão de norma, não número específico
+ * deste aparelho, e vai só pra diretriz textual que o n8n recebe.
+ */
+function comDiretrizNbr(type: unknown, guidance: string, specs: EquipmentSpecs): string {
+  const tipo = typeof type === "string" && type.trim() ? type.trim() : "Hi-Wall";
+  const { regra } = specs;
+  const capacidade = specs.btu ? `${specs.btu.toLocaleString("pt-BR")} BTU/h ` : "";
+  const dimensao = `(${specs.dimensoesFormatadas}${specs.origemDimensoes === "padrao_estimado" ? ", estimado por tipo/capacidade" : ""})`;
+  const resumoNbr = `Equipamento ${tipo} ${capacidade}${dimensao}. Padrão NBR 16655/5410: teto ${regra.cota_teto}, laterais ${regra.cota_lateral}, piso ${regra.cota_piso}${regra.plenum_minimo ? `, plenum ${regra.plenum_minimo}` : ""}${regra.alcapao ? `, alçapão ${regra.alcapao}` : ""}; tubulação ${regra.tubulacao_minima}; vácuo ${regra.vacuo_obrigatorio}; elétrica ${regra.eletrica_norma}; dreno ${regra.dreno_norma}.`;
+  return `${guidance} ${resumoNbr}`;
+}
+
+/** Modelo usado em todas as chamadas de texto e visão desta rota.
+ *
+ *  gpt-5.1 custa metade do gpt-4o na entrada (US$ 1,25 contra US$ 2,50 por
+ *  milhão), e entrada é o grosso do gasto aqui — a análise da foto sozinha
+ *  manda quase mil tokens de imagem. */
+const MODELO_TEXTO = "gpt-5.1";
+
 async function openAI(body: object) {
+  // A família gpt-5 recusa `max_tokens` e exige `max_completion_tokens`. Como
+  // as chamadas desta rota nasceram no gpt-4o, a tradução fica aqui em vez de
+  // em cada chamada — trocar o modelo não pode obrigar a revisar cinco lugares.
+  const corpo = body as Record<string, unknown>;
+  if (typeof corpo.model === "string" && corpo.model.startsWith("gpt-5") && "max_tokens" in corpo) {
+    const { max_tokens, ...resto } = corpo;
+    body = { ...resto, max_completion_tokens: max_tokens };
+  }
+
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -57,7 +127,13 @@ async function openAI(body: object) {
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error("OpenAI error");
+  if (!res.ok) {
+    // "OpenAI error" sem corpo custou uma rodada de investigação inteira pra
+    // achar que era "Error while downloading file" (imagem ainda não
+    // propagada no Storage) — o status/corpo real vai no log a partir daqui.
+    const corpo = await res.text().catch(() => "");
+    throw new Error(`OpenAI error (HTTP ${res.status}): ${corpo.slice(0, 300)}`);
+  }
   const data = await res.json();
   return data.choices[0].message.content as string;
 }
@@ -82,7 +158,20 @@ export async function POST(request: NextRequest) {
     answers,
     referenceImageUrl,
     revisionPrompt,
-  }: { messages: ApiMessage[]; imageUrl?: string; answers?: Record<string, string>; referenceImageUrl?: string; revisionPrompt?: string } = await request.json();
+    marcacao: marcacaoBruta,
+  }: {
+    messages: ApiMessage[];
+    imageUrl?: string;
+    answers?: Record<string, string>;
+    referenceImageUrl?: string;
+    revisionPrompt?: string;
+    marcacao?: unknown;
+  } = await request.json();
+
+  // `null` aqui nao e erro: significa "vendedor pulou a marcacao", e o pipeline
+  // inteiro tem que seguir funcionando sem ela — e o comportamento que existia
+  // antes desta feature.
+  const marcacao: Marcacao | null = parseMarcacao(marcacaoBruta);
 
   if (imageUrl) {
     const allowedHost = new URL(SUPABASE_URL).hostname;
@@ -120,7 +209,7 @@ export async function POST(request: NextRequest) {
   let collectedData: Record<string, unknown> = {};
   try {
     const raw = await openAI({
-      model: "gpt-4o",
+      model: MODELO_TEXTO,
       messages: [
         {
           role: "system",
@@ -151,13 +240,22 @@ export async function POST(request: NextRequest) {
   if (answers?.nivel_condensadora) collectedData.nivel_condensadora = answers.nivel_condensadora;
   if (answers?.ponto_eletrico) collectedData.ponto_eletrico = answers.ponto_eletrico === "Sim";
   if (answers?.tipo_parede) collectedData.tipo_parede = answers.tipo_parede;
+  if (answers?.alcapao) collectedData.alcapao = answers.alcapao === "Sim";
+  if (answers?.metragem_infra) collectedData.metragem_infra = answers.metragem_infra;
 
-  // Analyze image with Vision
+  // Analyze image with Vision. Pede em JSON pra separar a descrição livre
+  // (compatibilidade — é o texto que sempre foi mandado ao n8n como "resumo
+  // da imagem") da ancoragem espacial estruturada: onde instalar, de onde vem
+  // a luz e o que desviar. Cada campo puxado à parte rende uma frase melhor
+  // que tentar recortar isso de um parágrafo solto depois.
   let imageDescription = "";
+  let ancoragemRecomendada = "";
+  let direcaoIluminacao = "";
+  let obstaculosDesvio = "";
   if (imageUrl) {
     try {
-      imageDescription = await openAI({
-        model: "gpt-4o",
+      const raw = await openAI({
+        model: MODELO_TEXTO,
         messages: [
           {
             role: "user",
@@ -165,15 +263,34 @@ export async function POST(request: NextRequest) {
               { type: "image_url", image_url: { url: imageUrl, detail: "high" } },
               {
                 type: "text",
-                text: "Descreva tecnicamente esta parede para instalação de ar-condicionado: tipo de parede, cor, dimensões estimadas, presença de tomadas/marcações/pontos elétricos, objetos próximos, e posição ideal para o equipamento. Seja técnico e conciso.",
+                text:
+                  "Analise esta foto de ambiente para instalação de ar-condicionado e retorne APENAS um JSON válido, sem markdown, com os campos: " +
+                  '"descricao_tecnica" (tipo de parede/forro, cor, dimensões estimadas, tomadas/marcações elétricas, objetos próximos — técnico e conciso), ' +
+                  '"ancoragem_recomendada" (onde exatamente instalar, ex: "Na parede frontal de alvenaria, centralizado acima da TV, respeitando 20cm abaixo do teto"), ' +
+                  '"direcao_iluminacao" (de onde vem a luz principal, ex: "Luz natural vindo da janela lateral esquerda"), ' +
+                  '"obstaculos_desvio" (elementos a desviar, ex: "Evitar cortinas à direita e molduras de gesso"; string vazia se não houver).',
               },
             ],
           },
         ],
-        max_tokens: 400,
+        max_tokens: 500,
       });
-    } catch {}
+      const parsed = JSON.parse(raw);
+      imageDescription = typeof parsed.descricao_tecnica === "string" ? parsed.descricao_tecnica : "";
+      ancoragemRecomendada = typeof parsed.ancoragem_recomendada === "string" ? parsed.ancoragem_recomendada : "";
+      direcaoIluminacao = typeof parsed.direcao_iluminacao === "string" ? parsed.direcao_iluminacao : "";
+      obstaculosDesvio = typeof parsed.obstaculos_desvio === "string" ? parsed.obstaculos_desvio : "";
+    } catch (err) {
+      console.error("[generate-image] Vision estruturada falhou:", err instanceof Error ? err.message : err);
+    }
   }
+  const ancoragemEspacial = [
+    ancoragemRecomendada,
+    direcaoIluminacao ? `Iluminação: ${direcaoIluminacao}` : null,
+    obstaculosDesvio ? `Evitar: ${obstaculosDesvio}` : null,
+  ]
+    .filter(Boolean)
+    .join(". ");
 
   const prompt = [
     collectedData.tipo_equipamento ? `Tipo de equipamento: ${collectedData.tipo_equipamento}` : null,
@@ -187,7 +304,17 @@ export async function POST(request: NextRequest) {
     collectedData.unidade_externa ? `Unidade externa: ${collectedData.unidade_externa}` : null,
     collectedData.nivel_condensadora ? `Nível da condensadora em relação ao ambiente: ${collectedData.nivel_condensadora}` : null,
     collectedData.tubulacao ? `Tubulação: ${collectedData.tubulacao}` : null,
+    typeof collectedData.alcapao === "boolean"
+      ? `Alçapão de inspeção: ${collectedData.alcapao ? "deve ser incluído na instalação" : "não será incluído"}`
+      : null,
+    collectedData.metragem_infra ? `Metragem estimada de tubulação/dreno/cabo: ${collectedData.metragem_infra}` : null,
     imageDescription ? `Descrição do ambiente: ${imageDescription}` : null,
+    // A marcação do vendedor vem DEPOIS da ancoragem sugerida pela visão e
+    // sobrescreve o sentido dela de propósito: uma é palpite de IA sobre a
+    // foto, a outra é o vendedor apontando o dedo no lugar. Quando as duas
+    // existem, a última frase do prompt é a que manda.
+    ancoragemEspacial ? `Ancoragem espacial sugerida pela análise da foto: ${ancoragemEspacial}` : null,
+    marcacao ? `POSIÇÃO DEFINIDA PELO VENDEDOR (tem prioridade sobre a sugestão acima): ${descreverMarcacao(marcacao)}` : null,
     `Diretriz técnica do equipamento: ${equipmentGuidance(collectedData.tipo_equipamento)}`,
     "A simulação deve ser executável para vendedor, instalador ou orçamento. Não esconder tubulação, dreno, suportes ou acessos necessários; seguir o manual oficial da marca e do modelo para preservar a garantia.",
     revisionPrompt?.trim() ? `AJUSTE SOLICITADO: ${revisionPrompt.trim()}` : null,
@@ -195,21 +322,48 @@ export async function POST(request: NextRequest) {
     .filter(Boolean)
     .join(". ");
 
-  const technicalGuidance = equipmentGuidance(collectedData.tipo_equipamento);
+  // Passo 0 (2026-08-26): nenhuma das 4 tabelas de produto do ERP tem coluna
+  // de dimensão, e `btu` está null em toda linha — a capacidade só existe
+  // dentro do texto do nome/modelo. `resolveEquipmentSpecs` tenta o ERP
+  // primeiro (pronto pro dia em que passar a vir) e cai pro padrão por
+  // tipo+BTU extraído do nome quando não vier nada.
+  const equipmentSpecs = resolveEquipmentSpecs(String(collectedData.tipo_equipamento ?? ""), String(collectedData.modelo ?? ""), {
+    nome: collectedData.modelo,
+  });
+  const regrasInstalacao = equipmentSpecs.regra;
+  const technicalGuidance = comDiretrizNbr(collectedData.tipo_equipamento, equipmentGuidance(collectedData.tipo_equipamento), equipmentSpecs);
   const revisionInstruction = revisionPrompt?.trim()
     ? `AJUSTE SOLICITADO PELO USUÁRIO: ${revisionPrompt.trim()}`
     : null;
 
   // Fetch image and convert to base64 to include in webhook payload
   let imageBase64 = "";
+  let fotoBuffer: Buffer | null = null;
   if (imageUrl) {
     try {
       const imgRes = await fetch(imageUrl);
       const imgBuffer = await imgRes.arrayBuffer();
       const mimeType = imgRes.headers.get("content-type") || "image/jpeg";
-      imageBase64 = `data:${mimeType};base64,${Buffer.from(imgBuffer).toString("base64")}`;
+      fotoBuffer = Buffer.from(imgBuffer);
+      imageBase64 = `data:${mimeType};base64,${fotoBuffer.toString("base64")}`;
     } catch {}
   }
+
+  // Imagem-guia: a foto do ambiente com o retângulo/rota que o vendedor
+  // desenhou, mandada como uma imagem a mais pro Gemini. Modelo de imagem
+  // obedece máscara visual; não obedece coordenada escrita — foi exatamente
+  // por isso que a ancoragem por grade 3x3 do Vision foi abandonada. `null`
+  // (sem marcação, ou falha ao desenhar) só faz o modelo voltar a decidir a
+  // posição sozinho, como antes desta feature.
+  const guideImageBase64 = marcacao && fotoBuffer ? await renderGuideMask(fotoBuffer, marcacao) : null;
+
+  // Modo revisão: o Gemini precisa receber a IMAGEM já gerada antes, não a foto
+  // original — senão ele reinstala do zero e perde o posicionamento que o
+  // vendedor tinha aprovado. O CRM baixa e normaliza aqui, em vez de o n8n
+  // fazer isso em nós separados: menos superfície de fluxo pra desaparecer
+  // quando alguém salva o editor do n8n com uma aba antiga aberta (já
+  // aconteceu — o ramo de ajuste inteiro sumiu assim).
+  const referenceImageBase64 = referenceImageUrl ? await fetchImagemBase64(referenceImageUrl, 1536) : null;
 
   const productLookup = [collectedData.marca, collectedData.modelo].filter(Boolean).join(" ");
   // Sem try/catch, uma falha aqui (Supabase fora do ar, timeout) derrubava a
@@ -229,6 +383,8 @@ export async function POST(request: NextRequest) {
   }
 
   const productImageBase64 = await fetchProductImageBase64(productImageUrl);
+  const familia = familiaDoTipo(collectedData.tipo_equipamento);
+  const referenciaBase64 = await referenciaDaFamilia(supabase, familia);
 
   // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node.
   // O fetch fica dentro de try/catch porque, sem ele, uma falha de rede virava um
@@ -249,10 +405,25 @@ export async function POST(request: NextRequest) {
         product_image_url: productImageUrl,
         product_image_base64: productImageBase64,
         reference_image_url: referenceImageUrl ?? null,
+        reference_image_base64: referenceImageBase64,
+        guide_image_base64: guideImageBase64,
+        marcacao_descricao: marcacao ? descreverMarcacao(marcacao) : null,
+        tem_marcacao: Boolean(guideImageBase64),
+        familia_equipamento: familia,
+        reference_scene_base64: referenciaBase64,
+        // Quem desenha a tubulação nesta geração. O n8n usa isso para escolher
+        // entre "não desenhe infraestrutura nenhuma" e "desenhe o line set em
+        // 3D semitransparente" — os dois nunca podem valer ao mesmo tempo.
+        modo_infra: INFRA_VISUAL,
         revision_prompt: revisionPrompt?.trim() ?? null,
         generation_mode: referenceImageUrl ? "revision" : "initial",
         equipment_guidance: technicalGuidance,
         revision_instruction: revisionInstruction,
+        regras_instalacao: regrasInstalacao,
+        ancoragem_espacial: ancoragemEspacial || null,
+        capacidade_btus: equipmentSpecs.btu ? `${equipmentSpecs.btu.toLocaleString("pt-BR")} BTU/h` : null,
+        dimensoes_finais: equipmentSpecs.dimensoesFormatadas,
+        origem_dimensoes: equipmentSpecs.origemDimensoes,
         prompt,
         ...collectedData,
       }),
@@ -321,21 +492,74 @@ export async function POST(request: NextRequest) {
   // A camada técnica (título, cotas, passo a passo, cards) é composta aqui, não
   // desenhada pelo modelo: texto de modelo de imagem sai errado. Já veio "2,80m"
   // onde o vendedor respondeu 2,70. Agora o número vem do que ele respondeu.
+  //
+  // Não existe mais um corte técnico desenhado em cima da foto (setas de cota,
+  // legenda de tubulação, badges de dreno/elétrica/inspeção, pétalas de fluxo de
+  // ar): decisão de produto, porque aquele desenho dependia de uma âncora
+  // adivinhada por IA de visão (célula 3x3) que acertava a posição do aparelho
+  // de forma inconsistente, e ainda duplicava com a infraestrutura que o
+  // próprio modelo de imagem insistia em desenhar (às vezes com legendas
+  // ilegíveis coladas na foto). A mesma informação técnica (afastamentos,
+  // tubulação, ponto elétrico, alçapão, metragem) já está no card
+  // ESPECIFICAÇÕES abaixo, que não depende de saber onde o aparelho está na
+  // cena.
+  const peDireitoFormatado = typeof collectedData.pe_direito === "string" ? formatarMetros(collectedData.pe_direito) : null;
+  const qr = await destinoDoQr(supabase, typeof collectedData.marca === "string" ? collectedData.marca : null, leadId);
   const finalImageUrl = await comporEEnviar(generatedImageUrl, leadId, {
     produto: String(collectedData.modelo ?? "Ar-condicionado"),
     marca: typeof collectedData.marca === "string" ? collectedData.marca : null,
     sku: typeof collectedData.sku === "string" ? collectedData.sku : null,
     tipoEquipamento: String(collectedData.tipo_equipamento ?? "Split Hi-Wall"),
-    peDireito: typeof collectedData.pe_direito === "string" ? formatarMetros(collectedData.pe_direito) : null,
-    ...overlayCotas(collectedData.tipo_equipamento),
+    peDireito: peDireitoFormatado,
+    ...overlayCotas(collectedData.tipo_equipamento, regrasInstalacao, peDireitoFormatado),
     tubulacao: typeof collectedData.tubulacao === "string" ? collectedData.tubulacao : null,
     pontoEletrico: typeof collectedData.ponto_eletrico === "boolean" ? collectedData.ponto_eletrico : null,
+    alcapao: typeof collectedData.alcapao === "boolean" ? collectedData.alcapao : null,
+    metragemInfra: typeof collectedData.metragem_infra === "string" ? metragemLegivel(collectedData.metragem_infra) : null,
+    alturaGabineteCm: equipmentSpecs.dimensoes.altura_cm,
+    larguraGabineteCm: equipmentSpecs.dimensoes.largura_cm,
+    origemDimensoes: equipmentSpecs.origemDimensoes,
     produtoImagemBase64: productImageBase64 ? `data:image/jpeg;base64,${productImageBase64}` : null,
+    recomendacoesGarantia: regrasInstalacao.recomendacoes_garantia,
+    unidadeExterna: typeof collectedData.unidade_externa === "string" && collectedData.unidade_externa.trim() ? collectedData.unidade_externa.trim() : null,
+    nivelCondensadora: typeof collectedData.nivel_condensadora === "string" ? collectedData.nivel_condensadora : null,
+    capacidade: equipmentSpecs.btu ? `${equipmentSpecs.btu.toLocaleString("pt-BR")} BTU/h` : null,
+    // Presente => camada ancorada (callouts presos ao aparelho); ausente =>
+    // camada de cards, que não depende de saber onde o aparelho está na cena.
+    marcacao,
+    // O caminho no Storage é determinístico (`previa/{leadId}.jpg`), então dá
+    // pra saber a URL final ANTES do upload — que é o que permite o QR da
+    // própria prévia ser desenhado dentro dela.
+    urlPrevia: qr.url,
+    qrEhManual: qr.ehManual,
+    modoInfra: INFRA_VISUAL,
   });
+
+  // Depois de compor: a conferência olha a cena que o modelo devolveu, e o
+  // resultado dela não muda o desenho — só o aviso na tela.
+  let posicionamento = marcacao ? await conferirPosicionamento(generatedImageUrl, marcacao) : null;
+
+  // Vazamento da guia é falha visível e indefensável perante o cliente, então
+  // ganha do resultado da conferência de posição: mesmo que o aparelho esteja
+  // no lugar certo, a imagem não pode ser entregue com a marcação pintada.
+  if (marcacao && guideImageBase64) {
+    try {
+      const cenaRes = await fetch(generatedImageUrl);
+      if (cenaRes.ok && (await detectarVazamentoDaGuia(Buffer.from(await cenaRes.arrayBuffer())))) {
+        posicionamento = {
+          ok: false,
+          mensagem: "A marcação da foto foi desenhada na imagem gerada (traço colorido visível). Gere outra versão antes de enviar ao cliente.",
+        };
+      }
+    } catch (err) {
+      console.error("[generate-image] não consegui reler a cena para checar vazamento:", err instanceof Error ? err.message : err);
+    }
+  }
 
   const { installationNotes, notesSource } = await getInstallationNotes(
     supabase,
-    String([collectedData.marca, collectedData.modelo, collectedData.tipo_equipamento].filter(Boolean).join(" "))
+    String([collectedData.marca, collectedData.modelo, collectedData.tipo_equipamento].filter(Boolean).join(" ")),
+    typeof collectedData.marca === "string" ? collectedData.marca : null
   );
 
   const { data: profile } = await supabase.from("user_profiles").select("full_name").eq("id", user.id).single();
@@ -345,12 +569,178 @@ export async function POST(request: NextRequest) {
     user_name: profile?.full_name ?? user.email ?? null,
     wall_image_url: imageUrl ?? null,
     generated_image_url: finalImageUrl,
-    answers: collectedData,
+    // A marcação entra no registro junto das respostas: sem ela, uma prévia que
+    // saiu torta não é reproduzível depois — a posição do aparelho e a rota
+    // eram o único dado do fluxo que não ficava gravado em lugar nenhum.
+    answers: { ...collectedData, marcacao },
     installation_notes: installationNotes,
     installation_notes_source: notesSource,
   });
 
-  return Response.json({ imageUrl: finalImageUrl, installationNotes, installationNotesSource: notesSource });
+  return Response.json({ imageUrl: finalImageUrl, installationNotes, installationNotesSource: notesSource, posicionamento });
+}
+
+type Posicionamento = { ok: boolean; mensagem: string };
+
+/**
+ * Procura na cena gerada as cores da imagem-guia.
+ *
+ * Aconteceu em produção: o modelo pintou o retângulo magenta da guia na parede
+ * do cliente e a prévia foi entregue assim, sem ninguém perceber. O prompt
+ * proíbe, mas proibição não é garantia — e esta checagem é determinística,
+ * custa milissegundos e não depende de IA nenhuma.
+ *
+ * Só magenta e ciano saturados contam. Amarelo forte existe em ambiente real
+ * (luminária, almofada, madeira clara), então incluí-lo geraria alarme falso.
+ */
+async function detectarVazamentoDaGuia(cena: Buffer): Promise<boolean> {
+  try {
+    // 640 px, não 160: o traço da guia é fino, e reduzir demais mistura ele com
+    // a parede antes da contagem. Na primeira versão o vazamento real passou
+    // batido exatamente por isso.
+    const { data, info } = await sharp(cena).resize(640, 640, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true });
+    const canais = info.channels;
+    let suspeitos = 0;
+    for (let i = 0; i < data.length; i += canais) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      // Critério relativo, não absoluto: o magenta que o modelo pinta sai
+      // dessaturado pela iluminação da cena (medido em rgb(176,80,176) no
+      // vazamento real), e um corte fixo em 170/110 não pegava.
+      const magenta = r > 140 && b > 140 && g < r - 45 && g < b - 45;
+      const ciano = g > 140 && b > 140 && r < g - 45 && r < b - 45;
+      if (magenta || ciano) suspeitos++;
+    }
+    const total = (data.length / canais) || 1;
+    // Aferido contra cenas reais: o vazamento deu 0,35% da imagem e as cenas
+    // limpas não passaram de 0,02%. O corte fica no meio, com folga dos dois
+    // lados.
+    return suspeitos / total > 0.0012;
+  } catch (err) {
+    console.error("[generate-image] checagem de vazamento da guia falhou:", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+/**
+ * Confere se o modelo de imagem instalou o aparelho onde o vendedor marcou.
+ *
+ * A imagem-guia melhora muito a obediência, mas não garante: o Gemini às vezes
+ * desloca a unidade para onde a cena "pede" melhor. Sem esta conferência, uma
+ * prévia com o aparelho no lugar errado chega ao cliente exatamente igual a uma
+ * certa — e o vendedor não tem como saber qual das duas está na tela.
+ *
+ * Custa uma chamada de visão (~2,5% do custo da geração) e nunca bloqueia:
+ * qualquer falha devolve `null`, e a prévia segue como antes.
+ */
+async function conferirPosicionamento(imagemUrl: string, marcacao: Marcacao): Promise<Posicionamento | null> {
+  try {
+    const raw = await openAI({
+      model: MODELO_TEXTO,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: imagemUrl, detail: "low" } },
+            {
+              type: "text",
+              text:
+                "Nesta foto de ambiente, localize a unidade interna do ar-condicionado (evaporadora). " +
+                "Responda APENAS um JSON válido, sem markdown, no formato " +
+                '{"encontrado": true/false, "x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0} ' +
+                "onde x,y são o canto superior esquerdo e w,h o tamanho, todos em fração da " +
+                "largura/altura da imagem (0 a 1). Se não houver ar-condicionado visível, " +
+                'responda {"encontrado": false}.',
+            },
+          ],
+        },
+      ],
+      max_tokens: 120,
+    });
+    const achado = JSON.parse(raw) as { encontrado?: boolean; x?: number; y?: number; w?: number; h?: number };
+    if (!achado?.encontrado || typeof achado.x !== "number" || typeof achado.y !== "number") {
+      return { ok: false, mensagem: "Não consegui localizar o aparelho na imagem gerada. Confira antes de enviar ao cliente." };
+    }
+
+    const centroMarcado = { x: marcacao.caixa.x + marcacao.caixa.w / 2, y: marcacao.caixa.y + marcacao.caixa.h / 2 };
+    const centroGerado = { x: achado.x + (achado.w ?? 0) / 2, y: achado.y + (achado.h ?? 0) / 2 };
+    const desvio = Math.hypot(centroGerado.x - centroMarcado.x, centroGerado.y - centroMarcado.y);
+    // Tolerância proporcional ao que foi marcado: numa marcação pequena, 8% da
+    // imagem já joga o aparelho para fora dela; numa grande, ainda está dentro.
+    const tolerancia = Math.max(0.08, Math.max(marcacao.caixa.w, marcacao.caixa.h) * 0.8);
+    if (desvio <= tolerancia) return { ok: true, mensagem: "Aparelho instalado na posição marcada." };
+
+    return {
+      ok: false,
+      mensagem: `O aparelho saiu a cerca de ${Math.round(desvio * 100)}% da imagem de distância do ponto marcado. Vale gerar outra versão.`,
+    };
+  } catch (err) {
+    console.error("[generate-image] conferência de posicionamento falhou:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/** Família do equipamento, no vocabulário do cadastro de referências. */
+function familiaDoTipo(tipo: unknown): string {
+  const t = typeof tipo === "string" ? tipo.trim().toLowerCase() : "";
+  if (t === "cassete") return "cassete";
+  if (t === "dutado") return "dutado";
+  if (t === "janela") return "janela";
+  if (t.includes("piso")) return "piso_teto";
+  return "hi_wall";
+}
+
+/**
+ * Cena de referência da família, para o modelo ver como a ARCIL representa
+ * aquele tipo de instalação antes de gerar.
+ *
+ * Só envia referência marcada como `sem_texto`: uma referência com texto
+ * embutido faz o modelo copiar o texto, e texto dele sai errado — é a razão de
+ * toda a camada vetorial existir.
+ */
+async function referenciaDaFamilia(supabase: SupabaseClient, familia: string): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from("visual_reference_scenes")
+      .select("image_url")
+      .eq("familia", familia)
+      .eq("ativa", true)
+      .eq("sem_texto", true)
+      .limit(1);
+    const url = data?.[0]?.image_url;
+    return url ? await fetchImagemBase64(url as string, 1280) : null;
+  } catch (err) {
+    console.error("[generate-image] referência visual indisponível:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * Destino do QR impresso na prévia.
+ *
+ * Manual oficial do fabricante quando cadastrado; a própria prévia enquanto não
+ * houver. Um QR que não abre nada é pior que nenhum: o cliente escaneia na
+ * frente do vendedor e não acontece nada.
+ */
+async function destinoDoQr(supabase: SupabaseClient, marca: string | null, leadId: string): Promise<{ url: string; ehManual: boolean }> {
+  if (marca?.trim()) {
+    try {
+      const { data } = await supabase.from("brand_warranty_notes").select("manual_url").ilike("brand", marca.trim()).limit(1);
+      const manual = data?.[0]?.manual_url;
+      if (typeof manual === "string" && manual.trim()) return { url: manual.trim(), ehManual: true };
+    } catch (err) {
+      console.error("[generate-image] busca do manual falhou:", err instanceof Error ? err.message : err);
+    }
+  }
+  return { url: urlPrevia(leadId), ehManual: false };
+}
+
+/** URL pública da prévia deste lead. Mesma expressão usada no upload
+ *  (`comporEEnviar`) — se as duas divergirem, o QR desenhado na imagem aponta
+ *  para um arquivo que não existe. */
+function urlPrevia(leadId: string): string {
+  return `${SUPABASE_URL}/storage/v1/object/public/PDF/previa/${leadId}.jpg`;
 }
 
 /** Minúsculas, sem acento, só palavras — para comparar "Q/F" com "q f" e
@@ -367,30 +757,61 @@ function normalizar(texto: string): string[] {
 /** "2,70" e "2.70" viram "2,70 m"; "2,70 m" fica como está. O vendedor digita
  *  livre e o card não pode expor essa variação. */
 function formatarMetros(valor: string): string | null {
-  const n = Number(valor.replace(",", ".").replace(/[^\d.]/g, ""));
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return `${n.toFixed(2).replace(".", ",")} m`;
+  const texto = valor.trim().toLowerCase();
+  const bruto = Number(texto.replace(",", ".").replace(/[^\d.]/g, ""));
+  if (!Number.isFinite(bruto) || bruto <= 0) return null;
+  // "80cm" batia direto em "80,00 m" — mesma classe de erro do "2,80m" vs
+  // "2,70m" documentado acima: dígito certo, unidade ignorada, número 100x
+  // maior no cartão. A pergunta de altura do plenum (forro) normalmente
+  // recebe resposta em cm; a de pé-direito, em m.
+  //
+  // O sufixo "cm" sozinho não bastava: o vendedor respondeu só "60" (sem
+  // unidade nenhuma) e saiu "60,00 m" — um plenum ou pé-direito de 60 METROS
+  // não existe. Acima de 10, nenhuma das duas perguntas tem resposta legítima
+  // em metros (pé-direito real não passa de uns 6m, plenum nem chega a 2m) —
+  // então um número "cru" grande também vira cm, com ou sem o vendedor
+  // escrever a unidade.
+  const emCentimetros = /cm\b/.test(texto) || (bruto > 10 && !/\bm\b/.test(texto));
+  const metros = emCentimetros ? bruto / 100 : bruto;
+  return `${metros.toFixed(2).replace(".", ",")} m`;
+}
+
+/** "Metragem de infra" é resposta livre, sem opções fixas — um vendedor
+ *  respondeu "NAO SEI DIZER" e isso foi parar, em caixa alta, direto na
+ *  prévia que vai pro cliente. Sem nenhum dígito na resposta, não é uma
+ *  medida, é o vendedor dizendo que não sabe — troca por um texto neutro em
+ *  vez de ecoar o que foi digitado sem filtro. */
+function metragemLegivel(valor: string): string | null {
+  const texto = valor.trim();
+  if (!texto) return null;
+  return /\d/.test(texto) ? texto : "a confirmar no local";
 }
 
 /**
- * Compõe a camada técnica sobre a cena e sobe o resultado no mesmo lugar onde a
- * marca d'água já subia. Se qualquer etapa falhar, cai no caminho antigo (só a
- * marca d'água) — a prévia sem moldura ainda vende, um erro não.
+ * Compõe a camada de título/cards sobre a cena e o selo d'água, e sobe o
+ * resultado no mesmo lugar onde a marca d'água já subia. Se qualquer etapa
+ * falhar, cai no caminho antigo (só a marca d'água) — a prévia sem moldura
+ * ainda vende, um erro não.
+ *
+ * Um único `.jpeg()` no final: `comporPrevia` devolve PNG (cena + camada de
+ * título/cards, sem perda), e o selo d'água entra no MESMO `.composite()` que
+ * faz o encode. Antes disso passava por três gerações de JPEG (corte técnico
+ * -> installation-overlay -> selo), cada uma reencodando o que a anterior já
+ * tinha comprimido — a origem da reclamação de qualidade baixa na imagem
+ * baixada.
  */
 async function comporEEnviar(imageUrl: string, leadId: string, dados: DadosOverlay): Promise<string> {
   try {
     const res = await fetch(imageUrl);
     if (!res.ok) throw new Error(`fetch cena -> HTTP ${res.status}`);
-    const composta = await comporPrevia(Buffer.from(await res.arrayBuffer()), dados);
+    const cenaBuffer = Buffer.from(await res.arrayBuffer());
 
-    // O selo ARCIL só era carimbado no caminho de fallback (watermarkImage),
-    // que só roda quando a camada técnica FALHA. Com a camada técnica no ar,
-    // a prévia saía sem selo nenhum — corrigido carimbando aqui também, mesmo
-    // badge e posição do watermarkImage.
+    const composta = await comporPrevia(cenaBuffer, dados);
+
     const { width: larguraComposta = 1536 } = await sharp(composta).metadata();
-    const leftBadge = Math.max(0, larguraComposta - ARCIL_WATERMARK_BADGE_WIDTH - 16);
+    const leftBadge = Math.max(0, larguraComposta - SELO_LARGURA - 14);
     const comSelo = await sharp(composta)
-      .composite([{ input: Buffer.from(ARCIL_WATERMARK_BADGE_BASE64, "base64"), top: 16, left: leftBadge }])
+      .composite([{ input: await seloReduzido(), top: 14, left: leftBadge }])
       .jpeg({ quality: 94 })
       .toBuffer();
 
@@ -426,19 +847,33 @@ async function comporEEnviar(imageUrl: string, leadId: string, dados: DadosOverl
  * mas é muito melhor que não gerar.
  */
 async function fetchProductImageBase64(url: string | null): Promise<string | null> {
+  return fetchImagemBase64(url, 768, "#ffffff");
+}
+
+/**
+ * Baixa uma imagem e devolve o base64 dos bytes normalizados em JPEG.
+ *
+ * `maxLado` existe porque os dois usos pedem tamanhos diferentes: a foto do
+ * produto é referência de forma e acabamento e 768 px basta, enquanto a imagem
+ * de referência de um AJUSTE é a prévia anterior inteira — reduzi-la a 768 px
+ * devolveria a correção numa resolução menor que a da geração original, e cada
+ * rodada de ajuste encolheria a imagem de novo.
+ *
+ * `fundo` só é aplicado quando informado: achatar sobre branco é certo para o
+ * PNG com transparência que o ERP serve, e errado para uma cena fotográfica.
+ */
+async function fetchImagemBase64(url: string | null, maxLado: number, fundo?: string): Promise<string | null> {
   if (!url) return null;
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const original = Buffer.from(await res.arrayBuffer());
-    const normalizada = await sharp(original)
-      .resize({ width: 768, height: 768, fit: "inside", withoutEnlargement: true })
-      .flatten({ background: "#ffffff" })
-      .jpeg({ quality: 86 })
-      .toBuffer();
+    let pipeline = sharp(original).resize({ width: maxLado, height: maxLado, fit: "inside", withoutEnlargement: true });
+    if (fundo) pipeline = pipeline.flatten({ background: fundo });
+    const normalizada = await pipeline.jpeg({ quality: 86 }).toBuffer();
     return normalizada.toString("base64");
   } catch (err) {
-    console.error("[generate-image] foto do produto indisponível:", err instanceof Error ? err.message : err);
+    console.error(`[generate-image] imagem indisponível (${url.slice(0, 80)}):`, err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -474,10 +909,14 @@ async function getProductImageUrl(
   codigoErp?: string
 ): Promise<string | null> {
   // Caminho exato: o vendedor escolheu o produto do catálogo, então não há o que
-  // adivinhar. Só as três tabelas com `marca` interessam — o gerador desenha ar
-  // condicionado, e é onde eles estão.
+  // adivinhar. `products_builder_architect` entra aqui mesmo sem coluna `marca`
+  // (que as outras três têm) porque este loop nunca toca em `marca` — é busca
+  // direta por `codigo_erp -> imagem_url`. Faltar essa tabela aqui é o que fez
+  // o Paulo pegar um aparelho errado num teste real: catálogo do segmento
+  // construtor/arquiteto tinha a foto, a busca exata não olhava lá, caiu no
+  // fuzzy match e o fuzzy escolheu outro modelo.
   if (codigoErp) {
-    for (const tabela of ["products_consumer", "products_reseller", "products_installer"]) {
+    for (const tabela of ["products_consumer", "products_reseller", "products_installer", "products_builder_architect"]) {
       const { data } = await supabase.from(tabela).select("imagem_url").eq("codigo_erp", codigoErp).limit(1);
       const url = data?.[0]?.imagem_url;
       if (url) return url as string;
@@ -564,9 +1003,9 @@ async function watermarkImage(imageUrl: string, leadId: string): Promise<string>
     // silently produced blank text, because the serverless runtime has no
     // system font for libvips/librsvg to draw with. Pre-rendering once,
     // where a font is available, sidesteps that entirely.
-    const left = Math.max(0, width - ARCIL_WATERMARK_BADGE_WIDTH - 16);
+    const left = Math.max(0, width - SELO_LARGURA - 14);
     const watermarked = await base
-      .composite([{ input: Buffer.from(ARCIL_WATERMARK_BADGE_BASE64, "base64"), top: 16, left }])
+      .composite([{ input: await seloReduzido(), top: 14, left }])
       .jpeg({ quality: 95 })
       .toBuffer();
 
@@ -598,18 +1037,22 @@ type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 async function getInstallationNotes(
   supabase: SupabaseClient,
-  modelo: string
+  modelo: string,
+  marca: string | null
 ): Promise<{ installationNotes: string | null; notesSource: "manual" | "ia" | null }> {
   if (!modelo.trim()) return { installationNotes: null, notesSource: null };
 
-  const { data: notes } = await supabase.from("brand_warranty_notes").select("brand,content");
+  const { data: notes } = await supabase.from("brand_warranty_notes").select("brand,content,origem");
   const modeloLower = modelo.toLowerCase();
-  const match = (notes ?? []).find((n) => modeloLower.includes(n.brand.toLowerCase()));
-  if (match) return { installationNotes: match.content, notesSource: "manual" };
+  // Texto cadastrado por pessoa ganha do cache da IA, sempre — mesmo que o da
+  // IA seja mais recente.
+  const candidatos = (notes ?? []).filter((n) => modeloLower.includes(n.brand.toLowerCase()));
+  const match = candidatos.find((n) => n.origem === "manual") ?? candidatos[0];
+  if (match) return { installationNotes: match.content, notesSource: match.origem === "ia" ? "ia" : "manual" };
 
   try {
     const content = await openAI({
-      model: "gpt-4o",
+      model: MODELO_TEXTO,
       messages: [
         {
           role: "system",
@@ -626,6 +1069,15 @@ async function getInstallationNotes(
       ],
       max_tokens: 300,
     });
+    // Guarda para a próxima simulação da mesma marca. O texto não depende do
+    // ambiente nem do cliente, então reescrevê-lo a cada geração é gastar por
+    // um resultado que já existe. `origem: "ia"` preserva o aviso na tela.
+    if (marca?.trim()) {
+      const { error } = await createAdminClient()
+        .from("brand_warranty_notes")
+        .upsert({ brand: marca.trim(), content, origem: "ia" }, { onConflict: "brand" });
+      if (error) console.error("[generate-image] não consegui guardar a nota da marca:", error.message);
+    }
     return { installationNotes: content, notesSource: "ia" };
   } catch {
     return { installationNotes: null, notesSource: null };
