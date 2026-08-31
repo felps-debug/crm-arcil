@@ -30,14 +30,15 @@ export const V2_CASSETTE_LAYOUT = clean(process.env.V2_CASSETTE_LAYOUT) === "1";
 /**
  * Quem desenha a infraestrutura na cena.
  *
- * `vetorial` (padrão atual): o CRM desenha o feixe de quatro cores e a faixa de
- * plenum por cima da foto. Determinístico, mas chapado.
- *
- * `gemini_3d`: o modelo de imagem desenha a tubulação e a canaleta em 3D,
- * semitransparentes, saindo do aparelho na direção da condensadora. Fica muito
- * mais realista — e obriga o CRM a NÃO desenhar o feixe, senão as duas
+ * `gemini_3d` (padrão): o modelo de imagem desenha a tubulação e a canaleta em
+ * 3D, semitransparentes, saindo do aparelho na direção da condensadora — e o
+ * CRM NÃO desenha o feixe nem a cota do pé-direito como seta, senão as duas
  * representações se sobrepõem, que é o erro documentado deste projeto.
  *
- * Texto, cota e card continuam vetoriais nos dois modos.
+ * `vetorial`: o CRM desenha o feixe de quatro cores e a faixa de plenum por
+ * cima da foto. Determinístico, mas chapado — mantido só pra comparação/
+ * rollback via `INFRA_VISUAL=vetorial`.
+ *
+ * Texto e card continuam vetoriais nos dois modos.
  */
-export const INFRA_VISUAL = clean(process.env.INFRA_VISUAL) === "gemini_3d" ? "gemini_3d" : "vetorial";
+export const INFRA_VISUAL = clean(process.env.INFRA_VISUAL) === "vetorial" ? "vetorial" : "gemini_3d";

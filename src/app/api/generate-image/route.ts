@@ -386,104 +386,135 @@ export async function POST(request: NextRequest) {
   const familia = familiaDoTipo(collectedData.tipo_equipamento);
   const referenciaBase64 = await referenciaDaFamilia(supabase, familia);
 
-  // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node.
-  // O fetch fica dentro de try/catch porque, sem ele, uma falha de rede virava um
-  // 500 sem corpo: o cliente tentava `res.json()`, estourava e mostrava "Erro de
-  // conexao", indistinguível de um erro dentro da automação. Os dois casos se
-  // investigam em lugares diferentes — um no n8n, outro aqui.
-  let n8nRes: Response;
-  try {
-    n8nRes = await fetch(N8N_CHATBOT_WEBHOOK, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(240_000),
-      body: JSON.stringify({
-        lead_id: leadId,
-        image_url: imageUrl,
-        image_base64: imageBase64,
-        image_description: imageDescription,
-        product_image_url: productImageUrl,
-        product_image_base64: productImageBase64,
-        reference_image_url: referenceImageUrl ?? null,
-        reference_image_base64: referenceImageBase64,
-        guide_image_base64: guideImageBase64,
-        marcacao_descricao: marcacao ? descreverMarcacao(marcacao) : null,
-        tem_marcacao: Boolean(guideImageBase64),
-        familia_equipamento: familia,
-        reference_scene_base64: referenciaBase64,
-        // Quem desenha a tubulação nesta geração. O n8n usa isso para escolher
-        // entre "não desenhe infraestrutura nenhuma" e "desenhe o line set em
-        // 3D semitransparente" — os dois nunca podem valer ao mesmo tempo.
-        modo_infra: INFRA_VISUAL,
-        revision_prompt: revisionPrompt?.trim() ?? null,
-        generation_mode: referenceImageUrl ? "revision" : "initial",
-        equipment_guidance: technicalGuidance,
-        revision_instruction: revisionInstruction,
-        regras_instalacao: regrasInstalacao,
-        ancoragem_espacial: ancoragemEspacial || null,
-        capacidade_btus: equipmentSpecs.btu ? `${equipmentSpecs.btu.toLocaleString("pt-BR")} BTU/h` : null,
-        dimensoes_finais: equipmentSpecs.dimensoesFormatadas,
-        origem_dimensoes: equipmentSpecs.origemDimensoes,
-        prompt,
-        ...collectedData,
-      }),
-    });
-  } catch (err) {
-    const motivo = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    console.error("[generate-image] a chamada ao n8n nem completou:", motivo);
-    return Response.json(
-      { error: `Não consegui falar com a automação de imagem (${motivo}). Nenhuma execução foi criada no n8n.` },
-      { status: 502 }
-    );
-  }
-
-  // O corpo é lido como texto antes de virar JSON porque o n8n responde vazio
-  // quando um nó do meio falha: o "Respond to Webhook" nunca é alcançado, e
-  // `res.json()` estourava com "Unexpected end of JSON input". O que chegava na
-  // tela era um 500 genérico enquanto o n8n sabia exatamente o problema — numa
-  // ocasião, "You have no credits remaining" da OpenAI.
-  const n8nBody = await n8nRes.text();
-
-  if (!n8nRes.ok) {
-    console.error(`[generate-image] n8n HTTP ${n8nRes.status}:`, n8nBody.slice(0, 600) || "(corpo vazio)");
-    return Response.json(
-      { error: `A automação de imagem respondeu ${n8nRes.status}. Verifique a execução no n8n.` },
-      { status: 502 }
-    );
-  }
-
-  if (!n8nBody.trim()) {
-    console.error("[generate-image] n8n respondeu 200 com corpo vazio — algum nó falhou antes do Respond to Webhook.");
-    return Response.json(
-      { error: "A automação de imagem parou no meio e não devolveu resultado. Verifique a última execução no n8n." },
-      { status: 502 }
-    );
-  }
-
-  let n8nData: Record<string, unknown>;
-  try {
-    n8nData = JSON.parse(n8nBody);
-  } catch {
-    console.error("[generate-image] n8n devolveu algo que não é JSON:", n8nBody.slice(0, 600));
-    return Response.json(
-      { error: "A automação de imagem devolveu uma resposta inesperada. Verifique a última execução no n8n." },
-      { status: 502 }
-    );
-  }
-
   // Accept the image URL under any field n8n might return
   const primeiraString = (...valores: unknown[]): string | null =>
     valores.find((v): v is string => typeof v === "string" && v.length > 0) ?? null;
 
-  const rawUrl = primeiraString(
-    n8nData.url_imagem_final,
-    n8nData.image_url,
-    n8nData.imageUrl,
-    n8nData.url
-  );
+  // Vazamento da guia (o retângulo magenta reproduzido na cena) é falha visível
+  // e indefensável perante o cliente — o prompt do n8n já proíbe, mas proibição
+  // não é garantia com IA de imagem. Em vez de só avisar depois de entregar,
+  // tenta gerar de novo (até 2 vezes) ANTES de compor e subir qualquer coisa.
+  // Sem marcação (ou sem guia) não há o que vazar, então roda uma vez só.
+  const MAX_TENTATIVAS_GERACAO = marcacao && guideImageBase64 ? 3 : 1;
+  let generatedImageUrl: string | null = null;
+  let vazamentoPersistente = false;
 
-  // Strip _{timestamp} suffix that n8n may append to storage filenames
-  const generatedImageUrl = rawUrl ? rawUrl.replace(/_\d+$/, "") : null;
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_GERACAO; tentativa++) {
+    // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node.
+    // O fetch fica dentro de try/catch porque, sem ele, uma falha de rede virava um
+    // 500 sem corpo: o cliente tentava `res.json()`, estourava e mostrava "Erro de
+    // conexao", indistinguível de um erro dentro da automação. Os dois casos se
+    // investigam em lugares diferentes — um no n8n, outro aqui.
+    let n8nRes: Response;
+    try {
+      n8nRes = await fetch(N8N_CHATBOT_WEBHOOK, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(240_000),
+        body: JSON.stringify({
+          lead_id: leadId,
+          image_url: imageUrl,
+          image_base64: imageBase64,
+          image_description: imageDescription,
+          product_image_url: productImageUrl,
+          product_image_base64: productImageBase64,
+          reference_image_url: referenceImageUrl ?? null,
+          reference_image_base64: referenceImageBase64,
+          guide_image_base64: guideImageBase64,
+          marcacao_descricao: marcacao ? descreverMarcacao(marcacao) : null,
+          tem_marcacao: Boolean(guideImageBase64),
+          familia_equipamento: familia,
+          reference_scene_base64: referenciaBase64,
+          // Quem desenha a tubulação nesta geração. O n8n usa isso para escolher
+          // entre "não desenhe infraestrutura nenhuma" e "desenhe o line set em
+          // 3D semitransparente" — os dois nunca podem valer ao mesmo tempo.
+          modo_infra: INFRA_VISUAL,
+          revision_prompt: revisionPrompt?.trim() ?? null,
+          generation_mode: referenceImageUrl ? "revision" : "initial",
+          equipment_guidance: technicalGuidance,
+          revision_instruction: revisionInstruction,
+          regras_instalacao: regrasInstalacao,
+          ancoragem_espacial: ancoragemEspacial || null,
+          capacidade_btus: equipmentSpecs.btu ? `${equipmentSpecs.btu.toLocaleString("pt-BR")} BTU/h` : null,
+          dimensoes_finais: equipmentSpecs.dimensoesFormatadas,
+          origem_dimensoes: equipmentSpecs.origemDimensoes,
+          prompt,
+          ...collectedData,
+        }),
+      });
+    } catch (err) {
+      const motivo = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      console.error("[generate-image] a chamada ao n8n nem completou:", motivo);
+      return Response.json(
+        { error: `Não consegui falar com a automação de imagem (${motivo}). Nenhuma execução foi criada no n8n.` },
+        { status: 502 }
+      );
+    }
+
+    // O corpo é lido como texto antes de virar JSON porque o n8n responde vazio
+    // quando um nó do meio falha: o "Respond to Webhook" nunca é alcançado, e
+    // `res.json()` estourava com "Unexpected end of JSON input". O que chegava na
+    // tela era um 500 genérico enquanto o n8n sabia exatamente o problema — numa
+    // ocasião, "You have no credits remaining" da OpenAI.
+    const n8nBody = await n8nRes.text();
+
+    if (!n8nRes.ok) {
+      console.error(`[generate-image] n8n HTTP ${n8nRes.status}:`, n8nBody.slice(0, 600) || "(corpo vazio)");
+      return Response.json(
+        { error: `A automação de imagem respondeu ${n8nRes.status}. Verifique a execução no n8n.` },
+        { status: 502 }
+      );
+    }
+
+    if (!n8nBody.trim()) {
+      console.error("[generate-image] n8n respondeu 200 com corpo vazio — algum nó falhou antes do Respond to Webhook.");
+      return Response.json(
+        { error: "A automação de imagem parou no meio e não devolveu resultado. Verifique a última execução no n8n." },
+        { status: 502 }
+      );
+    }
+
+    let n8nData: Record<string, unknown>;
+    try {
+      n8nData = JSON.parse(n8nBody);
+    } catch {
+      console.error("[generate-image] n8n devolveu algo que não é JSON:", n8nBody.slice(0, 600));
+      return Response.json(
+        { error: "A automação de imagem devolveu uma resposta inesperada. Verifique a última execução no n8n." },
+        { status: 502 }
+      );
+    }
+
+    const rawUrl = primeiraString(
+      n8nData.url_imagem_final,
+      n8nData.image_url,
+      n8nData.imageUrl,
+      n8nData.url
+    );
+
+    // Strip _{timestamp} suffix that n8n may append to storage filenames
+    const urlDestaTentativa = rawUrl ? rawUrl.replace(/_\d+$/, "") : null;
+
+    if (!urlDestaTentativa) {
+      return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
+    }
+
+    if (marcacao && guideImageBase64) {
+      try {
+        const cenaRes = await fetch(urlDestaTentativa);
+        if (cenaRes.ok && (await detectarVazamentoDaGuia(Buffer.from(await cenaRes.arrayBuffer())))) {
+          console.error(`[generate-image] guia vazou na tentativa ${tentativa}/${MAX_TENTATIVAS_GERACAO}`);
+          if (tentativa < MAX_TENTATIVAS_GERACAO) continue; // tenta de novo
+          vazamentoPersistente = true;
+        }
+      } catch (err) {
+        console.error("[generate-image] não consegui reler a cena para checar vazamento:", err instanceof Error ? err.message : err);
+      }
+    }
+
+    generatedImageUrl = urlDestaTentativa;
+    break;
+  }
 
   if (!generatedImageUrl) {
     return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
@@ -535,25 +566,16 @@ export async function POST(request: NextRequest) {
     modoInfra: INFRA_VISUAL,
   });
 
-  // Depois de compor: a conferência olha a cena que o modelo devolveu, e o
-  // resultado dela não muda o desenho — só o aviso na tela.
+  // A conferência de posição olha a cena que o modelo devolveu, e o resultado
+  // dela não muda o desenho — só o aviso na tela. O vazamento da guia já foi
+  // checado (com retry) antes de chegar aqui; se persistiu mesmo depois de
+  // tentar de novo, esse aviso ganha do resultado da conferência de posição.
   let posicionamento = marcacao ? await conferirPosicionamento(generatedImageUrl, marcacao) : null;
-
-  // Vazamento da guia é falha visível e indefensável perante o cliente, então
-  // ganha do resultado da conferência de posição: mesmo que o aparelho esteja
-  // no lugar certo, a imagem não pode ser entregue com a marcação pintada.
-  if (marcacao && guideImageBase64) {
-    try {
-      const cenaRes = await fetch(generatedImageUrl);
-      if (cenaRes.ok && (await detectarVazamentoDaGuia(Buffer.from(await cenaRes.arrayBuffer())))) {
-        posicionamento = {
-          ok: false,
-          mensagem: "A marcação da foto foi desenhada na imagem gerada (traço colorido visível). Gere outra versão antes de enviar ao cliente.",
-        };
-      }
-    } catch (err) {
-      console.error("[generate-image] não consegui reler a cena para checar vazamento:", err instanceof Error ? err.message : err);
-    }
+  if (vazamentoPersistente) {
+    posicionamento = {
+      ok: false,
+      mensagem: "A marcação da foto foi desenhada na imagem gerada mesmo após tentar novamente. Gere outra versão antes de enviar ao cliente.",
+    };
   }
 
   const { installationNotes, notesSource } = await getInstallationNotes(
@@ -733,14 +755,10 @@ async function destinoDoQr(supabase: SupabaseClient, marca: string | null, leadI
       console.error("[generate-image] busca do manual falhou:", err instanceof Error ? err.message : err);
     }
   }
-  return { url: urlPrevia(leadId), ehManual: false };
-}
-
-/** URL pública da prévia deste lead. Mesma expressão usada no upload
- *  (`comporEEnviar`) — se as duas divergirem, o QR desenhado na imagem aponta
- *  para um arquivo que não existe. */
-function urlPrevia(leadId: string): string {
-  return `${SUPABASE_URL}/storage/v1/object/public/PDF/previa/${leadId}.jpg`;
+  // Sem manual_url cadastrado pra marca: aponta pro site institucional em vez
+  // da própria imagem. "Escaneie pra ver esta prévia que você já está vendo"
+  // não ajuda ninguém — pelo menos assim o QR leva a algum lugar real.
+  return { url: "https://arcil.com.br", ehManual: false };
 }
 
 /** Minúsculas, sem acento, só palavras — para comparar "Q/F" com "q f" e
@@ -772,7 +790,13 @@ function formatarMetros(valor: string): string | null {
   // então um número "cru" grande também vira cm, com ou sem o vendedor
   // escrever a unidade.
   const emCentimetros = /cm\b/.test(texto) || (bruto > 10 && !/\bm\b/.test(texto));
-  const metros = emCentimetros ? bruto / 100 : bruto;
+  let metros = emCentimetros ? bruto / 100 : bruto;
+  // Espelha a heurística acima na direção oposta: "cm" explícito que produz
+  // menos de 10cm não é um plenum nem um pé-direito reais, é o vendedor tendo
+  // marcado a unidade errada — "2,7 cm" virou "0,03 m" numa prévia real
+  // porque o dígito certo (2,7, plausível em METROS de pé-direito) foi tratado
+  // como centímetros ao pé da letra.
+  if (emCentimetros && metros < 0.1) metros = bruto;
   return `${metros.toFixed(2).replace(".", ",")} m`;
 }
 
@@ -806,14 +830,15 @@ async function comporEEnviar(imageUrl: string, leadId: string, dados: DadosOverl
     if (!res.ok) throw new Error(`fetch cena -> HTTP ${res.status}`);
     const cenaBuffer = Buffer.from(await res.arrayBuffer());
 
+    // Uma marca d'água só: a logo Grupo Arcil que `comporPrevia` já desenha
+    // (canto inferior esquerdo, referência aprovada). O selo pequeno "Design
+    // created by ARCIL AI" que ia aqui em cima foi removido — duas marcas na
+    // mesma prévia era ruído, e o aviso "Prévia para visualização..." no
+    // rodapé já cobre a transparência de que é gerado. `seloReduzido` continua
+    // existindo só para o fallback (`watermarkImage`), quando a composição
+    // completa falha e não há logo nenhuma na imagem.
     const composta = await comporPrevia(cenaBuffer, dados);
-
-    const { width: larguraComposta = 1536 } = await sharp(composta).metadata();
-    const leftBadge = Math.max(0, larguraComposta - SELO_LARGURA - 14);
-    const comSelo = await sharp(composta)
-      .composite([{ input: await seloReduzido(), top: 14, left: leftBadge }])
-      .jpeg({ quality: 94 })
-      .toBuffer();
+    const comSelo = await sharp(composta).jpeg({ quality: 94 }).toBuffer();
 
     const admin = createAdminClient();
     const storagePath = `previa/${leadId}.jpg`;

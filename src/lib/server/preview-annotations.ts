@@ -535,7 +535,11 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   const folgaCards = W * 0.022;
   const bordaCards = ladoTexto === 1 ? xCards + larguraCards + folgaCards : xCards - folgaCards;
   const rotaVisivel = recortarNaColuna(rotaPx, bordaCards, ladoTexto === 1 ? 1 : -1);
-  linhas.push(feixeInfra(rotaVisivel, escala));
+  // Em `gemini_3d` o modelo já desenhou a tubulação em volume, com sombra, na
+  // cena. Desenhar o feixe vetorial por cima duplicaria a mesma informação em
+  // duas linguagens — o mesmo erro que o layout do cassete comercial já
+  // evita (`cassette-commercial-layout.ts`).
+  if (d.modoInfra !== "gemini_3d") linhas.push(feixeInfra(rotaVisivel, escala));
 
   // --- Silhueta acima do forro + cota do plenum ------------------------------
   // O topo útil é mais baixo que `FAIXA.topoFrac` porque o selo "Design created
@@ -676,10 +680,15 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
       // Para na altura do peitoril: uma linha do teto ao chão corta a foto do
       // cliente ao meio e passa a ler como divisória do ambiente.
       const yBase = H * 0.66;
-      linhas.push(
-        `<line x1="${xPe.toFixed(1)}" y1="${yTopo.toFixed(1)}" x2="${xPe.toFixed(1)}" y2="${yBase.toFixed(1)}" stroke="rgba(242,246,252,0.65)" stroke-width="1.2" stroke-dasharray="3 5"/>`
-      );
-      linhas.push(setaDuplaVertical(xPe, yTopo, yBase, CLARO));
+      // Em `gemini_3d` a linha de cota também é responsabilidade do modelo
+      // (mesma classe visual do raio-x da infraestrutura); nós só reservamos o
+      // espaço pra nenhum outro callout cair em cima de onde ela vai aparecer.
+      if (d.modoInfra !== "gemini_3d") {
+        linhas.push(
+          `<line x1="${xPe.toFixed(1)}" y1="${yTopo.toFixed(1)}" x2="${xPe.toFixed(1)}" y2="${yBase.toFixed(1)}" stroke="rgba(242,246,252,0.65)" stroke-width="1.2" stroke-dasharray="3 5"/>`
+        );
+        linhas.push(setaDuplaVertical(xPe, yTopo, yBase, CLARO));
+      }
       aloc.reservar({ x: xPe - W * 0.012, y: yTopo, w: W * 0.024, h: yBase - yTopo });
     }
     empurrar(familia === "forro" ? "ALTURA LAJE-FORRO" : "PÉ-DIREITO APROX.", d.peDireito, CLARO, null, [{ x: xTexto, y: H * 0.29 }]);

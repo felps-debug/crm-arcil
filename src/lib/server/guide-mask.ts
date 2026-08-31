@@ -96,11 +96,19 @@ export async function renderGuideMask(fotoOriginal: Buffer, m: Marcacao): Promis
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${partes.join("")}</svg>`;
     const overlay = await sharp(Buffer.from(svg)).png().toBuffer();
 
-    // Normaliza junto com o composite: o Gemini recebe a guia e a foto original
-    // como duas imagens, e mandar a guia em resolução cheia de celular só
-    // aumenta o payload sem ajudar o modelo a ver um retângulo.
-    const guia = await sharp(fotoOriginal)
+    // Composite e resize em duas chamadas sharp separadas, não uma cadeia só:
+    // encadeados, o sharp encolhe a base durante o decode (shrink-on-load) antes
+    // de aplicar o composite, então o overlay — desenhado nas dimensões
+    // ORIGINAIS da foto — fica maior que a base já encolhida e o composite
+    // sempre falha com "Image to composite must have same dimensions or
+    // smaller". Só reproduz em foto que precisa encolher pra caber em 1280×1280
+    // (ou seja, qualquer foto de celular real) — passou batido porque essa
+    // função nunca tinha rodado contra uma foto de verdade antes.
+    const composta = await sharp(fotoOriginal)
       .composite([{ input: overlay, top: 0, left: 0 }])
+      .png()
+      .toBuffer();
+    const guia = await sharp(composta)
       .resize({ width: 1280, height: 1280, fit: "inside", withoutEnlargement: true })
       .jpeg({ quality: 88 })
       .toBuffer();

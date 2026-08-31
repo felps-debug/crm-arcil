@@ -162,7 +162,7 @@ function qrNo(dataUrl: string | null, W: number, H: number, ehManual: boolean): 
       el(
         "div",
         { fontSize: 9.5, color: CLARO, textShadow: SOMBRA_TEXTO, textAlign: "right", lineHeight: 1.25 },
-        ehManual ? "Escaneie para acessar o manual" : "Escaneie para abrir esta prévia"
+        ehManual ? "Escaneie para acessar o manual" : "Escaneie para conhecer a ARCIL"
       )
     ),
     img(dataUrl, { width: lado, height: lado, borderRadius: 4 })
@@ -319,7 +319,10 @@ function camadaAncorada(d: DadosOverlay, W: number, H: number, qrDataUrl: string
     el(
       "div",
       { position: "absolute", left: xCards, top: topoCards, width: larguraCard, flexDirection: "column", gap: 12 },
-      legendaInfraNo(larguraCard),
+      // Legenda de cores só faz sentido explicando o feixe vetorial que nós
+      // desenhamos. Em `gemini_3d` a tubulação sai em cobre/conduíte reais, e
+      // uma legenda de cores não corresponde a nada na imagem.
+      d.modoInfra !== "gemini_3d" ? legendaInfraNo(larguraCard) : null,
       painelCondensadoraNo(d, larguraCard, CARD_FUNDO, CARD_BORDA, CARD_RAIO),
       cardModeloNo(d, larguraCard)
     ),
