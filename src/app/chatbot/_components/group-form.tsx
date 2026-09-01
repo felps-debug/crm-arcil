@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ConsoleButton } from "@/components/console/console-shell";
 import { ProdutoPicker } from "./produto-picker";
 import { HINTS, type Step, type StepGroup } from "./step-groups";
@@ -102,6 +102,18 @@ function CampoMedida({
   const [numeroInicial, unidadeInicial] = valor ? valor.split(" ") : ["", step.unidades[0]];
   const [numero, setNumero] = useState(numeroInicial);
   const [unidade, setUnidade] = useState<"m" | "cm">((unidadeInicial as "m" | "cm") || step.unidades[0]);
+
+  // `text`/`choice` acima são totalmente controlados (leem `valor` direto);
+  // aqui existe estado local (número e unidade separados) porque o valor
+  // salvo é uma string combinada ("60 cm"). Sem este efeito, uma mudança de
+  // `valor` vinda de fora (ex.: reset, retomada de rascunho) não apareceria
+  // no campo — o input continuaria mostrando o número antigo.
+  useEffect(() => {
+    const [numeroExterno, unidadeExterna] = valor ? valor.split(" ") : ["", step.unidades[0]];
+    setNumero(numeroExterno);
+    setUnidade((unidadeExterna as "m" | "cm") || step.unidades[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valor]);
 
   const atualizar = (novoNumero: string, novaUnidade: "m" | "cm") => {
     const limpo = novoNumero.replace(/[^\d.,]/g, "");
