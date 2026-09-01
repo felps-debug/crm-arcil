@@ -427,6 +427,10 @@ function ChatbotPageInner() {
       },
     ]);
     setVersaoAtiva(0);
+    setProductImageUrl(null);
+    setCondensadoraTipo(null);
+    setCondensadoraImageUrl(null);
+    setDownloadingCondensadora(false);
     setGrupoIndex(buildStepGroups(texto.tipo_equipamento ?? null).length);
     setPreviewItem(null);
     setTab("nova");
@@ -440,6 +444,10 @@ function ChatbotPageInner() {
     setMarcacao(null);
     setVersoes([]);
     setVersaoAtiva(0);
+    setProductImageUrl(null);
+    setCondensadoraTipo(null);
+    setCondensadoraImageUrl(null);
+    setDownloadingCondensadora(false);
   }, []);
 
   return (
@@ -457,12 +465,23 @@ function ChatbotPageInner() {
       {tab === "nova" ? (
         questionarioConcluido ? (
           <div className="space-y-3">
-            {versoes.length > 0 && (
+            {versoes.length > 0 ? (
               <div className="flex justify-end">
                 <ConsoleButton icon={RefreshCcw} onClick={handleRestart}>
                   Começar nova simulação
                 </ConsoleButton>
               </div>
+            ) : (
+              // Sem versoes aqui significa que a geração automática falhou (toast já
+              // mostrado em requestGeneration) — sem este botão o vendedor ficava
+              // travado numa tela vazia, só recarregando a página pra tentar de novo.
+              !generating && (
+                <div className="flex justify-end">
+                  <ConsoleButton icon={RefreshCcw} active onClick={() => requestGeneration(answers)}>
+                    Tentar gerar novamente
+                  </ConsoleButton>
+                </div>
+              )
             )}
             <ResultadoPainel
               generating={generating}
