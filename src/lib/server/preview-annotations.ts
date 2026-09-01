@@ -1,7 +1,7 @@
 import { el, img, b64svg, type No } from "./satori-nodes";
 import type { DadosOverlay } from "./previa-tipos";
 import type { Marcacao, PontoFrac } from "@/lib/marcacao";
-import { AZUL, CLARO, CINZA, INFRA, ORDEM_INFRA, SOMBRA_TEXTO, FAIXA } from "@/constants/arcil-brand";
+import { CLARO, CINZA, INFRA, ORDEM_INFRA, SOMBRA_TEXTO, FAIXA, TRACO_ORTOGONAL, TRACO_ORTOGONAL_PONTO } from "@/constants/arcil-brand";
 
 /**
  * Camada técnica ANCORADA: callouts com linha de chamada, cotas, rota da
@@ -49,15 +49,18 @@ function setaDuplaVertical(x: number, y1: number, y2: number, cor: string): stri
   );
 }
 
-function linhaChamada(de: Ponto, para: Ponto): string {
+/**
+ * Linha de chamada ortogonal: sai do texto na horizontal, dobra uma vez,
+ * desce/sobe até o ponto. Substitui a diagonal pontilhada (`linhaChamada`) —
+ * mesma técnica já validada em `cassette-commercial-layout.ts`
+ * (`chamadaOrtogonal`), generalizada pro layout ancorado padrão.
+ */
+function chamadaOrtogonal(de: Ponto, para: Ponto): string {
+  const d = `M ${de.x.toFixed(1)} ${de.y.toFixed(1)} L ${para.x.toFixed(1)} ${de.y.toFixed(1)} L ${para.x.toFixed(1)} ${para.y.toFixed(1)}`;
   return (
-    `<line x1="${de.x.toFixed(1)}" y1="${de.y.toFixed(1)}" x2="${para.x.toFixed(1)}" y2="${para.y.toFixed(1)}" ` +
-    `stroke="rgba(242,246,252,0.8)" stroke-width="1.3" stroke-dasharray="2 4" stroke-linecap="round"/>`
+    `<path d="${d}" fill="none" stroke="${TRACO_ORTOGONAL}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>` +
+    `<circle cx="${para.x.toFixed(1)}" cy="${para.y.toFixed(1)}" r="3.5" fill="${TRACO_ORTOGONAL_PONTO}" stroke="#0b1220" stroke-width="1"/>`
   );
-}
-
-function marcador(p: Ponto, cor: string): string {
-  return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="${cor}" stroke="#0b1220" stroke-width="1.2"/>`;
 }
 
 /**
@@ -452,6 +455,13 @@ function alturaCallout(titulo: string, corpo: string | null, largura: number, es
  *   num tamanho que não escolhemos — por isso a marcação é fração, não pixel).
  */
 export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: number, ladoTexto: 1 | -1): PlanoAnotacoes {
+  // Em `gemini_3d` o Gemini já desenhou EVAPORADORA, cota, LIGAÇÃO ATÉ
+  // CONDENSADORA, FORRO ATÉ LAJE e FLUXO DE AR direto na cena (prompt do
+  // n8n) -- desenhar de novo aqui duplicaria o texto, desalinhado com o que
+  // já está na foto. Esta função só roda de verdade no modo `vetorial`
+  // (rollback via INFRA_VISUAL=vetorial).
+  if (d.modoInfra === "gemini_3d") return { linhas: "", nos: [] };
+
   const familia = familiaDe(d.tipoEquipamento);
   const escala = Math.min(W, H) / 1024;
 
@@ -535,11 +545,11 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   const folgaCards = W * 0.022;
   const bordaCards = ladoTexto === 1 ? xCards + larguraCards + folgaCards : xCards - folgaCards;
   const rotaVisivel = recortarNaColuna(rotaPx, bordaCards, ladoTexto === 1 ? 1 : -1);
-  // Em `gemini_3d` o modelo já desenhou a tubulação em volume, com sombra, na
-  // cena. Desenhar o feixe vetorial por cima duplicaria a mesma informação em
-  // duas linguagens — o mesmo erro que o layout do cassete comercial já
-  // evita (`cassette-commercial-layout.ts`).
-  if (d.modoInfra !== "gemini_3d") linhas.push(feixeInfra(rotaVisivel, escala));
+  // O gate para `gemini_3d` (o modelo já desenha a tubulação em volume, com
+  // sombra, na cena — o mesmo erro que o layout do cassete comercial evita em
+  // `cassette-commercial-layout.ts`) agora é o early-return no topo desta
+  // função: chegando aqui, o modo é sempre `vetorial`.
+  linhas.push(feixeInfra(rotaVisivel, escala));
 
   // --- Silhueta acima do forro + cota do plenum ------------------------------
   // O topo útil é mais baixo que `FAIXA.topoFrac` porque o selo "Design created
@@ -640,25 +650,9 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
     { x: xTexto, y: H * 0.05 },
   ]);
 
-  // --- Ponto elétrico --------------------------------------------------------
-  // Só existe como callout quando o vendedor marcou onde ele fica. Sem marcação
-  // a informação continua nos cards — o que não pode acontecer é uma seta de
-  // "ponto elétrico" apontando para um lugar que ninguém confirmou.
-  if (m.pontoEletrico) {
-    const alvo: Ponto = { x: m.pontoEletrico.x * W, y: m.pontoEletrico.y * H };
-    linhas.push(marcador(alvo, INFRA.eletrico.cor));
-    empurrar(
-      "PONTO ELÉTRICO",
-      d.pontoEletrico == null
-        ? "Alimentação exclusiva e aterrada, conforme NBR 5410."
-        : d.pontoEletrico
-          ? "Ponto já existe — conferir aterramento conforme NBR 5410."
-          : "A executar — alimentação exclusiva e aterrada, conforme NBR 5410.",
-      INFRA.eletrico.cor,
-      alvo,
-      [{ x: alvo.x + W * 0.04, y: alvo.y - H * 0.02 }, { x: alvo.x - larguraCallout - W * 0.04, y: alvo.y - H * 0.02 }]
-    );
-  }
+  // Ponto elétrico não tem marca própria na foto (a pergunta "já existe ponto
+  // elétrico?" já cobre isso) — a informação vive só nos cards, nunca como
+  // callout apontando pra um lugar que ninguém marcou.
 
   // --- Cota do pé-direito ----------------------------------------------------
   if (d.peDireito) {
@@ -680,15 +674,13 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
       // Para na altura do peitoril: uma linha do teto ao chão corta a foto do
       // cliente ao meio e passa a ler como divisória do ambiente.
       const yBase = H * 0.66;
-      // Em `gemini_3d` a linha de cota também é responsabilidade do modelo
-      // (mesma classe visual do raio-x da infraestrutura); nós só reservamos o
-      // espaço pra nenhum outro callout cair em cima de onde ela vai aparecer.
-      if (d.modoInfra !== "gemini_3d") {
-        linhas.push(
-          `<line x1="${xPe.toFixed(1)}" y1="${yTopo.toFixed(1)}" x2="${xPe.toFixed(1)}" y2="${yBase.toFixed(1)}" stroke="rgba(242,246,252,0.65)" stroke-width="1.2" stroke-dasharray="3 5"/>`
-        );
-        linhas.push(setaDuplaVertical(xPe, yTopo, yBase, CLARO));
-      }
+      // Gate para `gemini_3d` (a linha de cota também seria responsabilidade
+      // do modelo ali) também virou o early-return do topo da função — não
+      // precisa repetir a checagem aqui.
+      linhas.push(
+        `<line x1="${xPe.toFixed(1)}" y1="${yTopo.toFixed(1)}" x2="${xPe.toFixed(1)}" y2="${yBase.toFixed(1)}" stroke="rgba(242,246,252,0.65)" stroke-width="1.2" stroke-dasharray="3 5"/>`
+      );
+      linhas.push(setaDuplaVertical(xPe, yTopo, yBase, CLARO));
       aloc.reservar({ x: xPe - W * 0.012, y: yTopo, w: W * 0.024, h: yBase - yTopo });
     }
     empurrar(familia === "forro" ? "ALTURA LAJE-FORRO" : "PÉ-DIREITO APROX.", d.peDireito, CLARO, null, [{ x: xTexto, y: H * 0.29 }]);
@@ -732,8 +724,7 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
     // Chamada curta demais vira um risco solto ao lado do texto; nesse caso o
     // próprio encostamento já diz a que o callout se refere.
     if (Math.hypot(saida.x - c.alvo.x, saida.y - c.alvo.y) < W * 0.03) continue;
-    linhas.push(linhaChamada(saida, c.alvo));
-    linhas.push(marcador(c.alvo, c.cor === CLARO ? AZUL : c.cor));
+    linhas.push(chamadaOrtogonal(saida, c.alvo));
   }
 
   return { linhas: linhas.join(""), nos: callouts.map(calloutNo) };
