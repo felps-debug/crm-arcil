@@ -240,6 +240,7 @@ export async function POST(request: NextRequest) {
   if (answers?.nivel_condensadora) collectedData.nivel_condensadora = answers.nivel_condensadora;
   if (answers?.ponto_eletrico) collectedData.ponto_eletrico = answers.ponto_eletrico === "Sim";
   if (answers?.tipo_parede) collectedData.tipo_parede = answers.tipo_parede;
+  if (answers?.tipo_forro) collectedData.tipo_forro = answers.tipo_forro;
   if (answers?.alcapao) collectedData.alcapao = answers.alcapao === "Sim";
   if (answers?.metragem_infra) collectedData.metragem_infra = answers.metragem_infra;
 
@@ -546,6 +547,7 @@ export async function POST(request: NextRequest) {
     tubulacao: typeof collectedData.tubulacao === "string" ? collectedData.tubulacao : null,
     pontoEletrico: typeof collectedData.ponto_eletrico === "boolean" ? collectedData.ponto_eletrico : null,
     alcapao: typeof collectedData.alcapao === "boolean" ? collectedData.alcapao : null,
+    tipoForro: typeof collectedData.tipo_forro === "string" ? collectedData.tipo_forro : null,
     metragemInfra: typeof collectedData.metragem_infra === "string" ? metragemLegivel(collectedData.metragem_infra) : null,
     alturaGabineteCm: equipmentSpecs.dimensoes.altura_cm,
     larguraGabineteCm: equipmentSpecs.dimensoes.largura_cm,
