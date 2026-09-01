@@ -26,7 +26,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getImageGenerationHistory, type ImageGeneration } from "@/lib/supabase/queries";
 import { formatDateTime } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
-import { ProdutoPicker, type TipoEquipamento } from "./_components/produto-picker";
+import type { TipoEquipamento } from "./_components/produto-picker";
 import { MarcadorInstalacao } from "./_components/marcador-instalacao";
 import { GroupForm } from "./_components/group-form";
 import { ResultadoPainel, InstallationNotesCard, type Versao, type Posicionamento } from "./_components/resultado-painel";
