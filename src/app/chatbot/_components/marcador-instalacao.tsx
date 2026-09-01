@@ -38,10 +38,18 @@ const CAIXA_PADRAO: CaixaFrac = { x: 0.36, y: 0.24, w: 0.28, h: 0.09 };
 const CAIXA_MIN = { w: 0.05, h: 0.025 };
 
 /** Distância mínima (fração da foto) entre dois pontos consecutivos do traço
- *  livre pra o segundo valer a pena guardar. Sem isto, um arrasto lento em
- *  tela grande gera milhares de pontos quase idênticos antes mesmo de chegar
- *  no teto de sanidade do servidor. */
-const DIST_MINIMA_PONTO = 0.004;
+ *  livre pra o segundo valer a pena guardar. Calibrado pra uma diagonal cheia
+ *  da tela (a maior distância possível) ficar bem abaixo de MAX_PONTOS_ROTA —
+ *  sem isto, um arrasto lento em tela grande gera milhares de pontos quase
+ *  idênticos, e um traço comum já batia no teto de sanidade do servidor. */
+const DIST_MINIMA_PONTO = 0.01;
+
+/** Mesmo teto de `MAX_PONTOS_ROTA` em `lib/marcacao.ts` — sem isto, o traço
+ *  desenhado na tela podia crescer além do que o servidor guarda
+ *  (`parseMarcacao` corta em silêncio), e o vendedor confirmava um traço que
+ *  não era o que ia pro pipeline: o fim do corte perdia justamente a ponta
+ *  perto da condensadora, que é onde o callout de ligação ancora. */
+const MAX_PONTOS_ROTA = 200;
 
 type Handle = "nw" | "ne" | "sw" | "se";
 type Modo = "aparelho" | "tubulacao";
@@ -140,6 +148,7 @@ export function MarcadorInstalacao({
         if (!desenhando.current) return;
         const p = paraFrac(e.clientX, e.clientY);
         setRota((atual) => {
+          if (atual.length >= MAX_PONTOS_ROTA) return atual;
           const ultimo = atual[atual.length - 1];
           if (ultimo && Math.hypot(p.x - ultimo.x, p.y - ultimo.y) < DIST_MINIMA_PONTO) return atual;
           return [...atual, p];
