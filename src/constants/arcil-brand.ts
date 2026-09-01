@@ -50,6 +50,16 @@ export const SOMBRA_TEXTO = "0 1px 2px rgba(0,0,0,0.95), 0 0 6px rgba(0,0,0,0.9)
 export const SOMBRA_TITULO = "0 2px 6px rgba(0,0,0,0.85)";
 
 /**
+ * "Desenho Técnico" — linha de chamada ortogonal usada quando `modoInfra` é
+ * `gemini_3d` e o próprio Gemini desenha os callouts na cena, ou pelo modo
+ * `vetorial` de fallback. Branco/quase-branco só, sem cor de marca na linha —
+ * mesma técnica já validada em `cassette-commercial-layout.ts`
+ * (`chamadaOrtogonal`), generalizada aqui.
+ */
+export const TRACO_ORTOGONAL = "rgba(255,255,255,0.85)";
+export const TRACO_ORTOGONAL_PONTO = "#FFFFFF";
+
+/**
  * Faixas da imagem onde a moldura institucional (logo, selo, cards de canto,
  * QR) é desenhada. Os callouts ancorados precisam saber disso para não cair
  * embaixo — os módulos que desenham cada parte não se enxergam em tempo de
