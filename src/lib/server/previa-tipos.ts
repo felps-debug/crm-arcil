@@ -18,6 +18,9 @@ export type DadosOverlay = {
   tubulacao: string | null;
   pontoEletrico: boolean | null;
   alcapao: boolean | null;
+  /** "Gesso" | "PVC" | "Modular" | "Outro" — resposta do vendedor pra
+   *  Cassete/Dutado. Vira linha no card DETALHES DA INSTALAÇÃO. */
+  tipoForro: string | null;
   metragemInfra: string | null;
   /** Altura do gabinete (cm), vinda do ERP quando disponível ou do padrão por
    *  tipo+BTU (`resolveEquipmentSpecs`) — usada no painel de detalhe do
