@@ -1,7 +1,7 @@
 import satori from "satori";
 import sharp from "sharp";
 import QRCode from "qrcode";
-import { el, img, b64svg, fontes, logoArcil, logoArcilClaro, type No } from "./satori-nodes";
+import { el, img, b64svg, fontes, logoArcilClaro, type No } from "./satori-nodes";
 import { esquemaInstalacao, esquemaCondensadora, ESQUEMA_W, ESQUEMA_H, ESQUEMA_COND_H } from "./install-schematic";
 import { planoAnotacoes, legendaInfraNo, painelCondensadoraNo, svgDasLinhas } from "./preview-annotations";
 import type { DadosOverlay } from "./previa-tipos";
@@ -206,13 +206,14 @@ function cardModeloNo(d: DadosOverlay, largura: number): No {
  *  `especificacoes()`, no layout de cards). */
 function detalhesInstalacaoNo(d: DadosOverlay, largura: number): No | null {
   const t = d.tipoEquipamento.trim().toLowerCase();
+  const ehCassete = t === "cassete";
   const linhas: string[] = [];
 
   if (d.tipoForro) linhas.push(`Forro: ${d.tipoForro}`);
   if (t === "cassete" && d.alcapao != null) linhas.push(`Alçapão de inspeção: ${d.alcapao ? "incluso" : "não incluso"}`);
   if (d.pontoEletrico != null) linhas.push(`Ponto elétrico: ${d.pontoEletrico ? "já existe" : "a executar"}`);
-  if (d.tubulacao) linhas.push(`Tubulação e dreno: ${d.tubulacao.toLowerCase()}${d.metragemInfra ? ` (≈ ${d.metragemInfra})` : ""}`);
-  else if (d.metragemInfra) linhas.push(`Tubulação e dreno: ≈ ${d.metragemInfra}`);
+  if (d.tubulacao) linhas.push(`${ehCassete ? "Tubulação e dreno" : "Tubulação"}: ${d.tubulacao.toLowerCase()}${d.metragemInfra ? ` (≈ ${d.metragemInfra})` : ""}`);
+  else if (d.metragemInfra) linhas.push(`${ehCassete ? "Tubulação e dreno" : "Metragem de infra"}: ≈ ${d.metragemInfra}`);
 
   if (linhas.length === 0) return null;
 
