@@ -1,7 +1,7 @@
 import satori from "satori";
 import sharp from "sharp";
 import QRCode from "qrcode";
-import { el, img, b64svg, fontes, logoArcil, type No } from "./satori-nodes";
+import { el, img, b64svg, fontes, logoArcil, logoArcilClaro, type No } from "./satori-nodes";
 import { esquemaInstalacao, esquemaCondensadora, ESQUEMA_W, ESQUEMA_H, ESQUEMA_COND_H } from "./install-schematic";
 import { planoAnotacoes, legendaInfraNo, painelCondensadoraNo, svgDasLinhas } from "./preview-annotations";
 import type { DadosOverlay } from "./previa-tipos";
@@ -16,7 +16,6 @@ import {
   SOMBRA_TITULO,
   FAIXA,
   RODAPE_LEGAL,
-  SELO_APROVACAO,
 } from "@/constants/arcil-brand";
 
 import { planoCassetteCommercialV2, svgV2 } from "./layouts/cassette-commercial-layout";
@@ -128,78 +127,58 @@ function iconeGarantiaPara(texto: string): string {
 // Moldura institucional — compartilhada pelos dois layouts
 // ---------------------------------------------------------------------------
 
-/** Logo grande no canto inferior esquerdo, como na referência aprovada. O
- *  selo pequeno "Design created by ARCIL AI" continua sendo aplicado depois,
- *  fora daqui (`route.ts`), no canto superior direito. */
-function logoNo(W: number, H: number): No | null {
-  const src = logoArcil();
+/** Logo no canto inferior esquerdo — cinza translúcida com legenda, mais
+ *  discreta que a cor institucional cheia. Testado e aprovado no layout
+ *  "Desenho Técnico": marca presente sem competir com a foto do cliente. */
+async function logoNo(W: number, H: number): Promise<No | null> {
+  const src = await logoArcilClaro();
   if (!src) return null;
-  const largura = Math.round(W * 0.13);
+  const largura = Math.round(W * 0.115);
+  const altura = Math.round(largura * 0.28);
   return el(
     "div",
-    { position: "absolute", left: Math.round(W * FAIXA.margemFrac), top: Math.round(H - H * 0.075), opacity: 0.92 },
-    img(src, { width: largura, height: Math.round(largura * 0.28), objectFit: "contain" })
+    { position: "absolute", left: Math.round(W * FAIXA.margemFrac), top: Math.round(H - H * 0.075 - altura), flexDirection: "column", opacity: 0.72 },
+    img(src, { width: largura, height: altura, objectFit: "contain" }),
+    el("div", { fontSize: 8, fontStyle: "italic", color: "rgba(255,255,255,0.75)", marginTop: 2 }, "Created by ARCIL AI")
   );
 }
 
+/** QR num card branco arredondado — mais legível sobre foto de qualquer
+ *  tom que o "flutuando direto na cena" do layout anterior. Rótulo curto,
+ *  uma linha só. */
 function qrNo(dataUrl: string | null, W: number, H: number, ehManual: boolean): No | null {
   if (!dataUrl) return null;
-  const lado = Math.round(W * 0.055);
-  const largura = lado + Math.round(W * 0.075);
+  const lado = Math.round(W * 0.05);
+  const pad = 8;
+  const cartao = lado + pad * 2;
+  const largura = cartao + Math.round(W * 0.09);
   return el(
     "div",
     {
       position: "absolute",
       left: Math.round(W - W * FAIXA.margemFrac - largura),
-      top: Math.round(H - H * 0.085),
+      top: Math.round(H - H * 0.075 - cartao),
       width: largura,
       alignItems: "center",
       justifyContent: "flex-end",
     },
     el(
       "div",
-      { flexDirection: "column", alignItems: "flex-end", marginRight: 8, width: largura - lado - 8 },
-      el(
-        "div",
-        { fontSize: 9.5, color: CLARO, textShadow: SOMBRA_TEXTO, textAlign: "right", lineHeight: 1.25 },
-        ehManual ? "Escaneie para acessar o manual" : "Escaneie para conhecer a ARCIL"
-      )
-    ),
-    img(dataUrl, { width: lado, height: lado, borderRadius: 4 })
-  );
-}
-
-function seloAprovacaoNo(W: number, H: number): No {
-  const largura = Math.round(W * 0.235);
-  return el(
-    "div",
-    {
-      position: "absolute",
-      left: Math.round(W * FAIXA.margemFrac),
-      top: Math.round(H * 0.795),
-      width: largura,
-      alignItems: "center",
-      background: CARD_FUNDO,
-      border: `1px solid ${CARD_BORDA}`,
-      borderRadius: CARD_RAIO,
-      padding: "9px 12px",
-    },
-    el(
-      "div",
-      { width: 18, height: 18, borderRadius: 9, background: AZUL, alignItems: "center", justifyContent: "center", marginRight: 9, flexShrink: 0 },
-      img(b64svg(ICONE_CHECK.replace(/stroke="[^"]*"/, 'stroke="#0b1220"')), { width: 11, height: 11 })
+      { fontSize: 9, color: CLARO, textShadow: SOMBRA_TEXTO, textAlign: "right", marginRight: 8, width: largura - cartao - 8 },
+      ehManual ? "Manual de instalação" : "Conheça a ARCIL"
     ),
     el(
       "div",
-      { flexDirection: "column", flex: 1 },
-      el("div", { fontSize: 10.5, fontWeight: 700, color: CLARO, letterSpacing: 0.5 }, SELO_APROVACAO.titulo),
-      el("div", { fontSize: 9.5, color: CINZA, marginTop: 2 }, SELO_APROVACAO.corpo)
+      { width: cartao, height: cartao, background: "#FFFFFF", borderRadius: 10, alignItems: "center", justifyContent: "center" },
+      img(dataUrl, { width: lado, height: lado })
     )
   );
 }
 
-/** Card MODELO: o dado que o cliente mais olha, exatamente com o valor que o
- *  vendedor escolheu no catálogo do ERP — nunca reescrito por IA. */
+/** MODELO: o dado que o cliente mais olha, exatamente com o valor que o
+ *  vendedor escolheu no catálogo do ERP — nunca reescrito por IA. Texto
+ *  solto com sombra, sem caixa/card atrás — mesma linguagem visual dos
+ *  callouts do Gemini, testado e aprovado. */
 function cardModeloNo(d: DadosOverlay, largura: number): No {
   // Sem repetir a marca quando o nome de catálogo do ERP já começa por ela —
   // "SPRINGER MIDEA SPLIT CASSETE ... SPRINGER MIDEA" saiu assim na primeira
@@ -209,23 +188,44 @@ function cardModeloNo(d: DadosOverlay, largura: number): No {
   const linhaProduto = marca && !nome.toUpperCase().startsWith(marca.toUpperCase()) ? `${marca} ${nome}` : nome;
   return el(
     "div",
-    {
-      width: largura,
-      flexDirection: "column",
-      background: CARD_FUNDO,
-      border: `1px solid ${CARD_BORDA}`,
-      borderRadius: CARD_RAIO,
-      padding: "11px 14px",
-    },
-    el("div", { fontSize: 11, fontWeight: 700, color: CLARO, letterSpacing: 0.9 }, "MODELO:"),
-    el("div", { fontSize: 12, color: CLARO, marginTop: 4, lineHeight: 1.35, width: largura - 28 }, linhaProduto || d.produto),
+    { width: largura, flexDirection: "column" },
+    el("div", { fontSize: 11, fontWeight: 700, color: CLARO, letterSpacing: 0.9, textShadow: SOMBRA_TEXTO }, "MODELO"),
+    el("div", { fontSize: 12, fontWeight: 700, color: CLARO, marginTop: 4, lineHeight: 1.35, width: largura - 14, textShadow: SOMBRA_TEXTO }, linhaProduto || d.produto),
     d.capacidade || d.sku
       ? el(
           "div",
-          { fontSize: 10.5, color: CINZA, marginTop: 3 },
+          { fontSize: 10.5, color: CINZA, marginTop: 3, textShadow: SOMBRA_TEXTO },
           [d.capacidade, d.sku ? `SKU ${d.sku}` : null].filter(Boolean).join(" · ")
         )
       : null
+  );
+}
+
+/** DETALHES DA INSTALAÇÃO: respostas específicas do lead que hoje eram
+ *  coletadas mas não apareciam em lugar nenhum da prévia final quando havia
+ *  marcação (só apareciam no layout de cards, sem marcação). Texto solto com
+ *  sombra, mesma regra do MODELO — sem caixa. Cada linha só entra se o dado
+ *  existir para aquele tipo de equipamento (mesma lógica condicional de
+ *  `especificacoes()`, no layout de cards). */
+function detalhesInstalacaoNo(d: DadosOverlay, largura: number): No | null {
+  const t = d.tipoEquipamento.trim().toLowerCase();
+  const linhas: string[] = [];
+
+  if (d.tipoForro) linhas.push(`Forro: ${d.tipoForro}`);
+  if (t === "cassete" && d.alcapao != null) linhas.push(`Alçapão de inspeção: ${d.alcapao ? "incluso" : "não incluso"}`);
+  if (d.pontoEletrico != null) linhas.push(`Ponto elétrico: ${d.pontoEletrico ? "já existe" : "a executar"}`);
+  if (d.tubulacao) linhas.push(`Tubulação e dreno: ${d.tubulacao.toLowerCase()}${d.metragemInfra ? ` (≈ ${d.metragemInfra})` : ""}`);
+  else if (d.metragemInfra) linhas.push(`Tubulação e dreno: ≈ ${d.metragemInfra}`);
+
+  if (linhas.length === 0) return null;
+
+  return el(
+    "div",
+    { width: largura, flexDirection: "column" },
+    el("div", { fontSize: 11, fontWeight: 700, color: CLARO, letterSpacing: 0.9, textShadow: SOMBRA_TEXTO, marginBottom: 5 }, "DETALHES DA INSTALAÇÃO"),
+    ...linhas.map((texto) =>
+      el("div", { fontSize: 10.5, color: CINZA, lineHeight: 1.5, textShadow: SOMBRA_TEXTO }, `- ${texto}`)
+    )
   );
 }
 
@@ -272,7 +272,7 @@ function rodapeLegalNo(W: number, H: number): No {
 // Layout ANCORADO (com marcação do vendedor)
 // ---------------------------------------------------------------------------
 
-function camadaAncorada(d: DadosOverlay, W: number, H: number, qrDataUrl: string | null): No {
+async function camadaAncorada(d: DadosOverlay, W: number, H: number, qrDataUrl: string | null): Promise<No> {
   // `d.marcacao` foi verificado por quem chama; o `!` aqui é o preço de manter
   // a checagem num lugar só em vez de espalhar guardas equivalentes.
   const marcacao = d.marcacao!;
@@ -280,21 +280,20 @@ function camadaAncorada(d: DadosOverlay, W: number, H: number, qrDataUrl: string
   const larguraCard = Math.round(W * 0.21);
 
   // UMA decisão de espelhamento para a imagem inteira: a coluna de cards
-  // (legenda, painel da condensadora, modelo) fica do lado com mais espaço
-  // livre em relação ao aparelho, e os callouts flutuantes vão para o lado
-  // oposto. Quando cada grupo escolhia o próprio lado, com o aparelho marcado
-  // perto de uma borda os dois caíam no mesmo canto, um por cima do outro.
+  // (legenda, painel da condensadora, modelo, detalhes) fica do lado com mais
+  // espaço livre em relação ao aparelho, e os callouts (do Gemini, quando
+  // `gemini_3d`, ou vetoriais no modo de fallback) ficam no lado oposto.
   const centroCaixa = marcacao.caixa.x + marcacao.caixa.w / 2;
   const cardsNaDireita = centroCaixa <= 0.55;
   const xCards = cardsNaDireita ? W - margem - larguraCard : margem;
   const ladoTexto: 1 | -1 = cardsNaDireita ? -1 : 1;
 
+  // Em `gemini_3d` isto devolve plano vazio (ver `planoAnotacoes`) — os
+  // callouts já estão na cena, desenhados pelo Gemini.
   const plano = planoAnotacoes(d, marcacao, W, H, ladoTexto);
 
-  // O selo "Design created by ARCIL AI" é composto depois, colado no topo
-  // direito (route.ts). A coluna começa abaixo dele — na primeira prévia real a
-  // legenda saiu por baixo do selo.
   const topoCards = Math.max(Math.round(H * 0.05), 64);
+  const logo = await logoNo(W, H);
 
   return el(
     "div",
@@ -311,24 +310,23 @@ function camadaAncorada(d: DadosOverlay, W: number, H: number, qrDataUrl: string
     },
     img(svgDasLinhas(plano.linhas, W, H), { position: "absolute", left: 0, top: 0, width: W, height: H }),
     ...plano.nos,
-    // UMA coluna de verdade, não três blocos posicionados em `top` calculado a
+    // UMA coluna de verdade, não blocos posicionados em `top` calculado a
     // dedo. O painel do equipamento muda de altura conforme tenha ou não foto
-    // do produto, então qualquer `top` fixo para o card seguinte acerta num
-    // caso e sobrepõe no outro — foi exatamente o que aconteceu na primeira
-    // prévia real. Com flex column + gap o empilhamento é do layout.
+    // do produto, então qualquer `top` fixo para o próximo card acerta num
+    // caso e sobrepõe no outro. Com flex column + gap o empilhamento é do
+    // layout.
     el(
       "div",
-      { position: "absolute", left: xCards, top: topoCards, width: larguraCard, flexDirection: "column", gap: 12 },
+      { position: "absolute", left: xCards, top: topoCards, width: larguraCard, flexDirection: "column", gap: 14 },
       // Legenda de cores só faz sentido explicando o feixe vetorial que nós
       // desenhamos. Em `gemini_3d` a tubulação sai em cobre/conduíte reais, e
       // uma legenda de cores não corresponde a nada na imagem.
       d.modoInfra !== "gemini_3d" ? legendaInfraNo(larguraCard) : null,
       painelCondensadoraNo(d, larguraCard, CARD_FUNDO, CARD_BORDA, CARD_RAIO),
-      cardModeloNo(d, larguraCard)
+      cardModeloNo(d, larguraCard),
+      detalhesInstalacaoNo(d, larguraCard)
     ),
-    cardLembretesNo(d, W - margem - Math.round(W * 0.235), Math.round(H * 0.7), Math.round(W * 0.235)),
-    seloAprovacaoNo(W, H),
-    logoNo(W, H),
+    logo,
     qrNo(qrDataUrl, W, H, d.qrEhManual === true),
     rodapeLegalNo(W, H)
   );
@@ -561,7 +559,7 @@ export async function comporPrevia(cena: Buffer, dados: DadosOverlay): Promise<B
   const arvore = usaV2
     ? await camadaCassetteV2(dados, largura, altura)
     : dados.marcacao
-      ? camadaAncorada(dados, largura, altura, await qrDataUrl(dados.urlPrevia))
+      ? await camadaAncorada(dados, largura, altura, await qrDataUrl(dados.urlPrevia))
       : camadaCards(dados, largura, altura);
 
   const svg = await satori(arvore as never, { width: largura, height: altura, fonts: fontes() });
