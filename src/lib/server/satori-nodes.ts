@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 
 /**
  * Primitivos compartilhados pelos módulos que desenham a prévia técnica.
@@ -63,4 +64,22 @@ export function logoArcil(): string | null {
     }
   }
   return logoCache || null;
+}
+
+/** Variante cinza/dessaturada da logo — usada no rodapé fixo do layout
+ *  "Desenho Técnico", mais discreta que a cor institucional cheia.
+ *  Processada uma vez com `sharp` e cacheada em base64, igual `logoArcil()`. */
+let logoClaroCache: string | null = null;
+export async function logoArcilClaro(): Promise<string | null> {
+  if (logoClaroCache === null) {
+    try {
+      const bytes = fs.readFileSync(path.join(process.cwd(), "public", "logo-arcil-full.png"));
+      const cinza = await sharp(bytes).greyscale().toBuffer();
+      logoClaroCache = "data:image/png;base64," + cinza.toString("base64");
+    } catch (err) {
+      console.error("[satori-nodes] logo cinza indisponível:", err instanceof Error ? err.message : err);
+      logoClaroCache = "";
+    }
+  }
+  return logoClaroCache || null;
 }
