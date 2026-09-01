@@ -15,13 +15,21 @@
 export type PontoFrac = { x: number; y: number };
 export type CaixaFrac = { x: number; y: number; w: number; h: number };
 
+/** Teto de pontos aceitos em `rota`. O vendedor desenha o traço com o dedo
+ *  (dezenas de pontos por segundo em `pointermove`); sem teto, um traço longo
+ *  vira um payload desproporcional pro que ele carrega (uma polilinha, não
+ *  geometria complexa). O cliente já filtra pontos muito próximos antes de
+ *  mandar — isto aqui é só o piso de sanidade do servidor. */
+const MAX_PONTOS_ROTA = 200;
+
 export type Marcacao = {
   /** Onde o aparelho vai. Obrigatório — é o que dá posição E escala aparente. */
   caixa: CaixaFrac;
-  /** Direção da tubulação/dreno/cabo: sempre 2 pontos (origem no aparelho,
-   *  destino pra onde a infra segue), nunca uma rota ponto a ponto — o
-   *  vendedor faz 1 arrasto, não desenha um caminho. Vazio quando pulou: a
-   *  rota é sintetizada como antes. */
+  /** Traço da tubulação/dreno/cabo, desenhado livre com o dedo — de 2 a
+   *  `MAX_PONTOS_ROTA` pontos. Vazio quando pulou: a rota é sintetizada como
+   *  antes (`preview-annotations.ts`). Aceita também os 2 pontos de um
+   *  arrasto reto (formato anterior desta ferramenta) sem tratamento
+   *  especial: uma reta é só o caso degenerado de um caminho. */
   rota: PontoFrac[];
 };
 
@@ -55,9 +63,9 @@ export function parseMarcacao(bruto: unknown): Marcacao | null {
   if (x == null || y == null || w == null || h == null) return null;
   if (w < 0.03 || h < 0.015) return null;
 
-  // Só os 2 primeiros pontos: a marcação é 1 arrasto (origem -> destino), não
-  // uma rota ponto a ponto. Entrada antiga com mais pontos (versão anterior da
-  // ferramenta) ainda é aceita, só usa os 2 primeiros.
+  // Traço livre: todo ponto capturado durante o gesto, até o teto de sanidade.
+  // Corte pra 2 pontos saiu daqui — era o que impedia o traço à mão livre de
+  // chegar inteiro (`MAX_PONTOS_ROTA`, ver comentário do tipo `Marcacao`).
   const rota: PontoFrac[] = Array.isArray(o.rota)
     ? o.rota
         .map((p) => {
@@ -67,7 +75,7 @@ export function parseMarcacao(bruto: unknown): Marcacao | null {
           return px == null || py == null ? null : { x: px, y: py };
         })
         .filter((p): p is PontoFrac => p !== null)
-        .slice(0, 2)
+        .slice(0, MAX_PONTOS_ROTA)
     : [];
 
   return {
