@@ -60,9 +60,6 @@ const ICONE_TESTE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
 const ICONE_GOTA = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C12 3 6 11 6 15.2a6 6 0 0 0 12 0C18 11 12 3 12 3Z" ${attrs(TRACO)}/></svg>`;
 const ICONE_RAIO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 3 5 14h6l-1 7 8-11h-6l1-7Z" ${attrs(TRACO)}/></svg>`;
 const ICONE_VEDACAO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" ${attrs(TRACO)}/><path d="M8 12h8" ${attrs(TRACO)}/></svg>`;
-// "✓" (U+2713) não existe na Montserrat e saía como quadradinho de glifo
-// ausente — o check vem desenhado, não como caractere.
-const ICONE_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 12.5 9.5 18 20 6" ${attrs(TRACO)}/></svg>`;
 
 const ICONES_PASSO = [ICONE_MEDIR, ICONE_FURAR, ICONE_TUBULACAO, ICONE_GABINETE, ICONE_TESTE];
 
@@ -225,35 +222,6 @@ function detalhesInstalacaoNo(d: DadosOverlay, largura: number): No | null {
     el("div", { fontSize: 11, fontWeight: 700, color: CLARO, letterSpacing: 0.9, textShadow: SOMBRA_TEXTO, marginBottom: 5 }, "DETALHES DA INSTALAÇÃO"),
     ...linhas.map((texto) =>
       el("div", { fontSize: 10.5, color: CINZA, lineHeight: 1.5, textShadow: SOMBRA_TEXTO }, `- ${texto}`)
-    )
-  );
-}
-
-/** Card de lembretes do rodapé. O conteúdo vem de
- *  `HVAC_STANDARDS[tipo].recomendacoes_garantia` — é o texto certo para o tipo
- *  de equipamento, não uma lista fixa igual para todo mundo. */
-function cardLembretesNo(d: DadosOverlay, left: number, top: number, largura: number): No {
-  return el(
-    "div",
-    {
-      position: "absolute",
-      left,
-      top,
-      width: largura,
-      flexDirection: "column",
-      background: CARD_FUNDO,
-      border: `1px solid ${CARD_BORDA}`,
-      borderRadius: CARD_RAIO,
-      padding: "11px 14px",
-    },
-    el("div", { fontSize: 11, fontWeight: 700, color: CLARO, letterSpacing: 0.9, marginBottom: 7 }, "LEMBRETES IMPORTANTES PARA INSTALAÇÃO"),
-    ...d.recomendacoesGarantia.slice(0, 5).map((texto) =>
-      el(
-        "div",
-        { alignItems: "flex-start", marginBottom: 4 },
-        img(b64svg(ICONE_CHECK), { width: 11, height: 11, marginRight: 8, marginTop: 2, flexShrink: 0 }),
-        el("div", { fontSize: 10.5, color: CLARO, lineHeight: 1.35, flex: 1 }, texto)
-      )
     )
   );
 }
