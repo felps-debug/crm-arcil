@@ -170,7 +170,11 @@ export function ResultadoPainel({
         </ConsoleButton>
       </div>
 
-      <Tabs.Root defaultValue="ajuste" className="mt-4">
+      {/* `key={versaoAtiva}` remonta as abas ao trocar de versão — sem isto,
+          ficar na aba "Notas" e trocar pra uma versão sem nota deixa o
+          Radix com um valor de aba interno que não existe mais (a aba some,
+          mas nada reseleciona outra), e o painel fica em branco. */}
+      <Tabs.Root key={versaoAtiva} defaultValue="ajuste" className="mt-4">
         <Tabs.List className="flex gap-1 border-b border-[var(--border)]">
           <Tabs.Trigger value="ajuste" className={CLASSE_ABA}>
             Ajustar imagem
