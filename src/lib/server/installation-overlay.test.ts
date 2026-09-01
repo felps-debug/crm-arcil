@@ -41,6 +41,7 @@ const BASE: DadosOverlay = {
   tubulacao: "Embutidos no forro",
   pontoEletrico: false,
   alcapao: true,
+  tipoForro: "Gesso",
   metragemInfra: "6 m",
   alturaGabineteCm: 26,
   larguraGabineteCm: 84,
@@ -113,6 +114,12 @@ describe("comporPrevia", () => {
 
   it("cai no layout de cards quando o vendedor pula a marcação", async () => {
     const meta = await render("cards-sem-marcacao", BASE, 1536, 864);
+    expect(meta.width).toBe(1536);
+    expect(meta.height).toBe(864);
+  }, 30_000);
+
+  it("compõe a camada ancorada em modoInfra=gemini_3d sem desenhar callout vetorial duplicado", async () => {
+    const meta = await render("ancorado-gemini3d", { ...COM_MARCACAO, modoInfra: "gemini_3d" }, 1536, 864);
     expect(meta.width).toBe(1536);
     expect(meta.height).toBe(864);
   }, 30_000);
