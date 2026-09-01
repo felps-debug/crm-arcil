@@ -175,7 +175,7 @@ function buildSteps(tipo: string | null): Step[] {
     // vendedor com a imagem fresca na cabeca. Pode ser pulado.
     {
       key: "marcacao",
-      question: "Marque na foto onde o aparelho vai, por onde passa a tubulacao e onde fica o ponto eletrico.",
+      question: "Marque na foto onde o aparelho vai e, se souber, pra onde a infraestrutura sai.",
       type: "marcacao",
     },
   ];
@@ -617,11 +617,7 @@ function ChatbotPageInner() {
     (m: Marcacao) => {
       if (!current || current.type !== "marcacao") return;
       setMarcacao(m);
-      const partes = [
-        "Aparelho marcado na foto",
-        m.rota.length >= 2 ? "caminho da tubulacao tracado" : null,
-        m.pontoEletrico ? "ponto eletrico marcado" : null,
-      ].filter(Boolean);
+      const partes = ["Aparelho marcado na foto", m.rota.length >= 2 ? "direcao da infraestrutura indicada" : null].filter(Boolean);
       const resumo = partes.join(", ") + ".";
       advance({ ...answers, marcacao: resumo }, { role: "user", content: resumo });
     },

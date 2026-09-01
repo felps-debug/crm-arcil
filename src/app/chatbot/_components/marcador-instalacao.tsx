@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Check, Eraser, MousePointerSquareDashed, Route, Undo2, Zap } from "lucide-react";
+import { Check, Eraser, MapPin } from "lucide-react";
 import { ConsoleButton } from "@/components/console/console-shell";
 import type { CaixaFrac, Marcacao, PontoFrac } from "@/lib/marcacao";
 import type { TipoEquipamento } from "./produto-picker";
@@ -16,12 +16,19 @@ import type { TipoEquipamento } from "./produto-picker";
  * uma imagem-guia para o Gemini (que posiciona a cena aproximadamente) e vira a
  * âncora EXATA dos callouts, cotas e rota que o CRM desenha por cima.
  *
+ * Interação reduzida ao mínimo: 1 toque posiciona o aparelho (tamanho vem do
+ * palpite por família, não é redimensionável — um vendedor no meio de uma
+ * visita não vai afinar cantos de retângulo) e 1 arrasto define a direção da
+ * infraestrutura (reta, não uma rota ponto a ponto). O ponto elétrico não tem
+ * marca própria: a pergunta "já existe ponto elétrico?" do questionário já
+ * cobre isso.
+ *
  * Decisões de implementação que não são estilo:
  *
  * - **SVG sobre `<img>`, não `<canvas>`.** Cada marca é um nó do DOM, então
- *   hit-testing, handles de arraste e re-render em mudança de tamanho vêm de
- *   graça. Com canvas seria preciso reimplementar os três, além de lidar com
- *   `devicePixelRatio` para o traço não sair borrado no celular.
+ *   hit-testing e re-render em mudança de tamanho vêm de graça. Com canvas
+ *   seria preciso reimplementar os dois, além de lidar com `devicePixelRatio`
+ *   para o traço não sair borrado no celular.
  * - **Pointer Events, não mouse/touch separados.** Um único conjunto de
  *   handlers atende dedo e mouse — que é o requisito (campo no celular,
  *   escritório no desktop). `touch-action: none` impede o navegador de rolar a
@@ -29,13 +36,14 @@ import type { TipoEquipamento } from "./produto-picker";
  * - **Tudo em fração 0-1.** A foto é exibida numa largura diferente em cada
  *   tela, o Gemini devolve a cena num tamanho que não escolhemos, e a camada
  *   vetorial compõe num terceiro. Pixel de tela não sobrevive a isso.
+ * - **Tap vs. arrasto decidido pela distância percorrida em pixels de tela**
+ *   (`LIMIAR_ARRASTO`), não em fração — fração depende da largura da foto na
+ *   tela, e um limiar em fração ficaria apertado demais numa foto exibida
+ *   pequena e frouxo demais numa grande.
  */
 
-type Ferramenta = "caixa" | "rota" | "eletrico";
-
-/** Palpite inicial da caixa por família de equipamento. O vendedor corrige
- *  arrastando — é bem mais rápido que desenhar do zero, e é o uso honesto do
- *  que sabemos sem detectar nada na foto: cassete e dutado moram no forro,
+/** Palpite inicial da caixa por família de equipamento — só decide TAMANHO
+ *  agora (a posição some no primeiro toque). Cassete e dutado moram no forro,
  *  hi-wall fica alto na parede, piso-teto embaixo, janela num vão a meia
  *  altura. */
 const CAIXA_INICIAL: Record<string, CaixaFrac> = {
@@ -47,11 +55,21 @@ const CAIXA_INICIAL: Record<string, CaixaFrac> = {
 };
 const CAIXA_PADRAO: CaixaFrac = { x: 0.36, y: 0.24, w: 0.28, h: 0.09 };
 
-/** Alvo de toque dos handles. Desenhados com 7px de raio, mas capturam num
- *  raio bem maior — um handle de 7px é impossível de pegar com o dedo. */
-const RAIO_PEGADA = 26;
+/** Abaixo disso, o gesto é um toque (posiciona o aparelho); acima, é um
+ *  arrasto (traça a direção da infra). Grande o bastante para não confundir
+ *  o tremor natural de um toque de dedo com início de arrasto. */
+const LIMIAR_ARRASTO_PX = 12;
 
-type Alca = "nw" | "ne" | "sw" | "se" | "mover";
+function caixaCentradaEm(p: PontoFrac, tamanho: CaixaFrac): CaixaFrac {
+  const w = tamanho.w;
+  const h = tamanho.h;
+  return {
+    x: Math.min(1 - w, Math.max(0, p.x - w / 2)),
+    y: Math.min(1 - h, Math.max(0, p.y - h / 2)),
+    w,
+    h,
+  };
+}
 
 export function MarcadorInstalacao({
   fotoUrl,
@@ -67,11 +85,11 @@ export function MarcadorInstalacao({
   disabled?: boolean;
 }) {
   const areaRef = useRef<HTMLDivElement>(null);
-  const [ferramenta, setFerramenta] = useState<Ferramenta>("caixa");
+  const tamanhoPadrao = useMemo(() => (tipo && CAIXA_INICIAL[tipo]) || CAIXA_PADRAO, [tipo]);
   const [caixa, setCaixa] = useState<CaixaFrac>(() => (tipo && CAIXA_INICIAL[tipo]) || CAIXA_PADRAO);
   const [rota, setRota] = useState<PontoFrac[]>([]);
-  const [eletrico, setEletrico] = useState<PontoFrac | null>(null);
-  const arraste = useRef<{ alca: Alca; origem: PontoFrac; caixaInicial: CaixaFrac } | null>(null);
+  const [linhaEmCurso, setLinhaEmCurso] = useState<PontoFrac | null>(null);
+  const gesto = useRef<{ inicioClientX: number; inicioClientY: number; origemFrac: PontoFrac; virouArrasto: boolean } | null>(null);
 
   /** Converte coordenada de tela para fração da foto. Usa
    *  `getBoundingClientRect` a cada evento em vez de guardar o tamanho: a foto
@@ -86,140 +104,72 @@ export function MarcadorInstalacao({
     };
   }, []);
 
-  const alcaSob = useCallback(
-    (p: PontoFrac): Alca | null => {
-      const rect = areaRef.current?.getBoundingClientRect();
-      if (!rect) return null;
-      const dist = (fx: number, fy: number) => Math.hypot((p.x - fx) * rect.width, (p.y - fy) * rect.height);
-      const cantos: [Alca, number, number][] = [
-        ["nw", caixa.x, caixa.y],
-        ["ne", caixa.x + caixa.w, caixa.y],
-        ["sw", caixa.x, caixa.y + caixa.h],
-        ["se", caixa.x + caixa.w, caixa.y + caixa.h],
-      ];
-      for (const [alca, fx, fy] of cantos) if (dist(fx, fy) <= RAIO_PEGADA) return alca;
-      const dentro = p.x >= caixa.x && p.x <= caixa.x + caixa.w && p.y >= caixa.y && p.y <= caixa.y + caixa.h;
-      return dentro ? "mover" : null;
-    },
-    [caixa]
-  );
-
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (disabled) return;
       const p = paraFrac(e.clientX, e.clientY);
-
-      if (ferramenta === "rota") {
-        setRota((r) => [...r, p]);
-        return;
-      }
-      if (ferramenta === "eletrico") {
-        setEletrico(p);
-        return;
-      }
-
-      const alca = alcaSob(p);
-      // Fora da caixa com a ferramenta de caixa ativa: recomeça o retângulo a
-      // partir daqui. É o gesto que um vendedor tenta primeiro quando o palpite
-      // inicial caiu longe do lugar certo.
-      const alcaEfetiva: Alca = alca ?? "se";
-      if (!alca) setCaixa({ x: p.x, y: p.y, w: 0.001, h: 0.001 });
-      arraste.current = { alca: alcaEfetiva, origem: p, caixaInicial: alca ? caixa : { x: p.x, y: p.y, w: 0.001, h: 0.001 } };
+      gesto.current = { inicioClientX: e.clientX, inicioClientY: e.clientY, origemFrac: p, virouArrasto: false };
       e.currentTarget.setPointerCapture(e.pointerId);
     },
-    [disabled, ferramenta, paraFrac, alcaSob, caixa]
+    [disabled, paraFrac]
   );
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
-      const a = arraste.current;
-      if (!a) return;
-      const p = paraFrac(e.clientX, e.clientY);
-      const dx = p.x - a.origem.x;
-      const dy = p.y - a.origem.y;
-      const c = a.caixaInicial;
-
-      if (a.alca === "mover") {
-        setCaixa({
-          x: Math.min(1 - c.w, Math.max(0, c.x + dx)),
-          y: Math.min(1 - c.h, Math.max(0, c.y + dy)),
-          w: c.w,
-          h: c.h,
-        });
-        return;
-      }
-
-      // Cantos: recalcula as duas bordas afetadas e normaliza. Normalizar é o
-      // que permite arrastar o canto "para o outro lado" sem produzir largura
-      // negativa (que renderizaria um rect vazio no SVG).
-      let x1 = c.x;
-      let y1 = c.y;
-      let x2 = c.x + c.w;
-      let y2 = c.y + c.h;
-      if (a.alca === "nw" || a.alca === "sw") x1 = c.x + dx;
-      if (a.alca === "ne" || a.alca === "se") x2 = c.x + c.w + dx;
-      if (a.alca === "nw" || a.alca === "ne") y1 = c.y + dy;
-      if (a.alca === "sw" || a.alca === "se") y2 = c.y + c.h + dy;
-      const nx = Math.max(0, Math.min(x1, x2));
-      const ny = Math.max(0, Math.min(y1, y2));
-      setCaixa({ x: nx, y: ny, w: Math.min(1 - nx, Math.abs(x2 - x1)), h: Math.min(1 - ny, Math.abs(y2 - y1)) });
+      const g = gesto.current;
+      if (!g) return;
+      const distPx = Math.hypot(e.clientX - g.inicioClientX, e.clientY - g.inicioClientY);
+      if (!g.virouArrasto && distPx < LIMIAR_ARRASTO_PX) return;
+      g.virouArrasto = true;
+      // A partir do momento em que virou arrasto, a linha nasce sempre do
+      // centro do aparelho — de onde o dedo apertou primeiro não importa, o
+      // que importa é a direção/distância até onde soltou.
+      setLinhaEmCurso(paraFrac(e.clientX, e.clientY));
     },
     [paraFrac]
   );
 
-  const onPointerUp = useCallback(() => {
-    arraste.current = null;
-  }, []);
-
-  const desfazer = useCallback(() => {
-    if (ferramenta === "rota") setRota((r) => r.slice(0, -1));
-    else if (ferramenta === "eletrico") setEletrico(null);
-    else setCaixa((tipo && CAIXA_INICIAL[tipo]) || CAIXA_PADRAO);
-  }, [ferramenta, tipo]);
-
-  const limpar = useCallback(() => {
-    setCaixa((tipo && CAIXA_INICIAL[tipo]) || CAIXA_PADRAO);
-    setRota([]);
-    setEletrico(null);
-  }, [tipo]);
-
-  const caixaValida = caixa.w >= 0.03 && caixa.h >= 0.015;
-  const rotaPath = useMemo(
-    () => (rota.length >= 2 ? "M " + rota.map((p) => `${p.x * 100} ${p.y * 100}`).join(" L ") : null),
-    [rota]
+  const onPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      const g = gesto.current;
+      gesto.current = null;
+      if (!g || disabled) {
+        setLinhaEmCurso(null);
+        return;
+      }
+      if (g.virouArrasto) {
+        const fim = paraFrac(e.clientX, e.clientY);
+        setRota([{ x: caixa.x + caixa.w / 2, y: caixa.y + caixa.h / 2 }, fim]);
+      } else {
+        setCaixa(caixaCentradaEm(g.origemFrac, tamanhoPadrao));
+      }
+      setLinhaEmCurso(null);
+    },
+    [disabled, caixa, tamanhoPadrao, paraFrac]
   );
+
+  const limparRota = useCallback(() => setRota([]), []);
+
+  const limparTudo = useCallback(() => {
+    setCaixa(tamanhoPadrao);
+    setRota([]);
+  }, [tamanhoPadrao]);
+
+  const centro = { x: caixa.x + caixa.w / 2, y: caixa.y + caixa.h / 2 };
+  const rotaPath = useMemo(() => {
+    const pontos = linhaEmCurso ? [centro, linhaEmCurso] : rota;
+    return pontos.length >= 2 ? "M " + pontos.map((p) => `${p.x * 100} ${p.y * 100}`).join(" L ") : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rota, linhaEmCurso, caixa]);
 
   const confirmar = useCallback(() => {
-    if (!caixaValida) return;
-    onConfirm({ caixa, rota: rota.length >= 2 ? rota : [], pontoEletrico: eletrico });
-  }, [caixaValida, caixa, rota, eletrico, onConfirm]);
-
-  const botaoFerramenta = (id: Ferramenta, Icone: typeof Route, rotulo: string) => (
-    <ConsoleButton
-      key={id}
-      icon={Icone}
-      active={ferramenta === id}
-      onClick={() => setFerramenta(id)}
-      className="flex-1 justify-center"
-    >
-      {rotulo}
-    </ConsoleButton>
-  );
+    onConfirm({ caixa, rota });
+  }, [caixa, rota, onConfirm]);
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        {botaoFerramenta("caixa", MousePointerSquareDashed, "Aparelho")}
-        {botaoFerramenta("rota", Route, "Tubulação")}
-        {botaoFerramenta("eletrico", Zap, "Elétrico")}
-      </div>
-
       <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-        {ferramenta === "caixa"
-          ? "Arraste para posicionar e redimensionar o retângulo onde o aparelho será instalado."
-          : ferramenta === "rota"
-            ? "Toque ponto a ponto no caminho da tubulação, do aparelho até a saída para a condensadora."
-            : "Toque onde fica o ponto elétrico."}
+        Toque na foto onde o aparelho vai ficar. Se a infraestrutura sobe, desce ou sai pro lado, arraste na direção que ela segue.
       </p>
 
       <div
@@ -229,7 +179,7 @@ export function MarcadorInstalacao({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         className="relative w-full touch-none select-none overflow-hidden rounded-[8px] border border-[var(--border)]"
-        style={{ cursor: ferramenta === "caixa" ? "crosshair" : "pointer" }}
+        style={{ cursor: "crosshair" }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={fotoUrl} alt="Foto do ambiente" className="block w-full" draggable={false} />
@@ -263,59 +213,22 @@ export function MarcadorInstalacao({
               vectorEffect="non-scaling-stroke"
             />
           ) : null}
-          {rota.map((p, i) => (
-            <circle key={i} cx={p.x * 100} cy={p.y * 100} r={0.8} fill="#F5C542" vectorEffect="non-scaling-stroke" />
-          ))}
-          {eletrico ? (
-            <circle
-              cx={eletrico.x * 100}
-              cy={eletrico.y * 100}
-              r={1.4}
-              fill="rgba(245,197,66,0.5)"
-              stroke="#F5C542"
-              strokeWidth={0.4}
-              vectorEffect="non-scaling-stroke"
-            />
-          ) : null}
         </svg>
-
-        {/* Handles como elementos HTML, não SVG: com `viewBox` esticado, um
-            círculo SVG sairia ovalado em foto que não é quadrada. */}
-        {(
-          [
-            [caixa.x, caixa.y],
-            [caixa.x + caixa.w, caixa.y],
-            [caixa.x, caixa.y + caixa.h],
-            [caixa.x + caixa.w, caixa.y + caixa.h],
-          ] as const
-        ).map(([fx, fy], i) => (
-          <div
-            key={i}
-            className="pointer-events-none absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-blue-500 shadow"
-            style={{ left: `${fx * 100}%`, top: `${fy * 100}%` }}
-          />
-        ))}
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <ConsoleButton icon={Undo2} onClick={desfazer} className="flex-1 justify-center">
-          Desfazer
+        <ConsoleButton icon={Eraser} onClick={limparRota} disabled={rota.length === 0} className="flex-1 justify-center">
+          Tirar direção
         </ConsoleButton>
-        <ConsoleButton icon={Eraser} onClick={limpar} className="flex-1 justify-center">
-          Limpar
+        <ConsoleButton icon={MapPin} onClick={limparTudo} className="flex-1 justify-center">
+          Recomeçar
         </ConsoleButton>
         <ConsoleButton onClick={onSkip} className="flex-1 justify-center">
           Pular
         </ConsoleButton>
       </div>
 
-      <ConsoleButton
-        icon={Check}
-        active
-        onClick={confirmar}
-        disabled={disabled || !caixaValida}
-        className="w-full justify-center"
-      >
+      <ConsoleButton icon={Check} active onClick={confirmar} disabled={disabled} className="w-full justify-center">
         Confirmar marcação
       </ConsoleButton>
     </div>

@@ -70,7 +70,6 @@ const COM_MARCACAO: DadosOverlay = {
       { x: 0.88, y: 0.2 },
       { x: 1.0, y: 0.19 },
     ],
-    pontoEletrico: { x: 0.3, y: 0.33 },
   },
 };
 
@@ -107,7 +106,6 @@ describe("comporPrevia", () => {
           { x: 0.3, y: 0.4 },
           { x: 0.0, y: 0.44 },
         ],
-        pontoEletrico: null,
       },
     }, 1536, 864);
     expect(meta.width).toBe(1536);

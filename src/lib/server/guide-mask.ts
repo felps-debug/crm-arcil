@@ -22,7 +22,6 @@ import type { Marcacao } from "@/lib/marcacao";
 
 export const COR_GUIA_CAIXA = "#FF00FF";
 export const COR_GUIA_ROTA = "#00FFFF";
-export const COR_GUIA_ELETRICO = "#FFFF00";
 
 /**
  * @returns base64 (sem prefixo `data:`) do JPEG da imagem-guia, ou `null` em
@@ -81,16 +80,11 @@ export async function renderGuideMask(fotoOriginal: Buffer, m: Marcacao): Promis
         `stroke="${COR_GUIA_CAIXA}" stroke-width="${traco}" stroke-linecap="round"/>`
     );
 
+    // Sempre 2 pontos agora (1 arrasto, não uma rota ponto a ponto), mas o
+    // desenho não muda: uma reta é só o caso degenerado de um caminho.
     if (m.rota.length >= 2) {
       const d = "M " + m.rota.map((p) => `${px(p.x)} ${py(p.y)}`).join(" L ");
       partes.push(`<path d="${d}" fill="none" stroke="${COR_GUIA_ROTA}" stroke-width="${traco}" stroke-linecap="round" stroke-linejoin="round"/>`);
-    }
-
-    if (m.pontoEletrico) {
-      partes.push(
-        `<circle cx="${px(m.pontoEletrico.x)}" cy="${py(m.pontoEletrico.y)}" r="${traco * 2.5}" ` +
-          `fill="${COR_GUIA_ELETRICO}" fill-opacity="0.55" stroke="${COR_GUIA_ELETRICO}" stroke-width="${traco}"/>`
-      );
     }
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${partes.join("")}</svg>`;

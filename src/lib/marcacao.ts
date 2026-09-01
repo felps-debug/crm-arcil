@@ -18,11 +18,11 @@ export type CaixaFrac = { x: number; y: number; w: number; h: number };
 export type Marcacao = {
   /** Onde o aparelho vai. Obrigatório — é o que dá posição E escala aparente. */
   caixa: CaixaFrac;
-  /** Caminho da tubulação/dreno/cabo, do aparelho até onde sai de quadro.
-   *  Vazio quando o vendedor pulou: aí a rota é sintetizada como antes. */
+  /** Direção da tubulação/dreno/cabo: sempre 2 pontos (origem no aparelho,
+   *  destino pra onde a infra segue), nunca uma rota ponto a ponto — o
+   *  vendedor faz 1 arrasto, não desenha um caminho. Vazio quando pulou: a
+   *  rota é sintetizada como antes. */
   rota: PontoFrac[];
-  /** Ponto elétrico, quando o vendedor marcou. */
-  pontoEletrico: PontoFrac | null;
 };
 
 const frac = (v: unknown): number | null => {
@@ -55,6 +55,9 @@ export function parseMarcacao(bruto: unknown): Marcacao | null {
   if (x == null || y == null || w == null || h == null) return null;
   if (w < 0.03 || h < 0.015) return null;
 
+  // Só os 2 primeiros pontos: a marcação é 1 arrasto (origem -> destino), não
+  // uma rota ponto a ponto. Entrada antiga com mais pontos (versão anterior da
+  // ferramenta) ainda é aceita, só usa os 2 primeiros.
   const rota: PontoFrac[] = Array.isArray(o.rota)
     ? o.rota
         .map((p) => {
@@ -64,23 +67,14 @@ export function parseMarcacao(bruto: unknown): Marcacao | null {
           return px == null || py == null ? null : { x: px, y: py };
         })
         .filter((p): p is PontoFrac => p !== null)
-        .slice(0, 24)
+        .slice(0, 2)
     : [];
-
-  let pontoEletrico: PontoFrac | null = null;
-  if (o.pontoEletrico && typeof o.pontoEletrico === "object") {
-    const pe = o.pontoEletrico as Record<string, unknown>;
-    const px = frac(pe.x);
-    const py = frac(pe.y);
-    if (px != null && py != null) pontoEletrico = { x: px, y: py };
-  }
 
   return {
     caixa: { x: Math.min(x, 1 - w), y: Math.min(y, 1 - h), w, h },
     // Uma rota de 1 ponto não é um caminho, é um toque solto — descartada aqui
     // em vez de virar uma "linha" de comprimento zero lá na frente.
     rota: rota.length >= 2 ? rota : [],
-    pontoEletrico,
   };
 }
 
@@ -97,7 +91,6 @@ export function descreverMarcacao(m: Marcacao): string {
   const partes = [
     `O vendedor marcou o local exato do equipamento: ${horizontal}, ${vertical} da foto, ocupando cerca de ${largura}% da largura da imagem`,
   ];
-  if (m.rota.length >= 2) partes.push("e traçou o caminho da infraestrutura saindo do equipamento até a unidade externa");
-  if (m.pontoEletrico) partes.push("e marcou a posição do ponto elétrico");
+  if (m.rota.length >= 2) partes.push("e indicou a direção pra onde a infraestrutura sai do equipamento");
   return partes.join(", ") + ".";
 }
