@@ -928,6 +928,7 @@ export async function getFinancialHandoffBoard(): Promise<FinancialBoardItem[]> 
       openAmount: boletos.reduce((sum, boleto) => sum + boleto.valor, 0),
       paidAmount: paidBoletos.reduce((sum, boleto) => sum + boleto.valor, 0),
       paidBoletoCount: paidBoletos.length,
+      handoffSentAt: lead.handoff_sent_at ?? null,
       handoffAcceptedAt: lead.handoff_accepted_at ?? null,
       handoffStaffOkAt: lead.handoff_staff_ok_at ?? null,
       // Como este cliente foi parar em atendimento humano. `card` = a Priscila

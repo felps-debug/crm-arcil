@@ -9,8 +9,6 @@ import {
   Send,
   ShieldAlert,
   DollarSign,
-  CheckCircle2,
-  XCircle,
   ChevronDown,
   ChevronRight,
   RefreshCw,
@@ -24,11 +22,12 @@ import { useSupabase } from "@/hooks/use-supabase";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/utils";
 import { getCobrancaLog, getFollowupsByType } from "@/lib/supabase/queries";
-import type { CobrancaLog, Followup } from "@/types";
+import type { CobrancaLog } from "@/types";
 import { DispararTab } from "./_components/disparar-tab";
 import { MonitoramentoTab } from "./_components/monitoramento-tab";
 import { FinancialHandoffBoard } from "./_components/financial-handoff-board";
-import { parseMoneyToNumber, proximoToque } from "./cobranca-helpers";
+import { FollowupsTab } from "./_components/followups-tab";
+import { parseMoneyToNumber } from "./cobranca-helpers";
 
 type Tab = "disparar" | "logs" | "financial" | "followups" | "tecnico";
 
@@ -195,56 +194,7 @@ function CobrancaPageInner() {
 
         {tab === "followups" && (
           <motion.div key="followups" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ConsoleCard pad={false}>
-              <div className="border-b border-[var(--border)] px-4 py-3">
-                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Follow-ups de Cobrança</h2>
-                <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">Acompanhamento de respostas</p>
-              </div>
-              {loadingFu ? (
-                <div className="p-4"><ConsoleLoading /></div>
-              ) : errorFu ? (
-                <div className="p-4"><ConsoleError message={errorFu} /></div>
-              ) : !followups?.length ? (
-                <p className="py-12 text-center text-[13px] text-[var(--text-muted)]">Nenhum follow-up</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-left text-[12px]">
-                    <thead>
-                      <tr className="border-b border-[var(--border)] bg-[var(--bg-inset)]">
-                        {["Cliente", "Telefone", "Step", "Próximo toque", "Respondeu", "Última Msg", "Status"].map((h) => (
-                          <th key={h} className="whitespace-nowrap px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {followups.map((f) => (
-                        <tr key={f.id} className="border-b border-[var(--border)] last:border-0">
-                          <td className="px-3 py-2.5 font-semibold text-[var(--text-primary)]">{f.nome_cliente ?? "—"}</td>
-                          <td className="px-3 py-2.5 font-data text-[var(--text-secondary)]">{f.numero_cliente ?? "—"}</td>
-                          <td className="px-3 py-2.5">
-                            <ConsoleStatus tone={f.followup_step && f.followup_step >= 3 ? "red" : "blue"}>Step {f.followup_step ?? 0}</ConsoleStatus>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <ProximoToqueCell followup={f} />
-                          </td>
-                          <td className="px-3 py-2.5">
-                            {f.respondeu ? <CheckCircle2 size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-[var(--text-muted)]" />}
-                          </td>
-                          <td className="px-3 py-2.5 font-data text-[11px] text-[var(--text-muted)]">
-                            {f.ultima_msg_ia ? new Date(f.ultima_msg_ia).toLocaleString("pt-BR") : "—"}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <ConsoleStatus tone={f.status === "PENDING" ? "amber" : "slate"}>{f.status ?? "—"}</ConsoleStatus>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </ConsoleCard>
+            <FollowupsTab followups={followups} loading={loadingFu} error={errorFu} />
           </motion.div>
         )}
 
@@ -339,15 +289,4 @@ function CobrancaPageInner() {
       <CobrancaLogDrawer log={selectedLog} followup={selectedFollowup} onClose={() => setSelectedLog(null)} />
     </ConsolePage>
   );
-}
-
-/** Quando o próximo follow-up deste cliente sai, pela mesma régua que o cron do
- *  Postgres usa. Sem contador ao vivo: a aba inteira é um retrato do momento em
- *  que carregou, e um relógio correndo ao lado de números parados enganaria. */
-function ProximoToqueCell({ followup }: { followup: Followup }) {
-  const { texto, tone } = proximoToque(followup);
-  if (tone === "slate") {
-    return <span className="text-[11px] text-[var(--text-muted)]">{texto}</span>;
-  }
-  return <ConsoleStatus tone={tone}>{texto}</ConsoleStatus>;
 }

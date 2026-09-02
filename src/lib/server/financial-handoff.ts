@@ -37,6 +37,7 @@ export type FinancialBoardItem = {
    *  de decisões — vem do snapshot do disparo, cruzado por empresa+documento. */
   paidAmount: number;
   paidBoletoCount: number;
+  handoffSentAt: string | null;
   handoffAcceptedAt: string | null;
   handoffStaffOkAt: string | null;
   /** `card` = veio de handoff do agente (o financeiro recebeu aviso no
