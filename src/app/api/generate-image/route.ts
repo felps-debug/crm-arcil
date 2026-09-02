@@ -400,6 +400,21 @@ export async function POST(request: NextRequest) {
   let generatedImageUrl: string | null = null;
   let vazamentoPersistente = false;
 
+  // Pede pro Gemini desenhar, na mesma chamada (mesmo custo de uma geração
+  // só), um inset com a condensadora real instalada no local que o vendedor
+  // respondeu — substitui o card estático "EQUIPAMENTO" (foto de vitrine)
+  // que existia antes. Só faz sentido com marcação (é a mesma faixa lateral
+  // reservada pros cards vetoriais), local respondido e foto do produto pra
+  // o modelo copiar o aparelho real — sem qualquer um dos três o Gemini não
+  // teria o que precisa e o inset saía inventado ou genérico demais.
+  const unidadeExternaTexto = typeof collectedData.unidade_externa === "string" ? collectedData.unidade_externa.trim() : "";
+  const desenharInsetCondensadora = Boolean(marcacao) && Boolean(unidadeExternaTexto) && Boolean(productImageBase64);
+  // Mesmo lado que `installation-overlay.ts` (`camadaAncorada`) vai calcular
+  // depois pra coluna de cards — os dois olham só `marcacao.caixa`, então
+  // ficam sempre de acordo mesmo calculados em processos/momentos diferentes.
+  const ladoInsetCondensadora: "esquerda" | "direita" =
+    marcacao && marcacao.caixa.x + marcacao.caixa.w / 2 <= 0.55 ? "direita" : "esquerda";
+
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_GERACAO; tentativa++) {
     // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node.
     // O fetch fica dentro de try/catch porque, sem ele, uma falha de rede virava um
@@ -413,7 +428,12 @@ export async function POST(request: NextRequest) {
         headers: { "Content-Type": "application/json" },
         signal: AbortSignal.timeout(240_000),
         body: JSON.stringify({
-          lead_id: leadId,
+          // Repetir com o MESMO lead_id faz o node "COLOCA NO STORAGE3" do n8n
+          // tentar gravar de novo em `PDF/{lead_id}` — chave que a primeira
+          // tentativa já ocupou — e o Storage devolve 409 Duplicate. Só a
+          // retentativa (guia vazou) precisa de chave própria; a chamada normal
+          // (99% dos casos) mantém o lead_id puro, sem mudar nada pra ela.
+          lead_id: tentativa > 1 ? `${leadId}-retry${tentativa}` : leadId,
           image_url: imageUrl,
           image_base64: imageBase64,
           image_description: imageDescription,
@@ -430,6 +450,8 @@ export async function POST(request: NextRequest) {
           // entre "não desenhe infraestrutura nenhuma" e "desenhe o line set em
           // 3D semitransparente" — os dois nunca podem valer ao mesmo tempo.
           modo_infra: INFRA_VISUAL,
+          desenhar_inset_condensadora: desenharInsetCondensadora,
+          lado_inset_condensadora: ladoInsetCondensadora,
           revision_prompt: revisionPrompt?.trim() ?? null,
           generation_mode: referenceImageUrl ? "revision" : "initial",
           equipment_guidance: technicalGuidance,

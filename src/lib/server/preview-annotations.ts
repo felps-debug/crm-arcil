@@ -1,7 +1,7 @@
-import { el, img, b64svg, type No } from "./satori-nodes";
+import { el, b64svg, type No } from "./satori-nodes";
 import type { DadosOverlay } from "./previa-tipos";
 import type { Marcacao, PontoFrac } from "@/lib/marcacao";
-import { CLARO, CINZA, INFRA, ORDEM_INFRA, SOMBRA_TEXTO, FAIXA, TRACO_ORTOGONAL, TRACO_ORTOGONAL_PONTO } from "@/constants/arcil-brand";
+import { CLARO, INFRA, ORDEM_INFRA, SOMBRA_TEXTO, FAIXA, TRACO_ORTOGONAL, TRACO_ORTOGONAL_PONTO } from "@/constants/arcil-brand";
 
 /**
  * Camada técnica ANCORADA: callouts com linha de chamada, cotas, rota da
@@ -757,40 +757,6 @@ export function legendaInfraNo(largura: number): No {
   );
 }
 
-/** Painel "ÁREA TÉCNICA EXTERNA" com a foto oficial do produto vinda do ERP.
- *  Devolve `null` sem foto — um painel vazio com o título é pior que nenhum
- *  painel, porque promete uma informação que não está lá. */
-export function painelCondensadoraNo(d: DadosOverlay, largura: number, fundo: string, borda: string, raio: number): No | null {
-  if (!d.produtoImagemBase64) return null;
-  const alturaFoto = largura * 0.58;
-  return el(
-    "div",
-    {
-      width: largura,
-      flexDirection: "column",
-      alignItems: "center",
-      background: fundo,
-      border: `1px solid ${borda}`,
-      borderRadius: raio,
-      padding: "12px 12px 11px",
-    },
-    // O ERP fotografa o CONJUNTO (evaporadora, condensadora e controle numa
-    // imagem só). Chamar isso de "área técnica externa" descreve errado o que
-    // está na foto — o cliente vê a evaporadora dentro do quadro da unidade
-    // externa.
-    el("div", { fontSize: 12, fontWeight: 700, color: CLARO, letterSpacing: 0.9, textShadow: SOMBRA_TEXTO }, "EQUIPAMENTO"),
-    el("div", { fontSize: 9.5, color: CINZA, marginTop: 1, letterSpacing: 0.6 }, "(ILUSTRATIVO)"),
-    img(d.produtoImagemBase64, { width: largura - 24, height: alturaFoto, objectFit: "contain", marginTop: 8 }),
-    el(
-      "div",
-      { fontSize: 10.5, color: CLARO, marginTop: 8, lineHeight: 1.35, width: largura - 24 },
-      d.unidadeExterna ? `Local previsto: ${d.unidadeExterna}.` : "Local da condensadora a confirmar no local."
-    ),
-    d.nivelCondensadora
-      ? el("div", { fontSize: 10, color: CINZA, marginTop: 2, width: largura - 24 }, `Nível: ${d.nivelCondensadora.toLowerCase()}.`)
-      : null
-  );
-}
 
 /** Envelope SVG das linhas do plano, pronto para virar `<img>` na árvore. */
 export function svgDasLinhas(linhas: string, W: number, H: number): string {

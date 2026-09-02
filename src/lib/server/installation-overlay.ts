@@ -3,7 +3,7 @@ import sharp from "sharp";
 import QRCode from "qrcode";
 import { el, img, b64svg, fontes, logoArcilClaro, type No } from "./satori-nodes";
 import { esquemaInstalacao, esquemaCondensadora, ESQUEMA_W, ESQUEMA_H, ESQUEMA_COND_H } from "./install-schematic";
-import { planoAnotacoes, legendaInfraNo, painelCondensadoraNo, svgDasLinhas } from "./preview-annotations";
+import { planoAnotacoes, legendaInfraNo, svgDasLinhas } from "./preview-annotations";
 import type { DadosOverlay } from "./previa-tipos";
 import {
   AZUL,
@@ -173,10 +173,16 @@ function qrNo(dataUrl: string | null, W: number, H: number, ehManual: boolean): 
 }
 
 /** MODELO: o dado que o cliente mais olha, exatamente com o valor que o
- *  vendedor escolheu no catálogo do ERP — nunca reescrito por IA. Texto
- *  solto com sombra, sem caixa/card atrás — mesma linguagem visual dos
- *  callouts do Gemini, testado e aprovado. */
-function cardModeloNo(d: DadosOverlay, largura: number): No {
+ *  vendedor escolheu no catálogo do ERP — nunca reescrito por IA.
+ *
+ *  Tinha texto solto com sombra, sem caixa atrás — o véu que escurece a
+ *  prévia só cobre topo e rodapé da imagem (`camadaAncorada`), de propósito,
+ *  pra não atrapalhar a cena no meio. Só que a coluna de cards às vezes cai
+ *  bem nessa faixa sem véu nenhuma, e aí sombra sozinha não segura contraste
+ *  contra um fundo claro (cortina clara na prévia real que expôs isto) — o
+ *  texto ficava ilegível. Ganhou fundo com borda, mesmo tratamento de
+ *  `condensadoraGarantiaNo` logo abaixo. */
+function cardModeloNo(d: DadosOverlay, largura: number, fundo: string, borda: string, raio: number): No {
   // Sem repetir a marca quando o nome de catálogo do ERP já começa por ela —
   // "SPRINGER MIDEA SPLIT CASSETE ... SPRINGER MIDEA" saiu assim na primeira
   // prévia real.
@@ -185,9 +191,11 @@ function cardModeloNo(d: DadosOverlay, largura: number): No {
   const linhaProduto = marca && !nome.toUpperCase().startsWith(marca.toUpperCase()) ? `${marca} ${nome}` : nome;
   return el(
     "div",
-    { width: largura, flexDirection: "column" },
+    { width: largura, flexDirection: "column", background: fundo, border: `1px solid ${borda}`, borderRadius: raio, padding: "10px 12px" },
     el("div", { fontSize: 11, fontWeight: 700, color: CLARO, letterSpacing: 0.9, textShadow: SOMBRA_TEXTO }, "MODELO"),
-    el("div", { fontSize: 12, fontWeight: 700, color: CLARO, marginTop: 4, lineHeight: 1.35, width: largura - 14, textShadow: SOMBRA_TEXTO }, linhaProduto || d.produto),
+    // -24 = padding esquerda+direita do card (12px cada lado), agora que o
+    // texto mora dentro de uma caixa em vez de solto sobre a cena.
+    el("div", { fontSize: 12, fontWeight: 700, color: CLARO, marginTop: 4, lineHeight: 1.35, width: largura - 24, textShadow: SOMBRA_TEXTO }, linhaProduto || d.produto),
     d.capacidade || d.sku
       ? el(
           "div",
@@ -200,11 +208,12 @@ function cardModeloNo(d: DadosOverlay, largura: number): No {
 
 /** DETALHES DA INSTALAÇÃO: respostas específicas do lead que hoje eram
  *  coletadas mas não apareciam em lugar nenhum da prévia final quando havia
- *  marcação (só apareciam no layout de cards, sem marcação). Texto solto com
- *  sombra, mesma regra do MODELO — sem caixa. Cada linha só entra se o dado
- *  existir para aquele tipo de equipamento (mesma lógica condicional de
+ *  marcação (só apareciam no layout de cards, sem marcação). Mesmo fundo do
+ *  MODELO logo acima — mesma razão: sombra sozinha não segura contraste
+ *  contra um trecho claro da cena. Cada linha só entra se o dado existir
+ *  para aquele tipo de equipamento (mesma lógica condicional de
  *  `especificacoes()`, no layout de cards). */
-function detalhesInstalacaoNo(d: DadosOverlay, largura: number): No | null {
+function detalhesInstalacaoNo(d: DadosOverlay, largura: number, fundo: string, borda: string, raio: number): No | null {
   const t = d.tipoEquipamento.trim().toLowerCase();
   const ehCassete = t === "cassete";
   const linhas: string[] = [];
@@ -219,10 +228,50 @@ function detalhesInstalacaoNo(d: DadosOverlay, largura: number): No | null {
 
   return el(
     "div",
-    { width: largura, flexDirection: "column" },
+    { width: largura, flexDirection: "column", background: fundo, border: `1px solid ${borda}`, borderRadius: raio, padding: "10px 12px" },
     el("div", { fontSize: 11, fontWeight: 700, color: CLARO, letterSpacing: 0.9, textShadow: SOMBRA_TEXTO, marginBottom: 5 }, "DETALHES DA INSTALAÇÃO"),
     ...linhas.map((texto) =>
       el("div", { fontSize: 10.5, color: CINZA, lineHeight: 1.5, textShadow: SOMBRA_TEXTO }, `- ${texto}`)
+    )
+  );
+}
+
+/** INSTALAÇÃO DA CONDENSADORA: recomendações reais de garantia por tipo de
+ *  equipamento (`HVAC_STANDARDS[tipo].recomendacoes_garantia`, via
+ *  `route.ts`) — nunca um número inventado. Substitui o antigo card
+ *  EQUIPAMENTO (foto de vitrine estática do catálogo): agora é o Gemini quem
+ *  desenha a condensadora de verdade instalada no local escolhido, como um
+ *  inset na mesma faixa lateral (ver `# CONDENSADORA INSET` no prompt do
+ *  n8n) — este card só acompanha com o texto, nunca a imagem.
+ *
+ *  `temInsetCondensadora()` (mesma condição usada aqui e em
+ *  `camadaAncorada` pra abrir espaço acima do card) tem que bater com o
+ *  `desenharInsetCondensadora` calculado em `route.ts` antes de chamar o
+ *  n8n — os dois olham exatamente os mesmos dois dados (local da
+ *  condensadora respondido e foto do produto disponível) pra decidir se o
+ *  Gemini teve o que precisava pra desenhar o inset. */
+function temInsetCondensadora(d: DadosOverlay): boolean {
+  return Boolean(d.unidadeExterna) && Boolean(d.produtoImagemBase64);
+}
+
+function condensadoraGarantiaNo(d: DadosOverlay, largura: number, fundo: string, borda: string, raio: number): No | null {
+  if (!temInsetCondensadora(d) || d.recomendacoesGarantia.length === 0) return null;
+  // Só as 2 primeiras: a coluna lateral já empilha inset + este card + MODELO
+  // + DETALHES, e as 4 recomendações completas deixavam essa pilha alta
+  // demais — pesada visualmente mesmo com dado correto (HVAC_STANDARDS já
+  // ordena a lista da mais crítica pra garantia pra menos).
+  const recomendacoes = d.recomendacoesGarantia.slice(0, 2);
+  return el(
+    "div",
+    { width: largura, flexDirection: "column", background: fundo, border: `1px solid ${borda}`, borderRadius: raio, padding: "10px 12px" },
+    el("div", { fontSize: 11, fontWeight: 700, color: CLARO, letterSpacing: 0.9, textShadow: SOMBRA_TEXTO }, "INSTALAÇÃO DA CONDENSADORA"),
+    el(
+      "div",
+      { fontSize: 10.5, color: CLARO, marginTop: 3, marginBottom: 6, lineHeight: 1.35, width: largura - 24, textShadow: SOMBRA_TEXTO },
+      d.nivelCondensadora ? `${d.unidadeExterna} · nível ${d.nivelCondensadora.toLowerCase()}.` : `${d.unidadeExterna}.`
+    ),
+    ...recomendacoes.map((texto) =>
+      el("div", { fontSize: 10, color: CINZA, lineHeight: 1.45, textShadow: SOMBRA_TEXTO, width: largura - 24 }, `- ${texto}`)
     )
   );
 }
@@ -261,7 +310,11 @@ async function camadaAncorada(d: DadosOverlay, W: number, H: number, qrDataUrl: 
   // callouts já estão na cena, desenhados pelo Gemini.
   const plano = planoAnotacoes(d, marcacao, W, H, ladoTexto);
 
-  const topoCards = Math.max(Math.round(H * 0.05), 64);
+  // Quando o Gemini desenha o inset da condensadora, ele é um cartão pequeno
+  // (até ~22% da altura, instrução no prompt do n8n) perto do topo da faixa
+  // lateral — a coluna de cards vetoriais começa logo abaixo disso pra não
+  // empilhar texto por cima da cena que o modelo acabou de desenhar.
+  const topoCards = temInsetCondensadora(d) ? Math.round(H * 0.26) : Math.max(Math.round(H * 0.05), 64);
   const logo = await logoNo(W, H);
 
   return el(
@@ -291,9 +344,9 @@ async function camadaAncorada(d: DadosOverlay, W: number, H: number, qrDataUrl: 
       // desenhamos. Em `gemini_3d` a tubulação sai em cobre/conduíte reais, e
       // uma legenda de cores não corresponde a nada na imagem.
       d.modoInfra !== "gemini_3d" ? legendaInfraNo(larguraCard) : null,
-      painelCondensadoraNo(d, larguraCard, CARD_FUNDO, CARD_BORDA, CARD_RAIO),
-      cardModeloNo(d, larguraCard),
-      detalhesInstalacaoNo(d, larguraCard)
+      condensadoraGarantiaNo(d, larguraCard, CARD_FUNDO, CARD_BORDA, CARD_RAIO),
+      cardModeloNo(d, larguraCard, CARD_FUNDO, CARD_BORDA, CARD_RAIO),
+      detalhesInstalacaoNo(d, larguraCard, CARD_FUNDO, CARD_BORDA, CARD_RAIO)
     ),
     logo,
     qrNo(qrDataUrl, W, H, d.qrEhManual === true),
