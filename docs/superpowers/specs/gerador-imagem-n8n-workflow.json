@@ -1,0 +1,432 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "6fdf0bcb-8bcf-4fad-846f-89e221e3013e",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        3104,
+        4736
+      ],
+      "id": "a1ad1f90-a6fc-4537-bf9d-a8d5e3a4e3d1",
+      "name": "Webhook",
+      "webhookId": "6fdf0bcb-8bcf-4fad-846f-89e221e3013e"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"url_imagem_final\": \"{{ $('link da imagem2').item.json.url_imagem_final }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        4048,
+        5200
+      ],
+      "id": "9597436a-a65d-4dae-a157-a1ab82a73f25",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9dedc93b-3768-478f-8af6-827e71d6a38c",
+              "name": "url da imagem",
+              "value": "={{ $('Webhook').item.json.body.image_url }}",
+              "type": "string"
+            },
+            {
+              "id": "b1a01464-c42c-432f-a4ea-372fef656b57",
+              "name": "resumo da imagem",
+              "value": "=descrição da parede : {{ $('Webhook').item.json.body.image_description }}\n\nPrompt basico: {{  $('Webhook').item.json.body.prompt }}",
+              "type": "string"
+            },
+            {
+              "id": "b99fc6fa-e360-458c-b019-04f4d094a8a8",
+              "name": "base64",
+              "value": "={{ $('Webhook').item.json.body.image_base64.replace(/^data:image\\/\\w+;base64,/, '') }}",
+              "type": "string"
+            },
+            {
+              "id": "40897182-4bce-49e6-a2a5-cd102a7a8046",
+              "name": "id unico do lead",
+              "value": "={{ $('Webhook').item.json.body.lead_id }}",
+              "type": "string"
+            },
+            {
+              "id": "e87e740d-952b-4576-b09e-0fb9ba12b522",
+              "name": "tipo do equipamento",
+              "value": "={{ $('Webhook').item.json.body.tipo_equipamento }}",
+              "type": "string"
+            },
+            {
+              "id": "c871074e-6215-45c4-a7c7-b62004abba3b",
+              "name": "diretriz do equipamento",
+              "value": "={{ $('Webhook').item.json.body.equipment_guidance }}",
+              "type": "string"
+            },
+            {
+              "id": "8dc05f2d-0cc8-42e7-b95a-864bddffe269",
+              "name": "imagem de referencia do produto",
+              "value": "={{ $('Webhook').item.json.body.product_image_url }}",
+              "type": "string"
+            },
+            {
+              "id": "prod-b64-001",
+              "name": "base64 do produto",
+              "value": "={{ ($('Webhook').item.json.body.product_image_base64 || '').replace(/^data:image\\/\\w+;base64,/, '') }}",
+              "type": "string"
+            },
+            {
+              "id": "0d26eccc-eced-4dc6-abab-3705579cba09",
+              "name": "modo de geracao",
+              "value": "={{ $('Webhook').item.json.body.generation_mode || 'initial' }}",
+              "type": "string"
+            },
+            {
+              "id": "b4cf28c0-fdbb-40ad-9a36-dbd9d82a34ab",
+              "name": "instrucao de ajuste",
+              "value": "={{ $('Webhook').item.json.body.revision_instruction || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "154254e4-48c8-4180-9a57-eba9ad08bedf",
+              "name": "url da imagem de referencia",
+              "value": "={{ $('Webhook').item.json.body.reference_image_url || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "guia-b64-001",
+              "name": "base64 guia",
+              "value": "={{ $('Webhook').item.json.body.guide_image_base64 || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "ref-b64-001",
+              "name": "base64 referencia",
+              "value": "={{ $('Webhook').item.json.body.reference_image_base64 || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "base-b64-001",
+              "name": "base64 base",
+              "value": "={{ ($('Webhook').item.json.body.generation_mode === 'revision' && $('Webhook').item.json.body.reference_image_base64) ? $('Webhook').item.json.body.reference_image_base64 : $('Webhook').item.json.body.image_base64.replace(/^data:image\\/\\w+;base64,/, '') }}",
+              "type": "string"
+            },
+            {
+              "id": "marcacao-001",
+              "name": "marcacao do vendedor",
+              "value": "={{ $('Webhook').item.json.body.marcacao_descricao || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "ref-cena-001",
+              "name": "base64 referencia da familia",
+              "value": "={{ $('Webhook').item.json.body.reference_scene_base64 || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "modo-infra-001",
+              "name": "modo infra",
+              "value": "={{ $('Webhook').item.json.body.modo_infra || 'vetorial' }}",
+              "type": "string"
+            },
+            {
+              "id": "familia-001",
+              "name": "familia do equipamento",
+              "value": "={{ $('Webhook').item.json.body.familia_equipamento || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3392,
+        4736
+      ],
+      "id": "e825237e-0efb-4281-aab4-49f6a327f37a",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ac767f7c-ff2a-46c6-bc84-f0c99b9a2a9a",
+              "name": "base_64",
+              "value": "={{ $json.candidates[0].content.parts.find(p => p.inlineData)?.inlineData.data }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4288,
+        4736
+      ],
+      "id": "537b27e8-18a7-4391-9a60-a341ba3180b9",
+      "name": "Edit Fields3"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a specialist in AI-powered photo editing for HVAC installation previews.\n\nYour task is to generate ONE final image-editing prompt for Gemini 3 Pro image generation.\nThe image will be generated from a REAL room photo sent by the customer.\n\n{{ $('Edit Fields2').item.json['modo de geracao'] === 'revision' ? 'MODE: REFINEMENT OF A PREVIOUS EDIT. The image provided already shows the equipment installed from an earlier generation. Do NOT redo the installation from scratch. Apply ONLY the specific adjustment requested below, keeping literally everything else -- room, furniture, the equipment already placed, composition, lighting, camera angle, and all technical annotations -- exactly as shown in the provided image.' : 'MODE: INITIAL EDIT. The image provided is the customer\\'s original, unedited room photo.' }}\n\n# CRITICAL: THIS IS ONE TARGETED EDIT\nThis is a single precise edit applied directly on top of the exact photo provided.\nThe final prompt you write MUST open with this exact sentence pattern, adapted to this case:\n\n{{ $('Edit Fields2').item.json['modo de geracao'] === 'revision' ? ('\"Edit only this photo to: ' + $('Edit Fields2').item.json['instrucao de ajuste'].replace(/^AJUSTE SOLICITADO PELO USU[ÁA]RIO:\\s*/i, '') + '. Keep everything else in the image exactly the same -- same room, same equipment already installed, same composition, same technical annotations. This is a small follow-up correction on an already-edited photo, not a new installation.\"') : '\"Edit only this photo to add [EQUIPMENT TYPE] installed at [POSITION], with the technical annotation layer described below. Keep everything else in the image exactly the same -- same furniture, same colors, same lighting, same camera angle, same objects, same composition. Do not generate a new room.\"' }}\n\n# GUIDE IMAGE (WHEN PRESENT) -- THIS OVERRIDES ANY POSITION YOU WOULD CHOOSE\n{{ $('Edit Fields2').item.json['base64 guia'] ? \"A GUIDE IMAGE is provided as the LAST image. It is the same room photo with annotation marks drawn on top by the salesperson: MAGENTA corner brackets and a magenta cross mark the exact area where the equipment must be installed, a CYAN line marks the path the refrigerant piping follows. Install the unit so it fills the bracketed area -- same center, same width, same perspective. This placement was chosen by a human standing in that room; do NOT move it, do NOT re-center it, do NOT pick a spot you consider better.\" : \"No guide image was provided: choose the most technically correct position yourself, following the room context and equipment rules below.\" }}\n\n# THE GUIDE MARKS DO NOT EXIST IN THE ROOM -- NEVER REPRODUCE THEM\n{{ $('Edit Fields2').item.json['base64 guia'] ? \"ABSOLUTE RULE. The magenta brackets, the magenta cross and the cyan line are ANNOTATIONS drawn on top of the photograph in an image editor. They are not paint, not tape, not trim, not a frame, not a light strip, not a duct, and not any physical object in that room. In the output image they must be COMPLETELY ABSENT: no magenta anywhere, no cyan anywhere, not even faint, not even partially, not even reinterpreted as a decorative element. Render the room exactly as it appears in the base photo, with the equipment installed in the bracketed area, plus the technical annotation layer described below -- nothing else added.\" : \"\" }}\n\n# VISUAL STYLE: PHOTOREALISTIC SCENE, PLUS A CONTROLLED TECHNICAL ANNOTATION LAYER YOU DRAW YOURSELF\nThe Air Conditioner Unit and the room: 100% photorealistic, solid, physically accurate. Fully installed, with realistic shadows, materials, and lighting matching the room. If a product reference photo is provided, this is the exact real unit the customer bought -- match its cabinet shape, panel layout, vent/louver placement, color and finish precisely; do not draw a generic or different-looking unit.\nOn top of that photorealistic scene, you ALSO draw the technical annotation layer described in full detail below -- ghosted infrastructure, and short leader-line callouts with text. This is not a contradiction: the equipment and the room are pure photography; the annotation layer is a deliberate technical-drawing overlay, in the exact visual language specified below, and nothing outside that specification.\n\n# INFRASTRUCTURE\n{{ $('Edit Fields2').item.json['modo infra'] === 'gemini_3d' ? \"DRAW A TECHNICAL X-RAY OF THE INSTALLATION, in 3D, integrated into the photograph, as part of the same annotation layer described below.\\n\\nFor a ceiling unit (cassette or ducted): show the hidden body of the indoor unit sitting in the plenum above the finished ceiling, as a GHOSTED translucent volume -- the ceiling surface stays visible through it, like frosted glass. Around that body render the real service connections in 3D: insulated copper refrigerant lines (liquid and gas) with true bends, flare fittings and service valves; a translucent ghosted condensate drain leaving the unit with a continuous downward slope (thin ghosted line, same style as the rest of this layer -- never a solid gray pipe, never a solid arrowhead); and a translucent electrical cable running to a junction point on the slab. Route all of it toward the outdoor unit location described in the briefing, following the architecture -- along ceiling lines and down wall corners, never floating in mid-air, never crossing furniture.\\n\\nFor a wall unit (hi-wall or floor-ceiling): show the line set leaving the back of the indoor unit and running to the outdoor unit location, either inside clean PVC trunking when the briefing says the run is exposed, or as a ghosted translucent run behind the wall finish when it says embedded.\\n\\nRealism rules: correct pipe diameters relative to the unit, real specular highlights on copper, soft contact shadows, and translucency low enough that the room behind stays readable. Stop the run where the briefing places the outdoor unit; never invent an outdoor unit inside the room.\" : \"DO NOT draw pipes, trunking, cables or any infrastructure. A finished installation hides its piping behind the wall or ceiling finish. The CRM draws the infrastructure afterwards as vector graphics; anything you draw yourself will end up duplicated and misaligned with it.\" }}\n\n# TECHNICAL ANNOTATION LAYER STYLE (applies to every callout you draw)\n- Leader lines: thin off-white (~85% opacity), ORTHOGONAL only -- horizontal from the text, one bend, straight to a small solid white dot (3-4px) at the anchor point. No diagonals, no dashes, no arrowheads. Keep every leader line SHORT -- text sits close to what it points to, never in a far corner of the frame.\n- Callout text: uppercase medium-bold title, one regular-weight description line below at ~80% opacity. NO background box or bar behind any text anywhere in the image -- every piece of text sits directly on the photo with only a soft dark drop shadow for legibility.\n- Color: white/off-white only in this layer, except the copper tone on the refrigerant lines themselves (see INFRASTRUCTURE above).\n- Keep the entire bottom 16% of the frame and the top 5% completely clear of any text or line -- that band is reserved for a fixed footer card (logo, QR code, legal text) added afterward by the CRM. Do not draw anything there.\n\n--- STOP. Everything above this line is instruction, not text to render. Everything below this line, inside quotes, is the ONLY text you draw. Copy it character-for-character, accents included. Do not invent, translate, reword, or add text beyond what is listed. ---\n\n# EXACT STRINGS TO RENDER\nWork out the equipment family first: if Equipment Type (below) is \"Cassete\" or \"Dutado\", the family is FORRO (ceiling-plenum). If it is \"Janela\", the family is MONOBLOCO (single unit, no separate outdoor condensing unit). Otherwise (Hi-Wall, Piso-Teto), the family is PAREDE (wall-mounted).\n\nFind, in the Room Context and Installation Details text below, the exact ceiling-height / pé-direito value the customer's team already answered (a short string like \"2,70 m\" or \"0,80 m\"), and the exact outdoor-unit location text if one is mentioned (e.g. \"sacada técnica\", \"telhado\"). Copy these EXACTLY as written wherever they appear below -- never invent a number or a location that is not present in that text. If a value is genuinely not present anywhere in the provided text, skip the item that needed it entirely (draw nothing for it) rather than guessing.\n\n1) Title \"EVAPORADORA\". Description, copy verbatim based on family:\n   - FORRO: \"Instalação embutida no forro, com distribuição de ar integrada ao ambiente.\"\n   - PAREDE: \"Unidade evaporadora fixada na parede, com afastamentos de manutenção respeitados.\"\n   - MONOBLOCO: \"Peça única instalada no vão, sem unidade externa separada.\"\n   Leader line to the unit, positioned close to it.\n\n2) ONLY if family is FORRO or PAREDE (skip entirely for MONOBLOCO). ONE combined callout, positioned immediately beside the unit (touching distance, not a far corner):\n   - FORRO: title line \"FORRO ATÉ LAJE · [pé-direito value found above]\", description \"Espaço técnico para unidade e infraestrutura.\"\n   - PAREDE: title line \"DISTÂNCIA DO TETO · [pé-direito value found above]\", description \"Afastamento até o teto.\"\n   If no pé-direito value was found anywhere in the provided text, draw the title without the \"· value\" part and keep only the description.\n   Include a short vertical ghosted dimension line with small tick marks right next to this callout, from the ceiling down to the top of the ghosted equipment body, matching the value (or with no numeric label if no value was found).\n\n3) Title \"LIGAÇÃO ATÉ CONDENSADORA\". Description:\n   - If an outdoor-unit location was found in the text above: \"Caminho da infraestrutura até a unidade externa: [that location].\"\n   - If none was found: \"Caminho da infraestrutura até a unidade externa.\"\n   Leader line toward the right edge, following the ghosted route toward where the briefing places the outdoor unit.\n\n4) ONLY if family is FORRO or PAREDE (skip entirely for MONOBLOCO). Title \"FLUXO DE AR\". Description, copy verbatim based on Equipment Type:\n   - \"Cassete\": \"Distribuição uniforme nos 4 sentidos.\"\n   - \"Dutado\": \"Distribuição pela rede de dutos e grelhas.\"\n   - anything else (Hi-Wall, Piso-Teto): \"Distribuição direcionada para o ambiente.\"\n   Short leader line to the unit's underside.\n\nRender nothing else -- no other text, panel, or callout besides these. Do not draw a product/model card, a details list, a logo, a QR code, or any legal text -- none of that is your job, the CRM composites all of it afterward as vector graphics.\n\n# REFERENCE SCENE (WHEN PRESENT)\n{{ $('Edit Fields2').item.json['base64 referencia da familia'] ? \"One of the provided images is an ARCIL REFERENCE SCENE for this equipment family. Use it ONLY to match how the installation and the technical annotation layer are represented: how the unit sits in the ceiling or wall, how the line set is drawn, the level of realism and finish, the leader-line and typography style of the callouts. Do NOT copy its room, its furniture, its colours, its framing, or its specific text content -- the customer's room stays exactly as it is in the base photo, and the text you render comes only from the EXACT STRINGS section above.\" : \"\" }}\n\n# COMPOSITION BANDS (LEAVE CLEAR FOR CRM UI)\n- Top 5% of image: empty ceiling/wall, no annotation.\n- Bottom 16% of image: empty floor/wall, reserved for the CRM's fixed footer (logo, QR code, legal text).\n- The AC unit and main installation visuals MUST sit in the middle band.\n\n{{ $('Edit Fields2').item.json['modo de geracao'] === 'revision' ? 'This composition rule only matters if the requested adjustment moves the equipment or its annotations. If it does not, keep everything exactly where it already is in the provided image.' : '' }}\n\n# DYNAMIC INPUTS\nBase image provided: {{ $('Edit Fields2').item.json['modo de geracao'] === 'revision' ? 'the previous edit result -- it already has the equipment installed, this is a refinement on top of it' : \"the customer's original room photo\" }}\nRoom context: {{ $('Edit Fields2').item.json['resumo da imagem'] }}\nEquipment Type: {{ $('Edit Fields2').item.json['tipo do equipamento'] }}\nInstallation Details: {{ $('Edit Fields2').item.json['diretriz do equipamento'] }}\n\n# EQUIPMENT GEOMETRY RULES (NON-NEGOTIABLE)\n- Split Hi-Wall: Horizontal unit high on the wall.\n- Cassete: Square panel recessed flush into the ceiling. Never hanging on a wall.\n- Piso-Teto: Elongated unit at floor level or hanging directly under the ceiling.\n- Dutado: NO visible AC unit. Only sleek ceiling grilles for supply/return.\nIf a product photo is provided, copy its exact real-world design faithfully.\n\n# REQUIRED OUTPUT\nGenerate ONE final English prompt based on these rules and the dynamic inputs. No markdown, no introductory text, no explanations. Just the final prompt starting with \"Edit only this photo...\".",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        3584,
+        4736
+      ],
+      "id": "f68c2ae6-b97f-4f46-ad2c-e735aa236e43",
+      "name": "GERADOR DE PROMPT2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "REDACTED"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [ { parts: [ { text: $('GERADOR DE PROMPT2').item.json.text }, { inline_data: { mime_type: 'image/jpeg', data: $('Edit Fields2').item.json['base64 base'] } } ].concat( $('Edit Fields2').item.json['base64 do produto'] ? [ { inline_data: { mime_type: 'image/jpeg', data: $('Edit Fields2').item.json['base64 do produto'] } } ] : [] ).concat( $('Edit Fields2').item.json['base64 referencia da familia'] ? [ { inline_data: { mime_type: 'image/jpeg', data: $('Edit Fields2').item.json['base64 referencia da familia'] } } ] : [] ).concat( $('Edit Fields2').item.json['base64 guia'] ? [ { inline_data: { mime_type: 'image/jpeg', data: $('Edit Fields2').item.json['base64 guia'] } } ] : [] ) } ] }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4096,
+        4736
+      ],
+      "id": "ae32c5ef-163b-4387-a98b-2edb4cf0f2e9",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5.1",
+          "mode": "list",
+          "cachedResultName": "gpt-5.1"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        3584,
+        4928
+      ],
+      "id": "e2d67cd5-71c8-4ee7-85e7-ad1058add0ef",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "GIX5Xku5JMW1HOzw",
+          "name": "Openai pai do Lucas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f90d2cdf-046a-4c19-9885-dc3ecf96c89c",
+              "name": "url_imagem_final",
+              "value": "=https://swcqvrowqwylcegrcesu.supabase.co/storage/v1/object/public/PDF/{{ $('Edit Fields2').item.json['id unico do lead'] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3808,
+        5200
+      ],
+      "id": "c1d3148c-8b0f-44e6-9723-539e264a10cc",
+      "name": "link da imagem2"
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "base_64",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        3440,
+        5200
+      ],
+      "id": "8be0770a-d1bf-4a2b-b104-bfae967fc249",
+      "name": "Convert to File2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://swcqvrowqwylcegrcesu.supabase.co/storage/v1/object/PDF/{{ $('Edit Fields2').item.json['id unico do lead'] }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "data",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3632,
+        5200
+      ],
+      "id": "4b746704-4d0c-457e-a583-fd1ed7bae73a",
+      "name": "COLOCA NO STORAGE3",
+      "credentials": {
+        "supabaseApi": {
+          "id": "hK45LoXZ3wxRF2Vf",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "GERADOR DE PROMPT2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GERADOR DE PROMPT2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "GERADOR DE PROMPT2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields3": {
+      "main": [
+        [
+          {
+            "node": "Convert to File2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File2": {
+      "main": [
+        [
+          {
+            "node": "COLOCA NO STORAGE3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "COLOCA NO STORAGE3": {
+      "main": [
+        [
+          {
+            "node": "link da imagem2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "link da imagem2": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "note": "Subconjunto de PVtyGZ6gQrBABe83 (GERAÇÃO DE IMAGEM VENDEDOR) -- só o grupo do CRM, chave do Gemini redigida. Exportado 2026-09-01 apos aplicar o prompt Desenho Tecnico (callouts desenhados pelo Gemini, MODELO/logo/QR/legal vetoriais)."
+}
