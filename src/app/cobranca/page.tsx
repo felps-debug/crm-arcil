@@ -50,9 +50,14 @@ function CobrancaPageInner() {
   const [logs, setLogs] = useState<CobrancaLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [errorLogs, setErrorLogs] = useState<string | null>(null);
-
+  // Só a carga inicial (tela vazia) mostra o spinner de página inteira. Um
+  // refetch disparado por realtime com `logs` já preenchido é revalidação em
+  // segundo plano — a tabela antiga fica visível até a nova chegar.
   const fetchLogs = useCallback(async () => {
-    setLoadingLogs(true);
+    setLogs((prev) => {
+      if (prev.length === 0) setLoadingLogs(true);
+      return prev;
+    });
     setErrorLogs(null);
     try {
       setLogs(await getCobrancaLog());
@@ -66,11 +71,21 @@ function CobrancaPageInner() {
   useEffect(() => {
     fetchLogs();
     const supabase = createClient();
+    // O realtime emite um evento por LINHA alterada — um disparo em lote grava
+    // dezenas de linhas de uma vez em cobranca_log. Sem agrupar, cada uma
+    // refazia a query inteira quase simultaneamente. Mesmo padrão de
+    // src/app/page.tsx (refreshBatched).
+    let batch: ReturnType<typeof setTimeout> | undefined;
+    const fetchLogsBatched = () => {
+      clearTimeout(batch);
+      batch = setTimeout(fetchLogs, 500);
+    };
     const ch = supabase
       .channel("cobranca-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, fetchLogs)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, fetchLogsBatched)
       .subscribe();
     return () => {
+      clearTimeout(batch);
       supabase.removeChannel(ch);
     };
   }, [fetchLogs]);

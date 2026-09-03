@@ -73,7 +73,7 @@ export default function AdminPage() {
 function AdminPageInner() {
   const { toast } = useToast();
   const [reloadToken, setReloadToken] = useState(0);
-  const { data, loading, error } = useApi<UsersResponse>(`/api/admin/users?t=${reloadToken}`);
+  const { data, isInitialLoading, error } = useApi<UsersResponse>(`/api/admin/users?t=${reloadToken}`);
   const activity = useApi<ActivityLogResponse>(`/api/admin/activity?t=${reloadToken}`);
   // Errors silently (e.g. Chatwoot not configured yet) — the inbox picker
   // just doesn't render below rather than breaking the whole admin page.
@@ -158,10 +158,10 @@ function AdminPageInner() {
         />
       }
     >
-      {loading && <ConsoleLoading />}
+      {isInitialLoading && <ConsoleLoading />}
       {error && <ConsoleError message={error} />}
 
-      {!loading && !error && (
+      {!isInitialLoading && !error && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_380px]">
           <ConsoleCard pad={false}>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">

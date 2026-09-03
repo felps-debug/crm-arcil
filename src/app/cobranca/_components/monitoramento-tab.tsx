@@ -85,6 +85,7 @@ export function MonitoramentoTab({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [reenvioLoading, setReenvioLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [reenvioResult, setReenvioResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [relatorioModal, setRelatorioModal] = useState(false);
   const [relFiltros, setRelFiltros] = useState({ de: "", ate: "", tipo: "Todos", status: "Todos" });
@@ -190,6 +191,16 @@ export function MonitoramentoTab({
   }
 
   async function handleGerarPDF() {
+    if (pdfLoading) return;
+    setPdfLoading(true);
+    try {
+      await gerarPDF();
+    } finally {
+      setPdfLoading(false);
+    }
+  }
+
+  async function gerarPDF() {
     const filtrados = logs.filter((l) => {
       if (relFiltros.status !== "Todos" && l.status_disparo !== relFiltros.status) return false;
       if (relFiltros.tipo !== "Todos" && l.documento !== relFiltros.tipo) return false;
@@ -513,8 +524,14 @@ export function MonitoramentoTab({
                 </select>
               </div>
             </div>
-            <ConsoleButton active onClick={handleGerarPDF} icon={FileText} className="w-full">
-              Gerar PDF
+            <ConsoleButton
+              active
+              onClick={handleGerarPDF}
+              disabled={pdfLoading}
+              icon={pdfLoading ? Loader2 : FileText}
+              className="w-full"
+            >
+              {pdfLoading ? "Gerando..." : "Gerar PDF"}
             </ConsoleButton>
           </div>
         </div>

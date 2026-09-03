@@ -79,12 +79,24 @@ export function FinancialHandoffBoard() {
   useEffect(() => {
     load();
     const supabase = createClient();
+    // `load` chama getFinancialHandoffBoard, que já faz 5 queries em paralelo.
+    // As 3 tabelas abaixo mudam em lote (disparo de cobrança grava dezenas de
+    // linhas de uma vez) — sem agrupar, cada linha alterada refazia essas 5
+    // queries quase ao mesmo tempo. Mesmo padrão de src/app/page.tsx.
+    let batch: ReturnType<typeof setTimeout> | undefined;
+    const loadBatched = () => {
+      clearTimeout(batch);
+      batch = setTimeout(load, 500);
+    };
     const channel = supabase.channel("financial-handoff-board")
-      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "financial_handoff_resolutions" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_handoff_boleto_decisions" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, loadBatched)
+      .on("postgres_changes", { event: "*", schema: "public", table: "financial_handoff_resolutions" }, loadBatched)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_handoff_boleto_decisions" }, loadBatched)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      clearTimeout(batch);
+      supabase.removeChannel(channel);
+    };
   }, [load]);
 
   const filteredItems = useMemo(() => {

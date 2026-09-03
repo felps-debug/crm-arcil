@@ -15,7 +15,7 @@ import {
 import { AccessGuard } from "@/components/layout/access-guard";
 import { formatDateTime, formatMoney, formatNumber, useApi } from "@/lib/client-api";
 import type { InventoryProduct, InventorySummaryResponse } from "@/types/api";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 function stockTone(stock: number | null): "green" | "amber" | "red" | "violet" {
   if ((stock ?? 0) <= 0) return "red";
@@ -61,8 +61,16 @@ export default function DemandaEstoquePage() {
 
 function DemandaEstoquePageInner() {
   const [search, setSearch] = useState("");
+  // Cada tecla refazia a busca no servidor e apagava a tela inteira. `search`
+  // segue o input sem atraso; `debouncedSearch` — o que entra na URL do
+  // fetch — só acompanha 300ms depois de parar de digitar.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
   const [tableFilter, setTableFilter] = useState("");
-  const { data, loading, error } = useApi<InventorySummaryResponse>(`/api/inventory/summary?limit=600&search=${encodeURIComponent(search)}`);
+  const { data, isInitialLoading, error } = useApi<InventorySummaryResponse>(`/api/inventory/summary?limit=600&search=${encodeURIComponent(debouncedSearch)}`);
   const products = useMemo(() => data?.products ?? [], [data]);
   const filteredProducts = useMemo(() => {
     const q = tableFilter.trim().toLowerCase();
@@ -102,10 +110,10 @@ function DemandaEstoquePageInner() {
         </>
       }
     >
-      {loading && <ConsoleLoading />}
+      {isInitialLoading && <ConsoleLoading />}
       {error && <ConsoleError message={error} />}
 
-      {!loading && !error && data && (
+      {!isInitialLoading && !error && data && (
         <>
           {!estoqueSincronizado && (
             <div className="flex items-start gap-2 rounded-[10px] border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-300">

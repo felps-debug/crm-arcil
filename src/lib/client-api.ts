@@ -52,7 +52,7 @@ export function useApi<T>(url: string | null) {
     };
   }, [url]);
 
-  return { data, loading, error };
+  return { data, loading, isInitialLoading: loading && data === null, error };
 }
 
 export function formatNumber(value: number | string | null | undefined) {

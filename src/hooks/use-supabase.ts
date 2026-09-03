@@ -10,6 +10,11 @@ import { useState, useEffect, useCallback } from "react";
 interface UseSupabaseResult<T> {
   data: T | null;
   loading: boolean;
+  /** True only while there is no data yet to show — false during a background
+   * revalidation that already has previous data on screen. Use this (instead
+   * of `loading`) to gate full-page/full-table spinners so a refetch doesn't
+   * blank out content the user is looking at. */
+  isInitialLoading: boolean;
   error: string | null;
   refetch: () => void;
 }
@@ -50,5 +55,5 @@ export function useSupabase<T>(
     fetch();
   }, [fetch]);
 
-  return { data, loading, error, refetch: fetch };
+  return { data, loading, isInitialLoading: loading && data === null, error, refetch: fetch };
 }

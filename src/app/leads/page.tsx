@@ -112,6 +112,15 @@ function LeadsBoard() {
   );
   const [segment, setSegment] = useState(urlSegment);
   const [search, setSearch] = useState(urlSearch);
+  // Cada tecla digitada refazia a query de leads no servidor e apagava a
+  // tabela/kanban inteiros até a resposta voltar. `search` segue o input sem
+  // atraso (input continua fluido); `debouncedSearch` — o que de fato entra
+  // nos params do fetch — só acompanha 300ms depois de parar de digitar.
+  const [debouncedSearch, setDebouncedSearch] = useState(urlSearch);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Navegar de novo pelo dashboard (mesma rota, query diferente) não remonta o
@@ -123,6 +132,7 @@ function LeadsBoard() {
     setSyncedQuery(queryKey);
     setSegment(urlSegment);
     setSearch(urlSearch);
+    setDebouncedSearch(urlSearch);
   }
 
   // Bump on any leads/followups change so the board (and the open lead's
@@ -132,16 +142,25 @@ function LeadsBoard() {
 
   useEffect(() => {
     const supabase = createClient();
+    // Um disparo/atualização em lote grava várias linhas quase ao mesmo tempo;
+    // sem agrupar, cada uma mudava `refreshTick` (e portanto a URL do useApi),
+    // empilhando um refetch por linha. Mesmo padrão de src/app/page.tsx.
+    let batch: ReturnType<typeof setTimeout> | undefined;
+    const bumpBatched = () => {
+      clearTimeout(batch);
+      batch = setTimeout(() => setRefreshTick((t) => t + 1), 500);
+    };
     const ch = supabase
       .channel("leads-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => setRefreshTick((t) => t + 1))
-      .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, () => setRefreshTick((t) => t + 1))
+      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, bumpBatched)
+      .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, bumpBatched)
       // conversations drives CONVERSANDO and the "Fila IA" label, and it's the
       // table n8n writes when a session opens — without it the board goes stale
       // exactly when a lead starts talking.
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => setRefreshTick((t) => t + 1))
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, bumpBatched)
       .subscribe();
     return () => {
+      clearTimeout(batch);
       supabase.removeChannel(ch);
     };
   }, []);
@@ -151,7 +170,7 @@ function LeadsBoard() {
   // apagavam sozinhas assim que você clicava numa delas.
   const params = new URLSearchParams();
   if (urlStatus) params.set("status", urlStatus);
-  if (search) params.set("search", search);
+  if (debouncedSearch) params.set("search", debouncedSearch);
   // O dashboard manda oito filtros nos drilldowns e a página lia só três. Clicar
   // em "Handoff sem aceite" abria a lista inteira, sem marcar quais eram os
   // encaminhados sem aceite — o card dizia um número e a tela mostrava outro.
@@ -230,10 +249,10 @@ function LeadsBoard() {
         </div>
       </div>
 
-      {leads.loading && <ConsoleLoading />}
+      {leads.isInitialLoading && <ConsoleLoading />}
       {leads.error && <ConsoleError message={leads.error} />}
 
-      {!leads.loading && !leads.error && (
+      {!leads.isInitialLoading && !leads.error && (
         <div className={view === "kanban" ? "block" : "grid grid-cols-1 gap-4 xl:grid-cols-[1fr_380px]"}>
           <div className="min-w-0">
             {view === "table" && <LeadsTable leads={items} onSelect={setSelectedId} selectedId={selectedId} />}

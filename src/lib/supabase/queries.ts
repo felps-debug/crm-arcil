@@ -138,7 +138,12 @@ export async function getCobrancaLog(dr?: QueryDateRange) {
   let q = supabase
     .from("cobranca_log")
     .select("*")
-    .order("data_disparo", { ascending: false });
+    .order("data_disparo", { ascending: false })
+    // Sem isto a query trazia a tabela inteira a cada refetch (inclusive a
+    // cada evento realtime). Não é paginação de verdade — os cards de stats
+    // desta tela ainda somam sobre o resultado retornado aqui — só um teto
+    // de segurança bem acima do volume atual pra não crescer sem limite.
+    .limit(2000);
   q = applyDateFilter(q, "data_disparo", dr);
   const { data, error } = await q;
   if (error) throw error;

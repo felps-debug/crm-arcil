@@ -13,7 +13,7 @@ jobs:
     # client for pages that read from lib/supabase/queries.ts at module scope.
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://swcqvrowqwylcegrcesu.supabase.co
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3Y3F2cm93cXd5bGNlZ3JjZXN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NDA3MjEsImV4cCI6MjA4OTQxNjcyMX0.05s0gwPdfCuUKm--MUUNf5SFnDwsjdCT_6yD2i5-ejY
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,7 +54,7 @@ jobs:
     # — without these it 500s before any page (even the login form) renders.
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://swcqvrowqwylcegrcesu.supabase.co
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3Y3F2cm93cXd5bGNlZ3JjZXN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NDA3MjEsImV4cCI6MjA4OTQxNjcyMX0.05s0gwPdfCuUKm--MUUNf5SFnDwsjdCT_6yD2i5-ejY
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

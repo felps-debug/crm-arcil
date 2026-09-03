@@ -170,7 +170,7 @@ export function ConsoleButton({
     <button
       {...props}
       className={cn(
-        "inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border px-4 text-[12px] font-bold transition-colors",
+        "inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border px-4 text-[12px] font-bold transition-colors disabled:pointer-events-none disabled:opacity-50",
         active
           ? "border-blue-500 bg-blue-500 text-white"
           : "border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-blue-500/50 hover:text-[var(--text-primary)]",
