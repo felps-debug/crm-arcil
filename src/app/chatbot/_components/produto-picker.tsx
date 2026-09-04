@@ -142,7 +142,9 @@ export function ProdutoPicker({
         />
       </div>
 
-      <div className="max-h-[260px] space-y-1 overflow-y-auto">
+      <div
+        className="max-h-[260px] space-y-1 overflow-y-auto pb-2 [mask-image:linear-gradient(to_bottom,black_calc(100%-56px),transparent_100%)] [-webkit-mask-image:linear-gradient(to_bottom,black_calc(100%-56px),transparent_100%)]"
+      >
         {resultados.map((p) => (
           <button
             key={`${p.source}-${p.id}`}

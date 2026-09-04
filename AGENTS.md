@@ -116,6 +116,34 @@ N8N_COBRANCA_WEBHOOK=...        ← opcional: notifica n8n após disparar cobran
 5. n8n gera imagem, salva no bucket `PDF/{lead_id}`, responde via "Respond to Webhook"
 6. URL retornada é exibida no chat com opção de download
 
+### Marcação na foto
+
+Logo depois do upload da foto, o vendedor marca sobre ela (`_components/marcador-instalacao.tsx`): retângulo do aparelho (obrigatório), traçado da tubulação e ponto elétrico (opcionais). Tudo em fração 0-1 do lado da foto — pixel de tela não sobrevive à diferença de tamanho entre o celular, a cena que o Gemini devolve e a composição final.
+
+A marcação alimenta dois destinos com precisões diferentes:
+
+- **imagem-guia** (`lib/server/guide-mask.ts`): a foto com retângulo magenta / linha ciano / ponto amarelo desenhados por cima, mandada como uma imagem a mais pro Gemini. Modelo de imagem obedece máscara visual; não obedece coordenada escrita. As cores são impossíveis num ambiente residencial de propósito, e o prompt do n8n proíbe reproduzi-las na saída.
+- **âncora exata** da camada vetorial (`lib/server/preview-annotations.ts`): callouts com linha de chamada, cotas, rota colorida e fluxo de ar caem no lugar que o vendedor marcou.
+
+Pular a marcação é sempre permitido: sem ela a prévia usa o layout antigo (título + 4 cards), que não depende de saber onde o aparelho está na cena.
+
+### Divisão de responsabilidade (não quebrar)
+
+O Gemini desenha SÓ a cena física. Todo texto, cota, ícone e legenda é vetor desenhado por `installation-overlay.ts` com satori e fonte local. Modelo de imagem erra texto — já saiu "2,80m" onde o vendedor respondeu 2,70 e uma legenda "FLOXO DE AR" colada no teto. Deixar o Gemini desenhar texto ou tubulação faz o resultado colidir e duplicar com a nossa camada.
+
+`preview-annotations.ts` desenha só linha em SVG; o texto vem como nó satori por cima. SVG embutido como `<img>` NÃO recebe as fontes passadas ao `satori()`, e `<text>` ali sai em branco.
+
+### n8n: só um dos grupos é nosso
+
+`PVtyGZ6gQrBABe83` tem três grupos de nós no mesmo canvas. O do CRM é o do `Webhook` de path `6fdf0bcb-…` (o que bate com `N8N_CHATBOT_WEBHOOK`):
+
+```
+Webhook → Edit Fields2 → GERADOR DE PROMPT2 → HTTP Request1 (gemini-3-pro-image)
+  → Edit Fields3 → Convert to File2 → COLOCA NO STORAGE3 → link da imagem2 → Respond to Webhook
+```
+
+**Armadilha:** com o editor do n8n aberto numa aba, salvar de lá sobrescreve qualquer alteração feita via API depois que a aba foi aberta — o editor grava o estado inteiro que tem em memória. Um ramo inteiro (modo de ajuste) já sumiu assim. Recarregue a aba antes de editar manualmente.
+
 ## Design System
 
 - Tipografia: **Montserrat** (UI — mesma fonte do site institucional arcil.com.br) + **IBM Plex Mono** (dados numéricos)

@@ -243,6 +243,7 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
   const [destination, setDestination] = useState<"devolver_ao_bot" | "sem_retorno">("devolver_ao_bot");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reenviando, setReenviando] = useState(false);
   // A trava era `item.column === "human"`, e isso deixava a tela sem saída:
   //
   // - BRUNO nunca teve handoff aceito, então caía em "aguardando resposta" com
@@ -257,6 +258,8 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
   // A pergunta que interessa ao financeiro é "tem boleto em aberto para baixar?".
   // A coluna continua informando o estado; ela não decide mais quem pode agir.
   const editable = Boolean(item.cobrancaLogId) && item.boletos.length > 0;
+  const emHandoff = Boolean(item.handoffAcceptedAt);
+  const precisaReenviar = item.n8nStatus === "failed" && Boolean(item.resolutionId);
   const scheduledDate = returnDate(item.followupAt);
   const assumedAt = assumedTime(item.handoffStaffOkAt);
   // Enviado ao vendedor (handoff_sent_at) e aceito por ele (handoff_accepted_at)
@@ -274,6 +277,26 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
   // foi marcado, para não obrigar a percorrer tudo antes de confirmar.
   const marked = item.boletos.filter((boleto) => (choices[key(boleto.empresa, boleto.documento)] ?? "em_aberto") !== "em_aberto");
   const markedAmount = marked.reduce((sum, boleto) => sum + boleto.valor, 0);
+
+  async function reenviarAoN8n() {
+    if (!item.resolutionId || reenviando) return;
+    setReenviando(true);
+    setError(null);
+    try {
+      const resposta = await fetch(`/api/leads/${item.leadId}/financial-handoff`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolutionId: item.resolutionId }),
+      });
+      const corpo = (await resposta.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!resposta.ok || corpo?.ok !== true) throw new Error(corpo?.error ?? "Não foi possível liberar o bot.");
+      onSaved();
+    } catch (motivo) {
+      setError(motivo instanceof Error ? motivo.message : "Não foi possível liberar o bot.");
+    } finally {
+      setReenviando(false);
+    }
+  }
 
   async function submit() {
     if (!item.cobrancaLogId || saving || invalidRenegotiation) return;
@@ -307,7 +330,13 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
         <div className="min-w-0"><p className="truncate text-[12px] font-bold text-[var(--text-primary)]">{item.name ?? "Sem nome"}</p><p className="mt-0.5 font-data text-[10px] text-[var(--text-muted)]">{item.phone}</p></div>
         {editable && <ChevronDown size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform ${open ? "rotate-180" : ""}`} />}
       </div>
-      <div className="mt-3 flex items-end justify-between gap-2"><div><p className="font-data text-[14px] font-bold text-[var(--text-primary)]">{money(item.openAmount)}</p><p className="text-[10px] text-[var(--text-muted)]">{item.openBoletoCount} boleto{item.openBoletoCount !== 1 ? "s" : ""} em aberto{vencido && <span className={vencidoAtrasado ? "ml-1 font-semibold text-red-300" : "ml-1"}> · vence {vencido.texto}</span>}</p></div>{assumedAt ? <ConsoleStatus tone="green">Assumido {assumedAt}</ConsoleStatus> : sentAt ? <ConsoleStatus tone="amber">Enviado ao vendedor {sentAt}</ConsoleStatus> : scheduledDate && <ConsoleStatus tone="amber">Retoma {scheduledDate}</ConsoleStatus>}</div>
+      <div className="mt-3 flex items-end justify-between gap-2"><div><p className="font-data text-[14px] font-bold text-[var(--text-primary)]">{money(item.openAmount)}</p><p className="text-[10px] text-[var(--text-muted)]">{item.openBoletoCount} boleto{item.openBoletoCount !== 1 ? "s" : ""} em aberto{vencido && <span className={vencidoAtrasado ? "ml-1 font-semibold text-red-300" : "ml-1"}> · vence {vencido.texto}</span>}</p></div>{assumedAt ? <ConsoleStatus tone="green">Assumido {assumedAt}</ConsoleStatus> : item.origemAtendimento === "manual" ? (
+        // Sem este selo, o board mostrava como "atendimento humano" tanto quem
+        // gerou card no WhatsApp do financeiro quanto quem alguem simplesmente
+        // respondeu pelo Chatwoot — e a conta entre a tela e as mensagens
+        // recebidas nunca fechava.
+        <ConsoleStatus tone="blue">Assumido no Chatwoot</ConsoleStatus>
+      ) : item.origemAtendimento === "card" ? <ConsoleStatus tone="blue">Handoff do agente</ConsoleStatus> : sentAt ? <ConsoleStatus tone="amber">Enviado ao vendedor {sentAt}</ConsoleStatus> : scheduledDate ? <ConsoleStatus tone="amber">Retoma {scheduledDate}</ConsoleStatus> : null}</div>
     </button>
     <AnimatePresence initial={false}>{open && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-[var(--border)]"><div className="space-y-2 p-3">
       <div className="flex items-baseline justify-between gap-2 text-[10px]">
@@ -339,10 +368,34 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 pt-1"><label className="rounded-[7px] border border-[var(--border)] px-2 py-2 text-[10px] font-semibold text-[var(--text-secondary)]"><input className="mr-1.5" type="radio" checked={destination === "devolver_ao_bot"} onChange={() => setDestination("devolver_ao_bot")} />Bot agora</label><label className="rounded-[7px] border border-[var(--border)] px-2 py-2 text-[10px] font-semibold text-[var(--text-secondary)]"><input className="mr-1.5" type="radio" checked={destination === "sem_retorno"} onChange={() => setDestination("sem_retorno")} />Sem retorno</label></div>
-      {destination === "sem_retorno" && <p className="text-[10px] text-amber-300">O bot retoma somente em três dias úteis, se ainda houver boleto aberto.</p>}
+      {/* Escolher o destino do bot só faz sentido para quem esteve com uma
+          pessoa: sem handoff o cliente nunca saiu do atendimento automático, e
+          não existe bloqueio para liberar. Antes o seletor aparecia sempre e o
+          banco recusava com "Lead nao esta em handoff humano assumido" depois
+          de o vendedor já ter preenchido tudo. */}
+      {emHandoff ? (
+        <>
+          <div className="grid grid-cols-2 gap-2 pt-1"><label className="rounded-[7px] border border-[var(--border)] px-2 py-2 text-[10px] font-semibold text-[var(--text-secondary)]"><input className="mr-1.5" type="radio" checked={destination === "devolver_ao_bot"} onChange={() => setDestination("devolver_ao_bot")} />Bot agora</label><label className="rounded-[7px] border border-[var(--border)] px-2 py-2 text-[10px] font-semibold text-[var(--text-secondary)]"><input className="mr-1.5" type="radio" checked={destination === "sem_retorno"} onChange={() => setDestination("sem_retorno")} />Sem retorno</label></div>
+          {destination === "sem_retorno" && <p className="text-[10px] text-amber-300">O bot retoma somente em três dias úteis, se ainda houver boleto aberto.</p>}
+        </>
+      ) : (
+        <p className="pt-1 text-[10px] text-[var(--text-muted)]">Este cliente não passou por atendimento humano — aqui você só registra a baixa dos boletos.</p>
+      )}
       {invalidRenegotiation && <p className="text-[10px] font-semibold text-red-300">Informe a condição de cada renegociação.</p>}{error && <p className="text-[10px] font-semibold text-red-300">{error}</p>}
-      <ConsoleButton active className="w-full" disabled={saving || invalidRenegotiation} onClick={submit} icon={saving ? Loader2 : CheckCircle2}>{saving ? "Salvando..." : "Confirmar atendimento"}</ConsoleButton>
+      <ConsoleButton active className="w-full" disabled={saving || invalidRenegotiation} onClick={submit} icon={saving ? Loader2 : CheckCircle2}>{saving ? "Salvando..." : emHandoff ? "Confirmar atendimento" : "Registrar baixa"}</ConsoleButton>
+
+      {/* A decisão foi salva mas o bot não foi liberado. Sem este reenvio a
+          única saída era confirmar de novo, o que grava uma resolução duplicada
+          para o mesmo atendimento — foi assim que três resoluções idênticas
+          foram parar no banco no dia em que o host do n8n ficou fora do ar. */}
+      {precisaReenviar && (
+        <div className="space-y-2 rounded-[7px] border border-amber-500/40 bg-amber-500/10 p-2">
+          <p className="text-[10px] leading-relaxed text-amber-200">A baixa está salva, mas o bot não chegou a ser liberado para este cliente.</p>
+          <ConsoleButton className="w-full" disabled={reenviando} onClick={reenviarAoN8n} icon={reenviando ? Loader2 : RefreshCw}>
+            {reenviando ? "Reenviando..." : "Liberar o bot agora"}
+          </ConsoleButton>
+        </div>
+      )}
     </div></motion.div>}</AnimatePresence>
     {/* Só faz sentido quando há boleto em aberto mas não achamos o disparo que o
         originou. Sem boleto o card já é "resolvido" — avisar ali pedia uma ação
