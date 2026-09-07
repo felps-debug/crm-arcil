@@ -1,6 +1,8 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, CheckCircle2, Clock, CreditCard, FileWarning, PauseCircle, PlayCircle, Receipt, Search, Send, XCircle } from "lucide-react";
+import { useRef, useState } from "react";
+
+import { AlertTriangle, CalendarClock, CheckCircle2, Clock, CreditCard, FileSpreadsheet, FileWarning, Loader2, PauseCircle, PlayCircle, Receipt, Search, Send, Upload, X, XCircle } from "lucide-react";
 import {
   ConsoleButton,
   ConsoleCard,
@@ -13,6 +15,7 @@ import {
   ConsoleTable,
 } from "@/components/console/console-shell";
 import { formatMoney, formatNumber, useApi } from "@/lib/client-api";
+import { parseCobrancaFile, type CobrancaLead } from "@/lib/cobranca-parser";
 import type { DashboardSummaryResponse, PendingCenterResponse } from "@/types/api";
 
 const invalidRows = [
@@ -23,12 +26,52 @@ const invalidRows = [
 ];
 
 export default function CobrancaPage() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [leads, setLeads] = useState<CobrancaLead[]>([]);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [dispatching, setDispatching] = useState(false);
   const summary = useApi<DashboardSummaryResponse>("/api/dashboard/summary");
   const pending = useApi<PendingCenterResponse>("/api/dashboard/pending-center");
   const loading = summary.loading || pending.loading;
   const error = summary.error || pending.error;
   const collectionsToday = pending.data?.items.find((i) => i.id === "collections_due_today")?.count ?? 0;
   const potential = summary.data?.metrics.find((m) => m.id === "potential_revenue")?.value ?? 0;
+
+  async function handleFile(file?: File) {
+    if (!file) return;
+    setFileName(file.name);
+    setLeads([]);
+    setParseError(null);
+    setDispatchError(null);
+    try {
+      setLeads(await parseCobrancaFile(file));
+    } catch (error) {
+      setParseError(error instanceof Error ? error.message : "Não foi possível ler a planilha.");
+    }
+  }
+
+  async function handleDispatch() {
+    if (!leads.length) return;
+    setDispatching(true);
+    setDispatchError(null);
+    try {
+      const response = await fetch("/api/cobranca/disparo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leads }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error ?? "Não foi possível disparar a cobrança.");
+      setLeads([]);
+      setFileName(null);
+    } catch (error) {
+      setDispatchError(error instanceof Error ? error.message : "Não foi possível disparar a cobrança.");
+    } finally {
+      setDispatching(false);
+    }
+  }
 
   return (
     <ConsolePage
@@ -55,6 +98,26 @@ export default function CobrancaPage() {
             <ConsoleMetric label="Pag. confirmado" value="-" helper="Confirmacao financeira" icon={Receipt} tone="green" />
             <ConsoleMetric label="Total em aberto" value={formatMoney(potential)} helper="Receita potencial" icon={CreditCard} tone="blue" />
           </section>
+
+          <ConsoleCard>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[13px] font-bold text-[var(--text-primary)]">Disparar cobrança</h2>
+                <p className="mt-1 text-[11px] text-[var(--text-muted)]">Importe uma planilha para validar os telefones antes do envio.</p>
+              </div>
+              {leads.length > 0 && <ConsoleStatus tone="green">{leads.length} lead{leads.length === 1 ? "" : "s"} válido{leads.length === 1 ? "" : "s"}</ConsoleStatus>}
+            </div>
+
+            <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(event) => { void handleFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="flex min-h-32 w-full flex-col items-center justify-center rounded-[8px] border border-dashed border-[var(--border-strong)] bg-[var(--bg-inset)] px-4 py-6 text-center transition hover:border-blue-400 hover:bg-blue-500/5">
+              {fileName ? <FileSpreadsheet size={24} className="mb-2 text-blue-300" /> : <Upload size={24} className="mb-2 text-[var(--text-muted)]" />}
+              <span className="text-[12px] font-semibold text-[var(--text-primary)]">{fileName ?? "Selecionar CSV ou Excel"}</span>
+              <span className="mt-1 text-[10px] text-[var(--text-muted)]">Coluna aceita: telefone, celular, fone ou WhatsApp</span>
+            </button>
+
+            {(parseError || dispatchError) && <div className="mt-3 flex items-center gap-2 rounded-[8px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-300"><X size={14} />{parseError || dispatchError}</div>}
+            {leads.length > 0 && <div className="mt-3 flex items-center justify-between gap-3 rounded-[8px] border border-emerald-500/20 bg-emerald-500/5 px-3 py-2"><span className="text-[11px] text-[var(--text-secondary)]">Primeiro telefone: <strong className="font-data text-[var(--text-primary)]">{leads[0].telefone}</strong></span><ConsoleButton icon={dispatching ? Loader2 : Send} onClick={() => void handleDispatch()} disabled={dispatching}>{dispatching ? "Enviando..." : "Disparar"}</ConsoleButton></div>}
+          </ConsoleCard>
 
           <ConsoleCard>
             <div className="mb-5 grid grid-cols-5 items-center gap-2">
