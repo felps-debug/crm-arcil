@@ -321,6 +321,10 @@ export async function getUrgentFollowupsCount(): Promise<number> {
     .from("followups")
     .select("*", { count: "exact", head: true })
     .eq("respondeu", false)
+    // Sem isto, um followup que a régua (arcil-cobranca-py) já fechou como
+    // ENCERRADO por falta de resposta volta a contar como "urgente" pra
+    // sempre — não tem mais nenhum toque agendado pra tirá-lo da fila.
+    .eq("status", "PENDING")
     .lt("updated_at", cutoff);
   if (error) return 0;
   return count ?? 0;

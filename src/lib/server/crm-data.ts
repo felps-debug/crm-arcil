@@ -736,9 +736,12 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
       {
         id: "late_followups",
         label: "Follow-ups atrasados",
-        count: followups.filter((f) => !f.respondeu && isOlderThan(f.created_at, 24)).length,
+        // status !== 'PENDING' exclui followups que a régua (arcil-cobranca-py)
+        // já encerrou sem resposta — senão ficam contando pra sempre, mesmo sem
+        // nenhum próximo toque agendado.
+        count: followups.filter((f) => !f.respondeu && f.status === "PENDING" && isOlderThan(f.created_at, 24)).length,
         severity: "danger",
-        formula: "count(followups where respondeu=false and created_at older than 24h)",
+        formula: "count(followups where respondeu=false and status=PENDING and created_at older than 24h)",
         period: allTimePeriod(),
         tooltip: "Atraso estimado por created_at enquanto não existir campo agendado_para.",
         drilldown: { href: "/leads", filters: { view: "followups", late: "true" } },
@@ -794,7 +797,7 @@ export async function getLeads(filters: LeadFilters): Promise<LeadsResponse> {
   // Um lead pode ter vários follow-ups; o que importa é se ALGUM está no estado
   // que o card do dashboard contou.
   const leadIdsComFollowupAtrasado = new Set(
-    followups.filter((f) => !f.respondeu && isOlderThan(f.created_at, 24)).map((f) => f.lead_id),
+    followups.filter((f) => !f.respondeu && f.status === "PENDING" && isOlderThan(f.created_at, 24)).map((f) => f.lead_id),
   );
   const leadIdsQueResponderam = new Set(
     followups.filter((f) => f.followup_sent && f.respondeu).map((f) => f.lead_id),
