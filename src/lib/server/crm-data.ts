@@ -471,9 +471,15 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
   // atendimento.
   const conversasDoAgente = conversas.filter((c) => c.chatwoot_conv_id);
   const receivedRevenue = sumReceived(cobrancas, handoffDecisions);
+  // Soma pelo campo `valor` da própria linha, não por `metadata.boletos`: uma
+  // linha recusada no disparo (telefone fixo/vazio) nunca teve boleto nenhum
+  // parseado no metadata, mas o valor devido é real e já está em `valor` —
+  // somar só por boleto fazia o card "Em aberto" ficar R$1.551,17 (depois
+  // R$83.365,00, com um disparo maior) menor que a tela /cobranca, que sempre
+  // usou este mesmo campo.
   const openCollections = cobrancas
     .filter((cobranca) => !cobranca.pagamento_confirmado)
-    .reduce((sum, cobranca) => sum + parseSnapshotBoletos(cobranca.metadata).reduce((total, boleto) => total + boleto.valor, 0), 0);
+    .reduce((sum, cobranca) => sum + parseCobrancaMoney(cobranca.valor), 0);
   const { from, to, previousFrom } = previousWindow();
   const sentFollowups = followups.filter((f) => f.followup_sent);
   const answeredFollowups = sentFollowups.filter((f) => f.respondeu);

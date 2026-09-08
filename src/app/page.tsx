@@ -5,13 +5,12 @@ import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
-  ArrowUpRight,
+  ArrowUpRight,
   DollarSign,
-  MessageCircleReply,
   MessagesSquare,
   PackageCheck,
   RefreshCw,
-  Tv,
+  Tv,
 } from "lucide-react";
 import {
   ConsoleButton,
@@ -340,8 +339,8 @@ export default function DashboardPage() {
             <ConsoleMetric
               label="Em aberto"
               value={metricValue(metrics.get("open_collections"), "R$ 0,00")}
-              helper={`${metricValue(metrics.get("followup_response_rate"), "0%")} responderam`}
-              icon={MessageCircleReply}
+              helper="boletos não pagos"
+              icon={DollarSign}
               tone="amber"
             />
             {/* O total da fila já vive no painel "Filas abertas" ao lado, e é
