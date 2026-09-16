@@ -264,7 +264,6 @@ function LeadsBoard() {
               loading={detail.loading && !!selectedId}
               detail={selectedId ? detail.data : null}
               onClose={() => setSelectedId(null)}
-              onSaved={() => setRefreshTick((tick) => tick + 1)}
             />
           )}
         </div>
@@ -287,7 +286,6 @@ function LeadsBoard() {
               loading={detail.loading}
               detail={detail.data}
               onClose={() => setSelectedId(null)}
-              onSaved={() => setRefreshTick((tick) => tick + 1)}
             />
           </div>
         </div>
@@ -484,12 +482,10 @@ function LeadPanel({
   detail,
   loading,
   onClose,
-  onSaved,
 }: {
   detail: LeadDetailResponse | null;
   loading: boolean;
   onClose: () => void;
-  onSaved: () => void;
 }) {
   if (loading) return <ConsoleLoading />;
   if (!detail) {
