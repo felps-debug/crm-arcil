@@ -1507,24 +1507,6 @@ const PAGE = 1000;
  * Linha sem `codigo_erp` não tem como ser pareada, então conta sozinha em vez de
  * todas colidirem numa chave só.
  */
-/**
- * Conversas abertas no Chatwoot, direto do `meta.all_count` — uma requisição,
- * sem paginar nada.
- *
- * Devolve `null` se o Chatwoot não responder. O painel inteiro não pode cair
- * porque um serviço de fora saiu do ar: o resto dos números vem do Supabase e
- * continua válido.
- */
-async function contarConversasAbertasNoChatwoot(): Promise<number | null> {
-  try {
-    const { contarConversas } = await import("@/lib/chatwoot/client");
-    return await contarConversas("open");
-  } catch (err) {
-    console.error("[dashboard] Chatwoot indisponível:", err instanceof Error ? err.message : err);
-    return null;
-  }
-}
-
 /** Produtos distintos com saldo. Mesmo critério de dedupe do resto do painel:
  *  a mesma geladeira tem uma linha por segmento comercial. */
 async function contarProdutosDisponiveis(supabase: SupabaseClient): Promise<number> {

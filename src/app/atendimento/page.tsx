@@ -488,8 +488,9 @@ function Anexo({ anexo, isOutgoing }: { anexo: ChatwootAttachment; isOutgoing: b
   }
   if (anexo.tipo === "image") {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
       <a href={anexo.url} target="_blank" rel="noopener noreferrer">
+        {/* Anexo do Chatwoot: URL externa e assinada, next/image não consegue otimizar. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={anexo.url} alt="Imagem recebida" className="mt-1 max-h-[260px] rounded-[8px]" />
       </a>
     );
