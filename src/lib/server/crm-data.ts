@@ -1,6 +1,7 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { allTimePeriod, countBy, defaultPeriod, isOlderThan, metric, percent } from "@/lib/server/crm-metrics";
+import { isFollowupPendente } from "@/lib/followups";
 import { labelSegment, labelStatus } from "@/lib/server/crm-labels";
 import { agruparDemanda } from "@/lib/server/demanda";
 import {
@@ -260,11 +261,10 @@ function mapLead(lead: LeadRow, vendors: Map<string, VendorRow>, conversations: 
     .sort((a, b) => new Date(b.started_at!).getTime() - new Date(a.started_at!).getTime())[0];
   const aiAgent = lastConversation?.vendor_id ? vendors.get(lastConversation.vendor_id)?.name ?? null : null;
   const leadFollowups = followups.filter((f) => f.lead_id === lead.id);
-  // A followups row is created together with the lead (followup_step 0,
-  // followup_sent false) — it's a queue entry, not a pending action. Only a row
-  // that was actually dispatched and went unanswered represents real waiting.
+  // Regra em @/lib/followups: linha de fila (followup_step 0, followup_sent
+  // false) nao e pendencia -- so conta a que foi disparada e ficou sem resposta.
   const nextFollowup = leadFollowups
-    .filter((f) => f.followup_sent && !f.respondeu && f.created_at)
+    .filter((f) => isFollowupPendente(f) && f.created_at)
     .sort((a, b) => new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime())[0];
 
   return {
@@ -742,12 +742,11 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
       {
         id: "late_followups",
         label: "Follow-ups atrasados",
-        // status !== 'PENDING' exclui followups que a régua (arcil-cobranca-py)
-        // já encerrou sem resposta — senão ficam contando pra sempre, mesmo sem
-        // nenhum próximo toque agendado.
-        count: followups.filter((f) => !f.respondeu && f.status === "PENDING" && isOlderThan(f.created_at, 24)).length,
+        // isFollowupPendente exige followup_sent: sem isso o card contava as
+        // linhas de fila criadas junto com o lead e acusava atraso inexistente.
+        count: followups.filter((f) => isFollowupPendente(f) && isOlderThan(f.created_at, 24)).length,
         severity: "danger",
-        formula: "count(followups where respondeu=false and status=PENDING and created_at older than 24h)",
+        formula: "count(followups where followup_sent=true and respondeu is not true and status=PENDING and created_at older than 24h)",
         period: allTimePeriod(),
         tooltip: "Atraso estimado por created_at enquanto não existir campo agendado_para.",
         drilldown: { href: "/leads", filters: { view: "followups", late: "true" } },
@@ -803,7 +802,7 @@ export async function getLeads(filters: LeadFilters): Promise<LeadsResponse> {
   // Um lead pode ter vários follow-ups; o que importa é se ALGUM está no estado
   // que o card do dashboard contou.
   const leadIdsComFollowupAtrasado = new Set(
-    followups.filter((f) => !f.respondeu && f.status === "PENDING" && isOlderThan(f.created_at, 24)).map((f) => f.lead_id),
+    followups.filter((f) => isFollowupPendente(f) && isOlderThan(f.created_at, 24)).map((f) => f.lead_id),
   );
   const leadIdsQueResponderam = new Set(
     followups.filter((f) => f.followup_sent && f.respondeu).map((f) => f.lead_id),
