@@ -126,10 +126,15 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     // mandaria apagar uma chave que nunca foi criada, e um erro de rede nessa
     // chamada marcaria como "falhou" uma baixa de boleto que deu certo.
     if (!result.tinha_handoff) {
-      await admin
+      // Este era o único dos três updates da rota que não conferia o erro, e
+      // a constraint de n8n_status não aceitava "not_applicable". A recusa
+      // era engolida e 12 resoluções ficaram no DEFAULT "pending", parecendo
+      // entrega travada quando não havia nada a entregar.
+      const { error: naoAplicavelError } = await admin
         .from("financial_handoff_resolutions")
         .update({ n8n_status: "not_applicable" })
         .eq("id", result.resolution_id);
+      if (naoAplicavelError) console.error("[financial-handoff] não marcou not_applicable:", naoAplicavelError);
       return Response.json({ ok: true, resolutionId: result.resolution_id, destination: result.destination, semHandoff: true });
     }
 

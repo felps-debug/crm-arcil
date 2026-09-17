@@ -110,8 +110,9 @@ type CobrancaRow = {
 type FinancialHandoffDecisionRow = {
   empresa: string | null;
   documento: string | null;
-  status: "pago" | "renegociado" | null;
+  status: "pago" | "renegociado" | "juridico" | null;
   note: string | null;
+  promised_at: string | null;
   recorded_at: string | null;
 };
 
@@ -857,7 +858,7 @@ export async function getFinancialHandoffBoard(): Promise<FinancialBoardItem[]> 
   const [leadsRes, snapshotsRes, decisionsRes, resolutionsRes, positionRes] = await Promise.all([
     supabase.from("leads").select(LEAD_SELECT).eq("segment", "COBRANCA"),
     supabase.from("cobranca_log").select("id,telefone,nome,valor,vencimento,status_disparo,respondeu,pagamento_confirmado,data_disparo,created_at,metadata").order("data_disparo", { ascending: false }),
-    supabase.from("cobranca_handoff_boleto_decisions").select("lead_id,empresa,documento,status,note,recorded_at").is("superseded_at", null).order("recorded_at", { ascending: false }),
+    supabase.from("cobranca_handoff_boleto_decisions").select("lead_id,empresa,documento,status,note,promised_at,recorded_at").is("superseded_at", null).order("recorded_at", { ascending: false }),
     supabase.from("financial_handoff_resolutions").select("id,lead_id,destination,recorded_at,followup_at,followup_status,n8n_status").order("recorded_at", { ascending: false }),
     supabase.from("cobranca_handoff_posicao_atual").select("cobranca_log_id,telefone,empresa,documento,valor,vencimento,status,observacao"),
   ]);
@@ -897,7 +898,7 @@ export async function getFinancialHandoffBoard(): Promise<FinancialBoardItem[]> 
   for (const decision of decisions) {
     if (!decision.empresa || !decision.documento || !decision.status) continue;
     const current = decisionsByLead.get(decision.lead_id) ?? [];
-    current.push({ empresa: decision.empresa, documento: decision.documento, status: decision.status, note: decision.note });
+    current.push({ empresa: decision.empresa, documento: decision.documento, status: decision.status, note: decision.note, promisedAt: decision.promised_at ?? null });
     decisionsByLead.set(decision.lead_id, current);
   }
   const latestResolutionByLead = new Map<string, FinancialHandoffResolutionRow>();
@@ -926,6 +927,7 @@ export async function getFinancialHandoffBoard(): Promise<FinancialBoardItem[]> 
       handoffAcceptedAt: lead.handoff_accepted_at ?? null,
       resolution: resolution ? { destination: resolution.destination, recordedAt: resolution.recorded_at, followupStatus: resolution.followup_status } : null,
       openBoletoCount: boletos.length,
+      activeDecisions: leadDecisions,
     });
     return [{
       leadId: lead.id,
@@ -977,7 +979,7 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
     // do CRM nunca aparecia no prontuário do lead.
     supabase.from("image_generations").select("*").eq("lead_id", id).order("created_at", { ascending: false }),
     isCobranca
-      ? supabase.from("cobranca_handoff_boleto_decisions").select("empresa,documento,status,note,recorded_at").eq("lead_id", id).is("superseded_at", null).order("recorded_at", { ascending: false })
+      ? supabase.from("cobranca_handoff_boleto_decisions").select("empresa,documento,status,note,promised_at,recorded_at").eq("lead_id", id).is("superseded_at", null).order("recorded_at", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -1006,7 +1008,7 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
         boletos: latestCobranca ? parseSnapshotBoletos(latestCobranca.metadata) : [],
         activeDecisions: ((handoffDecisionsRes.data ?? []) as FinancialHandoffDecisionRow[])
           .flatMap((decision) => decision.empresa && decision.documento && decision.status && decision.recorded_at
-            ? [{ empresa: decision.empresa, documento: decision.documento, status: decision.status, note: decision.note, recordedAt: decision.recorded_at }]
+            ? [{ empresa: decision.empresa, documento: decision.documento, status: decision.status, note: decision.note, promisedAt: decision.promised_at ?? null, recordedAt: decision.recorded_at }]
             : []),
       }
     : null;

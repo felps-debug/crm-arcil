@@ -152,8 +152,10 @@ export type LeadDetailResponse = {
     activeDecisions: {
       empresa: string;
       documento: string;
-      status: "pago" | "renegociado";
+      status: "pago" | "renegociado" | "juridico";
       note: string | null;
+      /** Data prometida (YYYY-MM-DD); só em `renegociado`. */
+      promisedAt: string | null;
       recordedAt: string;
     }[];
   } | null;
