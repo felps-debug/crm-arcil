@@ -2,6 +2,22 @@ import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { allTimePeriod, countBy, defaultPeriod, isOlderThan, metric, percent } from "@/lib/server/crm-metrics";
 import { isFollowupPendente } from "@/lib/followups";
+
+/**
+ * Devedor nao e prospect.
+ *
+ * O disparo de cobranca grava o cliente inadimplente na tabela `leads` com
+ * `segment=COBRANCA`. Sao 74 dos 82 leads ativos: o card "Leads ativos" dizia
+ * 78 quando o funil comercial real tinha 8, e "Leads sem follow-up" era 100%
+ * financeiro -- pedindo acao do time errado.
+ *
+ * Cobranca tem tela, regua e board proprios. Aqui so entram os comerciais.
+ * Metrica de handoff financeiro NAO usa isto de proposito: ali o publico e
+ * justamente o devedor.
+ */
+const SEGMENTO_COBRANCA = "COBRANCA";
+const ehLeadComercial = (lead: { segment: string | null }) => lead.segment !== SEGMENTO_COBRANCA;
+
 import { labelSegment, labelStatus } from "@/lib/server/crm-labels";
 import { agruparDemanda } from "@/lib/server/demanda";
 import {
@@ -217,6 +233,11 @@ type LeadFilters = {
   hasSales?: string | null;
   /** "true": follow-up enviado e já respondido. */
   respondeu?: string | null;
+  /** "true": só pipeline comercial — tira quem é `segment=COBRANCA`.
+   *  Existe separado de `segment` porque mandar o segmento para a API faz a
+   *  lista voltar só com ele, e as abas da tela (derivadas da lista) se
+   *  apagam sozinhas. Este só exclui, não restringe. */
+  comercial?: string | null;
   limit?: string | null;
 };
 
@@ -489,8 +510,10 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
   const closedRevenue = closedSales.reduce((sum, s) => sum + (s.final_price ?? 0), 0);
   const period = defaultPeriod();
 
-  const currentLeads = leads.filter((l) => inRange(l.created_at, from, to)).length;
-  const previousLeads = leads.filter((l) => inRange(l.created_at, previousFrom, from)).length;
+  // Cobranca fica de fora de tudo que e funil comercial. Ver ehLeadComercial.
+  const leadsComerciais = leads.filter(ehLeadComercial);
+  const currentLeads = leadsComerciais.filter((l) => inRange(l.created_at, from, to)).length;
+  const previousLeads = leadsComerciais.filter((l) => inRange(l.created_at, previousFrom, from)).length;
   // Comparação tem que ser taxa contra taxa. Antes o "vs ant." da taxa de
   // resposta usava a CONTAGEM de follow-ups do periodo anterior, então um
   // percentual era comparado com um número absoluto e o delta saía sem sentido.
@@ -504,25 +527,25 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
       metric({
         id: "total_leads",
         label: "Total leads",
-        value: leads.length,
-        formula: "count(leads)",
+        value: leadsComerciais.length,
+        formula: "count(leads where segment <> COBRANCA)",
         period: allTimePeriod(),
         // Base completa não tem "periodo anterior" — comparar o total histórico
         // com a contagem de 30 dias atrás gerava um delta% inventado.
         // A comparação por periodo vive em new_leads_30d, abaixo.
         previous: null,
-        tooltip: "Todos os leads existentes na tabela leads, sem filtrar por status.",
-        drilldown: { href: "/leads", filters: {} },
+        tooltip: "Leads comerciais, sem filtrar por status. Clientes de cobrança têm tela própria e não entram aqui.",
+        drilldown: { href: "/leads", filters: { comercial: "true" } },
       }),
       metric({
         id: "active_leads",
         label: "Leads ativos",
-        value: leads.filter((l) => l.status === "ACTIVE").length,
-        formula: "count(leads where status = ACTIVE)",
+        value: leadsComerciais.filter((l) => l.status === "ACTIVE").length,
+        formula: "count(leads where status = ACTIVE and segment <> COBRANCA)",
         period: allTimePeriod(),
         previous: null,
-        tooltip: "Leads cujo status atual está marcado como ACTIVE.",
-        drilldown: { href: "/leads", filters: { status: "ACTIVE" } },
+        tooltip: "Leads comerciais com status ACTIVE. Devedor em cobrança não é prospect e sai desta conta.",
+        drilldown: { href: "/leads", filters: { status: "ACTIVE", comercial: "true" } },
       }),
       metric({
         id: "potential_revenue",
@@ -614,9 +637,9 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
       }),
     ],
     commercialFunnel: [
-      { id: "received", label: "Recebidos", value: leads.length },
+      { id: "received", label: "Recebidos", value: leadsComerciais.length },
       { id: "answered", label: "Respondidos", value: answeredFollowups.length },
-      { id: "qualified", label: "Qualificados", value: leads.filter((l) => l.status === "IN_PROGRESS").length },
+      { id: "qualified", label: "Qualificados", value: leadsComerciais.filter((l) => l.status === "IN_PROGRESS").length },
       { id: "quoted", label: "Orçamento enviado", value: quotes.length },
       { id: "closed", label: "Fechados", value: closedSales.length },
     ],
@@ -629,18 +652,18 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
         period,
         previous: previousLeads,
         tooltip: "Leads criados nos últimos 30 dias comparados aos 30 dias anteriores.",
-        drilldown: { href: "/leads", filters: { period: "30d" } },
+        drilldown: { href: "/leads", filters: { period: "30d", comercial: "true" } },
       }),
       metric({
         id: "qualification_rate",
         label: "Taxa de qualificação",
-        value: percent(leads.filter((l) => l.status === "IN_PROGRESS").length, leads.length),
+        value: percent(leadsComerciais.filter((l) => l.status === "IN_PROGRESS").length, leadsComerciais.length),
         unit: "%",
-        formula: "leads IN_PROGRESS / total leads",
+        formula: "leads comerciais IN_PROGRESS / total de leads comerciais",
         period: allTimePeriod(),
         previous: null,
         tooltip: "Aproximação baseada no status IN_PROGRESS até existir pipeline completo.",
-        drilldown: { href: "/leads", filters: { status: "IN_PROGRESS" } },
+        drilldown: { href: "/leads", filters: { status: "IN_PROGRESS", comercial: "true" } },
       }),
       metric({
         id: "average_ticket",
@@ -710,12 +733,12 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
       {
         id: "leads_without_owner",
         label: "Leads sem responsável",
-        count: leads.filter((l) => !l.owner_name && !l.handoff_vendor_id).length,
+        count: leads.filter((l) => ehLeadComercial(l) && !l.owner_name && !l.handoff_vendor_id).length,
         severity: "warning",
-        formula: "count(leads where owner_name is null and handoff_vendor_id is null)",
+        formula: "count(leads where owner_name is null and handoff_vendor_id is null and segment <> COBRANCA)",
         period: allTimePeriod(),
-        tooltip: "Leads que ainda não têm responsável comercial definido.",
-        drilldown: { href: "/leads", filters: { unassigned: "true" } },
+        tooltip: "Leads comerciais sem responsável definido. Cobrança tem fluxo próprio e não entra aqui.",
+        drilldown: { href: "/leads", filters: { unassigned: "true", comercial: "true" } },
       },
       {
         // O estado perigoso do handoff por WhatsApp: a mensagem saiu para o
@@ -733,12 +756,12 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
       {
         id: "leads_without_followup",
         label: "Leads sem follow-up",
-        count: leads.filter((l) => l.status === "ACTIVE" && !leadIdsWithFollowup.has(l.id)).length,
+        count: leads.filter((l) => ehLeadComercial(l) && l.status === "ACTIVE" && !leadIdsWithFollowup.has(l.id)).length,
         severity: "warning",
-        formula: "count(active leads without matching followups.lead_id)",
+        formula: "count(active commercial leads without matching followups.lead_id)",
         period: allTimePeriod(),
-        tooltip: "Leads ativos sem registro correspondente na tabela followups.",
-        drilldown: { href: "/leads", filters: { status: "ACTIVE", withoutFollowup: "true" } },
+        tooltip: "Leads comerciais ativos sem registro em followups. Antes este card era 100% devedor, pedindo ação do time errado.",
+        drilldown: { href: "/leads", filters: { status: "ACTIVE", withoutFollowup: "true", comercial: "true" } },
       },
       {
         id: "late_followups",
@@ -828,6 +851,7 @@ export async function getLeads(filters: LeadFilters): Promise<LeadsResponse> {
       if (filters.respondeu === "true" && !leadIdsQueResponderam.has(lead.id)) return false;
       if (filters.hasQuotes === "true" && !leadIdsComOrcamento.has(lead.id)) return false;
       if (filters.hasSales === "true" && !leadIdsComVenda.has(lead.id)) return false;
+      if (filters.comercial === "true" && lead.segment === SEGMENTO_COBRANCA) return false;
       if (filters.period === "30d" && !inRange(lead.created_at, periodoDe, periodoAte)) return false;
       if (search) {
         const haystack = [lead.name, lead.wa_phone, lead.company, lead.city, lead.region].filter(Boolean).join(" ").toLowerCase();

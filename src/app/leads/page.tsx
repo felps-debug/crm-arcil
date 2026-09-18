@@ -59,7 +59,7 @@ function responsibleLabel(lead: LeadListItem): string {
  * atendido e ninguém pegou. */
 /** Os filtros que o dashboard manda nos drilldowns, além de segment/status/search.
  *  Vão direto para a API, que sabe resolver cada um. */
-const FILTROS_DA_URL = ["unassigned", "withoutFollowup", "handoff", "period", "late", "respondeu", "hasQuotes", "hasSales"] as const;
+const FILTROS_DA_URL = ["unassigned", "withoutFollowup", "handoff", "period", "late", "respondeu", "hasQuotes", "hasSales", "comercial"] as const;
 
 const ROTULO_DO_FILTRO: Record<string, string> = {
   unassigned: "sem responsável",
@@ -70,6 +70,7 @@ const ROTULO_DO_FILTRO: Record<string, string> = {
   respondeu: "respondeu o follow-up",
   hasQuotes: "com orçamento",
   hasSales: "com venda",
+  comercial: "só comercial",
 };
 
 function handoffState(lead: LeadListItem): { label: string; tone: "green" | "red" } | null {
