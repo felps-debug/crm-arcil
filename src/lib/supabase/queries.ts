@@ -3,6 +3,7 @@
    ================================================================ */
 
 import { createClient } from "./client";
+import { filtrarPendentes } from "@/lib/followups";
 import type { Lead, Followup, CobrancaLog, Vendor } from "@/types";
 
 const supabase = createClient();
@@ -111,10 +112,10 @@ export async function getFollowupsByType(tipo: "lead" | "cobranca") {
 }
 
 export async function getPendingFollowups(dr?: QueryDateRange) {
-  let q = supabase
-    .from("followups")
-    .select("*")
-    .eq("respondeu", false)
+  // Mesma regra do resto do painel (@/lib/followups). Esta funcao hoje nao tem
+  // chamador, e antes filtrava so por respondeu=false -- quem viesse usa-la
+  // reintroduziria as linhas de fila nunca disparadas como se fossem pendencia.
+  let q = filtrarPendentes(supabase.from("followups").select("*"))
     .order("created_at", { ascending: true });
   q = applyDateFilter(q, "created_at", dr);
   const { data, error } = await q;
@@ -317,15 +318,13 @@ export async function getAgentStats() {
 
 export async function getUrgentFollowupsCount(): Promise<number> {
   const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
-  const { count, error } = await supabase
-    .from("followups")
-    .select("*", { count: "exact", head: true })
-    .eq("respondeu", false)
-    // Sem isto, um followup que a régua (arcil-cobranca-py) já fechou como
-    // ENCERRADO por falta de resposta volta a contar como "urgente" pra
-    // sempre — não tem mais nenhum toque agendado pra tirá-lo da fila.
-    .eq("status", "PENDING")
-    .lt("updated_at", cutoff);
+  // filtrarPendentes carrega a regra inteira (disparado + sem resposta + ainda
+  // em PENDING). Este contador alimenta o banner do dashboard, o card
+  // "Follow-ups urgentes" e o badge da sidebar — antes ele nao exigia
+  // followup_sent e sinalizava urgencia para linha de fila nunca disparada.
+  const { count, error } = await filtrarPendentes(
+    supabase.from("followups").select("*", { count: "exact", head: true }),
+  ).lt("updated_at", cutoff);
   if (error) return 0;
   return count ?? 0;
 }
