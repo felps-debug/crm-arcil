@@ -236,3 +236,26 @@ export function ConsoleError({ message }: { message: string }) {
     </ConsoleCard>
   );
 }
+
+/**
+ * Aviso discreto de que o que está na tela é o último dado bom, e a atualização
+ * falhou. Não substitui a tela por um erro: o operador continua trabalhando
+ * com o que tem, sabendo que pode estar atrasado.
+ */
+export function ConsoleStaleBadge({ show, onRetry }: { show: boolean; onRetry?: () => void }) {
+  if (!show) return null;
+  return (
+    <span
+      role="status"
+      className="inline-flex items-center gap-1.5 rounded-[4px] border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--amber)]"
+    >
+      <AlertTriangle size={11} />
+      Pode estar desatualizado
+      {onRetry && (
+        <button type="button" onClick={onRetry} className="underline underline-offset-2 hover:text-[var(--text-primary)]">
+          tentar de novo
+        </button>
+      )}
+    </span>
+  );
+}

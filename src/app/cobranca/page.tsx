@@ -45,7 +45,7 @@ function CobrancaPageInner() {
   const [selectedLog, setSelectedLog] = useState<CobrancaLog | null>(null);
   const [expandedMeta, setExpandedMeta] = useState<string | null>(null);
 
-  const { data: followups, loading: loadingFu, error: errorFu } = useSupabase(() => getFollowupsByType("cobranca"), []);
+  const { data: followups, loading: loadingFu, error: errorFu } = useSupabase("sb:cobranca:followups", () => getFollowupsByType("cobranca"), []);
 
   const [logs, setLogs] = useState<CobrancaLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);

@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { clearApiCache } from "@/lib/api-cache";
+import { shouldReloadProfile } from "@/hooks/profile-loader";
 
 export type UserRole = "superadmin" | "owner" | "manager" | "vendor" | "employee" | "client";
 
@@ -24,35 +26,52 @@ export function CurrentUserProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     const supabase = createClient();
+    let currentUserId: string | null = null;
+    let inflight: Promise<void> | null = null;
 
-    async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setProfile(null); setLoading(false); return; }
-
-      const { data } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-
-      setProfile(data ?? null);
-      setLoading(false);
+    // Este perfil só controla o que a UI mostra. A permissão de verdade é
+    // checada no servidor em cada rota (lib/server/api-auth.ts).
+    function load(userId: string) {
+      if (inflight && currentUserId === userId) return inflight;
+      currentUserId = userId;
+      inflight = (async () => {
+        const { data } = await supabase
+          .from("user_profiles")
+          .select("id,email,full_name,role,permissions")
+          .eq("id", userId)
+          .single();
+        if (currentUserId === userId) {
+          setProfile((data as UserProfile | null) ?? null);
+          setLoading(false);
+        }
+      })().finally(() => {
+        inflight = null;
+      });
+      return inflight;
     }
 
-    load();
-
+    // Só o onAuthStateChange: ele já emite INITIAL_SESSION ao montar, então
+    // uma chamada a mais aqui era carga em dobro no primeiro render. E o
+    // usuário vem do próprio evento — sem getUser(), que ia ao Auth server.
+    //
     // Do NOT setLoading(true) here — Supabase fires auth events (e.g. token
     // refresh) whenever the tab regains focus, and AccessGuard unmounts its
     // children while loading, which was wiping in-progress page state (like
     // the Gerador de Imagem chat) just from switching browser tabs. Refresh
     // the profile in the background instead.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const nextUserId = session?.user.id ?? null;
+
+      if (event === "SIGNED_OUT" || !nextUserId) {
+        currentUserId = null;
         setProfile(null);
         setLoading(false);
+        // Nada da sessão anterior pode aparecer para quem entrar depois.
+        if (event === "SIGNED_OUT") clearApiCache();
         return;
       }
-      load();
+
+      if (shouldReloadProfile(event, nextUserId, currentUserId)) void load(nextUserId);
     });
 
     return () => subscription.unsubscribe();

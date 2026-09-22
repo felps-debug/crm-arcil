@@ -10,6 +10,7 @@ import {
   ConsoleError,
   ConsoleInput,
   ConsoleLoading,
+  ConsoleStaleBadge,
   ConsolePage,
   ConsoleStatus,
   ConsoleTable,
@@ -251,9 +252,12 @@ function LeadsBoard() {
       </div>
 
       {leads.isInitialLoading && <ConsoleLoading />}
-      {leads.error && <ConsoleError message={leads.error} />}
+      {/* Erro só toma a tela quando não há nada para mostrar; com dado anterior
+          vira o aviso de desatualizado e a lista continua utilizável. */}
+      {leads.error && !leads.data && <ConsoleError message={leads.error} />}
+      <ConsoleStaleBadge show={leads.isStale} onRetry={leads.revalidate} />
 
-      {!leads.isInitialLoading && !leads.error && (
+      {!leads.isInitialLoading && leads.data && (
         <div className={view === "kanban" ? "block" : "grid grid-cols-1 gap-4 xl:grid-cols-[1fr_380px]"}>
           <div className="min-w-0">
             {view === "table" && <LeadsTable leads={items} onSelect={setSelectedId} selectedId={selectedId} />}

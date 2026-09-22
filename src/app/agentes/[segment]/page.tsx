@@ -48,13 +48,13 @@ export default function AgentDetailPage({ params }: { params: Promise<{ segment:
   const segmentUpper = segment.toUpperCase() as LeadSegment;
 
   const { data: leads, loading: loadingLeads, error: errorLeads } =
-    useSupabase(() => getActiveLeads({ segment: segmentUpper }), [segment]);
+    useSupabase(`sb:agentes:leads:${segmentUpper}`, () => getActiveLeads({ segment: segmentUpper }), [segment]);
 
   const { data: followups, loading: loadingFu, error: errorFu } =
-    useSupabase(() => getFollowups(), []);
+    useSupabase("sb:agentes:followups", () => getFollowups(), []);
 
   const { data: conversations, loading: loadingConv, error: errorConv } =
-    useSupabase(() => getRecentConversations(50), []);
+    useSupabase("sb:agentes:conversas:50", () => getRecentConversations(50), []);
 
   const segmentLeads = leads ?? [];
   const segmentFollowups = (followups ?? []).filter(

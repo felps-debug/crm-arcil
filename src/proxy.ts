@@ -62,11 +62,12 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // Optimistic session check from cookie — no network call to Supabase auth server.
-  // Full JWT verification happens in API routes and server actions as needed.
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  // Verificação local da assinatura ES256 do JWT (JWKS em cache) — sem ida ao
+  // Auth server, e diferente de getSession() não aceita cookie adulterado.
+  // Também renova o token quando ele expira, gravando o cookie novo via setAll.
+  // Autorização (papel, permissão) continua nas rotas: aqui só decide login.
+  const { data } = await supabase.auth.getClaims();
+  const session = Boolean(data?.claims?.sub);
 
   const isLoginPage = request.nextUrl.pathname.startsWith("/login");
 

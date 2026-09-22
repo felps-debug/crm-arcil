@@ -19,6 +19,7 @@ import {
   ConsoleLoading,
   ConsoleMetric,
   ConsolePage,
+  ConsoleStaleBadge,
   ConsoleStatus,
   ConsoleTable,
 } from "@/components/console/console-shell";
@@ -272,6 +273,7 @@ export default function DashboardPage() {
       subtitle="Visão central da operação"
       actions={
         <>
+          <ConsoleStaleBadge show={snapshot.isStale} onRetry={snapshot.revalidate} />
           <ConsoleStatus tone={realtime === "live" ? "green" : realtime === "paused" ? "red" : "slate"}>
             {realtime === "live" ? "Ao vivo" : realtime === "paused" ? "Pausado" : "Conectando"}
           </ConsoleStatus>
