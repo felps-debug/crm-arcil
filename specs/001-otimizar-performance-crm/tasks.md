@@ -207,9 +207,9 @@ description: "Lista de tarefas: Otimizar Performance do CRM"
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T065 [P] Atualizar `AGENTS.md`. **Estoque**: `estoque` e `estoque_transito` **já vêm preenchidos** pelo n8n em ~97% das linhas, remover a afirmação de que estão `null`. **Deploy**: região `gru1` via `vercel.json`. **Estrutura**: `/api/dashboard/snapshot`, `/api/perf/traces`, `lib/api-cache.ts`, `lib/realtime-sections.ts`, `lib/perf/`, `hooks/use-urgent-followups.tsx`. **Auth**: `getClaims` em leitura e `strict` (getUser) em mutação. **Migrações**: última passa a ser a de `20260923_*`. **Armadilhas**: realtime agora com janela de 2 s por seção
-- [ ] T066 [P] Atualizar `docs/backend/api-contracts.md` com `GET /api/dashboard/snapshot` e `POST /api/perf/traces` (apontando para `specs/001-otimizar-performance-crm/contracts/`)
-- [ ] T067 Remover de `src/lib/supabase/queries.ts` o uso direto de `getRecentActivity` se não sobrar nenhum chamador (`grep -rn "getRecentActivity" src`), e manter `getUrgentFollowupsCount` só para o provider
+- [X] T065 [P] Atualizar `AGENTS.md`. **Estoque**: `estoque` e `estoque_transito` **já vêm preenchidos** pelo n8n em ~97% das linhas, remover a afirmação de que estão `null`. **Deploy**: região `gru1` via `vercel.json`. **Estrutura**: `/api/dashboard/snapshot`, `/api/perf/traces`, `lib/api-cache.ts`, `lib/realtime-sections.ts`, `lib/perf/`, `hooks/use-urgent-followups.tsx`. **Auth**: `getClaims` em leitura e `strict` (getUser) em mutação. **Migrações**: última passa a ser a de `20260923_*`. **Armadilhas**: realtime agora com janela de 2 s por seção
+- [X] T066 [P] Atualizar `docs/backend/api-contracts.md` com `GET /api/dashboard/snapshot` e `POST /api/perf/traces` (apontando para `specs/001-otimizar-performance-crm/contracts/`)
+- [X] T067 Remover de `src/lib/supabase/queries.ts` o uso direto de `getRecentActivity` se não sobrar nenhum chamador (`grep -rn "getRecentActivity" src`), e manter `getUrgentFollowupsCount` só para o provider
 - [ ] T068 Rodar o aceite final completo no preview (quickstart §4 inteiro), `node scripts/perf-compare.mjs perf-results/baseline-*.json perf-results/final-*.json`, e anexar ao PR a tabela de antes e depois com carga fria, carga quente, p50, p95, operações e equivalência dos indicadores (RF-022)
 - [ ] T069 Rodar os gates finais: `npx eslint src e2e scripts`, `npm run typecheck`, `npm run test`, `npm run build` e `get_advisors` (security e performance). Abrir o PR para `master` só com as fases 1–7
 

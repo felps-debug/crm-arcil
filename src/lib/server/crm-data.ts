@@ -1639,8 +1639,8 @@ const byDateDesc = <T>(date: (row: T) => string | null) => (a: T, b: T) => {
 
 /**
  * Feed "atividade recente" do dashboard, a partir do núcleo já carregado.
- * Mesma regra que o browser aplicava em getRecentActivity (queries.ts), que
- * fazia três consultas próprias a cada refresh.
+ * Antes o browser montava isso sozinho, com três consultas próprias a cada
+ * refresh; a regra é a mesma.
  */
 export function buildActivity(core: CoreData): ActivityItem[] {
   const items: ActivityItem[] = [];

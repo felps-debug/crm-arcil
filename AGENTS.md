@@ -61,7 +61,10 @@ src/
       cobranca/disparo/            → valida telefones, chama o Python, confere gravação
       cobranca/financial-handoffs/
       cobranca/reenviar-nao-disparados/
-      dashboard/summary/, dashboard/pending-center/
+      dashboard/snapshot/          → o que o dashboard chama: todas as seções numa
+                                     request (permissão por seção, Server-Timing)
+      dashboard/summary/, dashboard/pending-center/  (compatibilidade)
+      perf/traces/                 → etapas medidas no browser → performance_traces
       generate-image/, generate-image/condensadora-local/
       inventory/summary/
       leads/, leads/[id]/, leads/[id]/conversations/, leads/[id]/financial-handoff/
@@ -76,11 +79,19 @@ src/
   hooks/
     use-current-user.tsx → role + permissões (Context; NÃO seta loading em
                            refresh de token, senão AccessGuard desmonta a página)
-    use-supabase.ts      → hook genérico para queries assíncronas
+    use-supabase.ts      → hook genérico; com chave (`useSupabase(key, fn)`) usa o cache de tela
+    use-urgent-followups.tsx → UMA contagem de follow-ups urgentes por sessão
+                           (snapshot abastece, sidebar lê)
     use-sidebar.tsx, use-theme.tsx
   lib/
     env.ts             → leitura saneada de TODA env var (strip de não-ASCII/BOM)
-    client-api.ts      → fetch helpers do browser
+    client-api.ts      → useApi (cache de tela) + fetchJson
+    api-cache.ts       → último dado de cada tela, SÓ em memória da aba (30 s
+                         fresco, stale-while-revalidate). Nunca localStorage:
+                         é dado pessoal. Logout limpa.
+    realtime-sections.ts → tabela → seções do dashboard + janela de 2 s
+    perf/              → trace-context (AsyncLocalStorage, timeStage, conta idas
+                         ao Supabase), trace-server, trace-client, trace-validate
     marcacao.ts        → geometria da marcação sobre a foto (fração 0-1)
     watermark-badge.ts, versiculo-do-dia.ts, utils.ts
     chatwoot/client.ts → Chatwoot Application API (lança erro só na 1ª request)
@@ -88,7 +99,14 @@ src/
                          (service role — só em API routes), queries.ts
     server/
       api-auth.ts          → requireApiUser / requireApiPermission /
-                             requireStaffUser / superadmin — ENFORCEMENT real
+                             requireStaffUser / superadmin — ENFORCEMENT real.
+                             Leitura: getClaims (JWT ES256 verificado local).
+                             Mutação: `{ strict: true }` → getUser, que
+                             enxerga sessão revogada. Rota nova que ESCREVE
+                             tem que passar strict.
+      dashboard-snapshot.ts → seções do dashboard, cada fonte lida uma vez
+      product-metrics.ts   → números do catálogo via rpc product_metrics()
+      select-all-pages.ts  → paginação completa (PostgREST corta em 1.000 sem avisar)
       roles.ts             → ROLE_PERMISSIONS
       crm-data.ts          → (72 KB) agregações do CRM
       crm-metrics.ts, crm-labels.ts, demanda.ts
@@ -99,7 +117,8 @@ src/
   types/index.ts   → tipos das tabelas Supabase
   types/api.ts     → contratos das rotas /api
 supabase/
-  migrations/      → migrações versionadas (última: 20260903_advisor_hardening.sql)
+  migrations/      → migrações versionadas (últimas: 20260923_product_metrics,
+                     20260923_rls_initplan_my_role, 20260923_performance_traces)
   functions/hybrid-search/
   schema.sql
 e2e/login.spec.ts
@@ -117,9 +136,11 @@ scripts/seed.mjs, scripts/generate-arcil-checklist-pdf.mjs
 
 ### Estoque
 
-A carga do ERP traz `id_erp`, `nome`, `marca`, `grupo`, `subgrupo`, `sku`, `ean` e `preco` — **não traz quantidade**. A coluna `estoque` existe nas tabelas de produto e está `null` em todas as linhas; `products_builder_architect` nem tem a coluna.
+O workflow n8n "ERP — SALDO DE ESTOQUE" grava `estoque` e `estoque_transito` de hora em hora nas **quatro** tabelas de produto (inclusive `products_builder_architect`, que tem a coluna). Em 2026-09-22, ~97% das linhas tinham saldo. `estoque` nulo continua significando "o ERP não mandou saldo" — nunca zero —, e a tela mostra "não sincronizado" nesse caso.
 
-Enquanto isso não mudar, a tela `/demanda-estoque` mostra "não sincronizado" em vez de zero, e o sinal de demanda vem de `out_of_stock_requests`, que o agente preenche quando não consegue atender um pedido. `estoque_transito` (migração `20260824_add_estoque_transito.sql`) rastreia o que está a caminho, separado do vendável.
+Contagem de produto é por `codigo_erp` (a mesma geladeira tem uma linha por segmento) e sai de `public.product_metrics()`: dashboard, pendências e `/demanda-estoque` usam o mesmo número. O sinal de demanda vem de `out_of_stock_requests`, que o agente preenche quando não consegue atender um pedido.
+
+**O sync regrava todas as linhas mesmo sem mudança** (~2,4 mi de updates em `products_reseller`, que tem 1.509 linhas) — é o maior consumidor de CPU do banco. Correção descrita em `specs/001-otimizar-performance-crm/contracts/erp-sync-change.md` (`IS DISTINCT FROM` nos UPDATEs). `estoque_transito` (migração `20260824_add_estoque_transito.sql`) rastreia o que está a caminho, separado do vendável.
 
 ### Tabela `user_profiles`
 Colunas: `id` (FK auth.users), `email`, `full_name`, `role` (enum), `permissions` (jsonb), `created_at`, `updated_at`
@@ -273,12 +294,14 @@ Webhook → Edit Fields2 → GERADOR DE PROMPT2 → HTTP Request1 (gemini-3-pro-
 - **`sharp` some do `node_modules` sozinho.** Sintoma: `typecheck` cospe `TS2307: Cannot find module 'sharp'` em 5 arquivos, `installation-overlay.test.ts` falha ao importar, e o `build` morre com `Cannot find module 'require-in-the-middle'`. Conserto: `npm install`. Não é bug do repo.
 - **Lint local varre `.worktrees/`.** `eslint.config.mjs` ignora `.claude/worktrees/**`, mas os worktrees deste repo ficam em `/.worktrees/` (raiz). Resultado: `npm run lint` acha milhares de problemas dentro de checkouts aninhados. O CI passa porque lá não existe `.worktrees/`. Pra ver só o código real: `npx eslint src e2e scripts`.
 - **`src/proxy.ts` roda em toda request**, `/login` inclusive, e constrói o client Supabase sem condição. Sem `NEXT_PUBLIC_SUPABASE_*` ele 500a antes de qualquer página aparecer — inclusive o próprio formulário de login.
-- **Realtime emite um evento por linha.** Disparo em lote grava dezenas de linhas de uma vez; sem debounce cada uma refazia a query inteira. Agrupe (ver `fetchLogsBatched` em `cobranca/page.tsx`).
+- **Realtime emite um evento por linha.** Disparo em lote grava dezenas de linhas de uma vez. Agrupe numa janela de 2 s que abre no primeiro evento e **não reinicia** (`REALTIME_WINDOW_MS` em `lib/realtime-sections.ts`) — debounce que reinicia adia a tela indefinidamente durante um lote grande. No dashboard, cada tabela só invalida as seções que dependem dela.
+- **Admin client ignora RLS.** Dado que o browser lia com RLS e passou a vir por rota com `createAdminClient` precisa da regra reaplicada à mão na rota — ex.: `activity`/`urgentFollowups` no snapshot exigem staff, porque a RLS `staff_read_*` barrava a role client.
 - **`use-current-user` não seta `loading` em refresh de token.** O Supabase dispara `onAuthStateChange` toda vez que a aba volta ao foco; como `AccessGuard` desmonta os filhos enquanto carrega, isso apagava o estado do wizard do Gerador de Imagem só de trocar de aba.
 
 ## Deploy (Vercel)
 
 - Projeto Vercel: `crm-arcil`, escopo **`felps-debugs-projects`** (`.vercel/project.json`). Conta `ottoboniluke` não tem acesso a esse escopo — `vercel` CLI/MCP retorna 403 sem re-autenticar nele.
 - Push em `master` → deploy de produção automático via integração GitHub (`vercel[bot]`). PR → preview.
+- **Região: `gru1`** (`vercel.json`), perto do banco em `sa-east-1`. Antes as funções rodavam no padrão `iad1` e cada query cruzava o continente. `performance_traces.region` confirma onde a função rodou.
 - Repo canônico: `felps-debug/crm-arcil` (remote `origin`). `ottoboniluke/crm-arcil` é fork/espelho (remote `ottoboniluke`).
 - Configurar as mesmas env vars do `.env.local` no painel da Vercel.

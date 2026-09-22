@@ -20,7 +20,19 @@ type ApiMetric = {
 
 ## Endpoints
 
+### `GET /api/dashboard/snapshot`
+
+What the dashboard actually calls: every section in one request, one identity check, each table read once. `?sections=summary,pending,...` returns only those (used by realtime). Each section is `{status: "ok", data} | {status: "error"} | {status: "forbidden"}` and fails on its own. `inventory` requires `manage_estoque`; `activity`/`urgentFollowups` require a staff role. Responds with `Server-Timing` and `x-trace-id`.
+
+Full contract: `specs/001-otimizar-performance-crm/contracts/dashboard-snapshot.md`.
+
+### `POST /api/perf/traces`
+
+Browser-side timings (ttfb, ready) for a journey, keyed by the same `trace_id` the server records. Stored in `performance_traces` (superadmin read only, no personal data, 30-day retention). Contract: `specs/001-otimizar-performance-crm/contracts/performance-traces.md`.
+
 ### `GET /api/dashboard/summary`
+
+Still served for compatibility; the dashboard page uses `/api/dashboard/snapshot`. Product numbers come from `public.product_metrics()`.
 
 Returns dashboard metrics, commercial funnel, commercial indicators, and lead breakdowns.
 
