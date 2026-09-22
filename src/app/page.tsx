@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -23,8 +23,11 @@ import {
   ConsoleStatus,
   ConsoleTable,
 } from "@/components/console/console-shell";
-import { formatMoney, formatNumber, useApi } from "@/lib/client-api";
+import { fetchJson, formatMoney, formatNumber, useApi } from "@/lib/client-api";
+import { mutate } from "@/lib/api-cache";
+import { createSectionBatcher } from "@/lib/realtime-sections";
 import { createClient } from "@/lib/supabase/client";
+import { useUrgentFollowups } from "@/hooks/use-urgent-followups";
 import type {
   ApiMetric,
   DashboardSnapshotResponse,
@@ -75,6 +78,8 @@ function firstBreakdown(items: DashboardSummaryResponse["breakdowns"]["leadsBySt
     : "Sem distribuição registrada";
 }
 
+const SNAPSHOT_URL = "/api/dashboard/snapshot";
+
 type SectionView<T> = { data: T | null; loading: boolean; error: string | null; forbidden: boolean };
 
 /** Uma seção do snapshot no formato que os blocos da tela já consumiam. */
@@ -93,31 +98,49 @@ function timeOf(date: string | null) {
 }
 
 export default function DashboardPage() {
-  const [refreshTick, setRefreshTick] = useState(0);
   const [realtime, setRealtime] = useState<"connecting" | "live" | "paused">("connecting");
   const [tvMode, setTvMode] = useState(false);
 
-  const refresh = useCallback(() => setRefreshTick((tick) => tick + 1), []);
+  // Uma request para a tela inteira: /api/dashboard/snapshot verifica o usuário
+  // uma vez e lê cada tabela uma vez. Antes eram quatro rotas, cada uma com a
+  // própria autenticação e as mesmas sete varreduras, mais três consultas do
+  // browser para atividade e follow-ups urgentes.
+  const snapshot = useApi<DashboardSnapshotResponse>(SNAPSHOT_URL);
+  const { revalidate } = snapshot;
 
   useEffect(() => {
     const supabase = createClient();
+    let lastApplied = 0;
+    let flushSeq = 0;
 
-    // O realtime emite um evento por LINHA alterada. Um disparo de cobrança do
-    // n8n grava dezenas de linhas de uma vez, e sem isto cada uma refazia as
-    // quatro chamadas do painel. Meio segundo agrupa o lote em uma atualização
-    // só, sem que a tela pareça mais lenta para uma alteração isolada.
-    let batch: ReturnType<typeof setTimeout> | undefined;
-    const refreshBatched = () => {
-      clearTimeout(batch);
-      batch = setTimeout(refresh, 500);
-    };
+    // O realtime emite um evento por LINHA, e um disparo de cobrança grava
+    // dezenas de uma vez. O batcher junta tudo que chega em 2s e pede de volta
+    // só as seções que dependem das tabelas que mudaram — uma conversa nova
+    // não recarrega pendências nem estoque.
+    const batcher = createSectionBatcher(async (secoes) => {
+      const seq = ++flushSeq;
+      try {
+        const partial = await fetchJson<DashboardSnapshotResponse>(`${SNAPSHOT_URL}?sections=${secoes.join(",")}`);
+        // Um flush lento não pode apagar o que um flush mais novo já trouxe.
+        if (seq < lastApplied) return;
+        lastApplied = seq;
+        mutate<DashboardSnapshotResponse>(SNAPSHOT_URL, (atual) => ({
+          ...partial,
+          sections: { ...atual?.sections, ...partial.sections },
+        }));
+      } catch {
+        // Falhou a atualização parcial: refaz a tela inteira em segundo plano.
+        revalidate();
+      }
+    });
 
+    const onChange = (table: string) => () => batcher.add(table);
     const channel = supabase
       .channel("operacao-agora-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, refreshBatched)
-      .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, refreshBatched)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, refreshBatched)
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, refreshBatched)
+      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, onChange("leads"))
+      .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, onChange("followups"))
+      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, onChange("cobranca_log"))
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, onChange("conversations"))
       // Sem refletir o status da inscrição, o selo dizia "ao vivo" mesmo com o
       // canal derrubado — o pior estado possível num painel de operação.
       .subscribe((status) => {
@@ -125,16 +148,14 @@ export default function DashboardPage() {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setRealtime("paused");
       });
     return () => {
-      clearTimeout(batch);
+      batcher.dispose();
       supabase.removeChannel(channel);
     };
-  }, [refresh]);
+    // revalidate muda de identidade a cada render; o canal não pode ser refeito por isso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Uma request para a tela inteira: /api/dashboard/snapshot verifica o usuário
-  // uma vez e lê cada tabela uma vez. Antes eram quatro rotas, cada uma com a
-  // própria autenticação e as mesmas sete varreduras, mais três consultas do
-  // browser para atividade e follow-ups urgentes.
-  const snapshot = useApi<DashboardSnapshotResponse>(`/api/dashboard/snapshot${refreshTick ? `?_r=${refreshTick}` : ""}`);
+  const refresh = revalidate;
   const sections = snapshot.data?.sections;
   const summary = sectionState(sections?.summary, snapshot);
   const pending = sectionState(sections?.pending, snapshot);
@@ -143,7 +164,13 @@ export default function DashboardPage() {
   const activityState = sectionState(sections?.activity, snapshot);
   const activity = activityState.data;
   const loadingActivity = activityState.loading;
-  const urgentFollowups = sections?.urgentFollowups?.status === "ok" ? sections.urgentFollowups.data.count : 0;
+  // Um número de follow-ups urgentes por sessão: o do snapshot abastece o
+  // contexto, que a sidebar também lê — em vez de cada um buscar o seu.
+  const { count: urgentFollowups, setFromSnapshot } = useUrgentFollowups();
+  const snapshotUrgent = sections?.urgentFollowups?.status === "ok" ? sections.urgentFollowups.data.count : null;
+  useEffect(() => {
+    if (snapshotUrgent !== null) setFromSnapshot(snapshotUrgent);
+  }, [snapshotUrgent, setFromSnapshot]);
 
   const metrics = useMemo(
     () => new Map((summary.data?.metrics ?? []).map((metric) => [metric.id, metric])),

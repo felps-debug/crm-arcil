@@ -5,6 +5,7 @@ import { CheckCircle2, ChevronDown, Loader2, MessageSquare, RefreshCw, Search, S
 import { AnimatePresence, motion } from "framer-motion";
 import { ConsoleButton, ConsoleCard, ConsoleError, ConsoleLoading, ConsoleStatus } from "@/components/console/console-shell";
 import { createClient } from "@/lib/supabase/client";
+import { REALTIME_WINDOW_MS } from "@/lib/realtime-sections";
 import type { FinancialBoardColumn, FinancialBoardItem, FinancialHandoffDecisionStatus } from "@/lib/server/financial-handoff";
 import type { LeadConversationsResponse } from "@/lib/server/crm-data";
 
@@ -88,8 +89,13 @@ export function FinancialHandoffBoard() {
     // queries quase ao mesmo tempo. Mesmo padrão de src/app/page.tsx.
     let batch: ReturnType<typeof setTimeout> | undefined;
     const loadBatched = () => {
-      clearTimeout(batch);
-      batch = setTimeout(load, 500);
+      // Janela de 2s que abre no primeiro evento e não reinicia: um lote grande
+      // não adia a atualização indefinidamente (lib/realtime-sections.ts).
+      if (batch) return;
+      batch = setTimeout(() => {
+        batch = undefined;
+        load();
+      }, REALTIME_WINDOW_MS);
     };
     const channel = supabase.channel("financial-handoff-board")
       .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, loadBatched)

@@ -16,6 +16,8 @@ import {
   ConsoleTable,
 } from "@/components/console/console-shell";
 import { formatDateTime, useApi } from "@/lib/client-api";
+import { invalidate } from "@/lib/api-cache";
+import { REALTIME_WINDOW_MS } from "@/lib/realtime-sections";
 import { createClient } from "@/lib/supabase/client";
 import type { LeadDetailResponse, LeadListItem, LeadsResponse } from "@/types/api";
 import { FinancialHandoffCard } from "./_components/financial-handoff-card";
@@ -137,20 +139,21 @@ function LeadsBoard() {
     setDebouncedSearch(urlSearch);
   }
 
-  // Bump on any leads/followups change so the board (and the open lead's
-  // detail panel) update live instead of only on a manual refresh — same
-  // postgres_changes pattern used in / and /cobranca.
-  const [refreshTick, setRefreshTick] = useState(0);
-
+  // Any leads/followups/conversations change invalidates the board (and the
+  // open lead's detail panel) so they update live instead of only on a manual
+  // refresh — same postgres_changes pattern used in / and /cobranca.
   useEffect(() => {
     const supabase = createClient();
-    // Um disparo/atualização em lote grava várias linhas quase ao mesmo tempo;
-    // sem agrupar, cada uma mudava `refreshTick` (e portanto a URL do useApi),
-    // empilhando um refetch por linha. Mesmo padrão de src/app/page.tsx.
+    // Um disparo/atualização em lote grava várias linhas quase ao mesmo tempo.
+    // A janela abre no primeiro evento e fecha em 2s, sem reiniciar: junta o
+    // lote todo num refetch só, e um fluxo contínuo não adia a tela para sempre.
     let batch: ReturnType<typeof setTimeout> | undefined;
     const bumpBatched = () => {
-      clearTimeout(batch);
-      batch = setTimeout(() => setRefreshTick((t) => t + 1), 500);
+      if (batch) return;
+      batch = setTimeout(() => {
+        batch = undefined;
+        invalidate("/api/leads");
+      }, REALTIME_WINDOW_MS);
     };
     const ch = supabase
       .channel("leads-rt")
@@ -181,7 +184,6 @@ function LeadsBoard() {
     if (valor) params.set(chave, valor);
   }
   params.set("limit", "300");
-  if (refreshTick) params.set("_r", String(refreshTick));
 
   const filtrosAtivos = FILTROS_DA_URL.filter((chave) => searchParams.get(chave)).map((chave) => ({
     chave,
@@ -190,7 +192,7 @@ function LeadsBoard() {
 
   const leads = useApi<LeadsResponse>(`/api/leads?${params.toString()}`);
   const detail = useApi<LeadDetailResponse>(
-    selectedId ? `/api/leads/${selectedId}${refreshTick ? `?_r=${refreshTick}` : ""}` : null
+    selectedId ? `/api/leads/${selectedId}` : null
   );
   const allItems = useMemo(() => leads.data?.items ?? [], [leads.data]);
   const items = useMemo(

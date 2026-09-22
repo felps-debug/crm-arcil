@@ -20,6 +20,7 @@ import { CobrancaLogDrawer } from "@/components/ui/cobranca-log-drawer";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useSupabase } from "@/hooks/use-supabase";
 import { createClient } from "@/lib/supabase/client";
+import { REALTIME_WINDOW_MS } from "@/lib/realtime-sections";
 import { formatCurrency } from "@/lib/utils";
 import { getCobrancaLog, getFollowupsByType } from "@/lib/supabase/queries";
 import type { CobrancaLog } from "@/types";
@@ -77,8 +78,13 @@ function CobrancaPageInner() {
     // src/app/page.tsx (refreshBatched).
     let batch: ReturnType<typeof setTimeout> | undefined;
     const fetchLogsBatched = () => {
-      clearTimeout(batch);
-      batch = setTimeout(fetchLogs, 500);
+      // Janela de 2s que abre no primeiro evento e não reinicia: um lote grande
+      // não adia a atualização indefinidamente (lib/realtime-sections.ts).
+      if (batch) return;
+      batch = setTimeout(() => {
+        batch = undefined;
+        fetchLogs();
+      }, REALTIME_WINDOW_MS);
     };
     const ch = supabase
       .channel("cobranca-rt")

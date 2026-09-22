@@ -152,6 +152,23 @@ export function load<T>(
 }
 
 /**
+ * Aplica um dado novo sem buscar a chave inteira — ex.: o dashboard recebeu só
+ * as seções que o realtime pediu e mescla no snapshot que já está na tela.
+ * Uma carga completa mais antiga ainda em voo passa a ser descartada, para não
+ * sobrescrever a parte que acabou de chegar.
+ */
+export function mutate<T>(key: string, update: (current: T | null) => T) {
+  const entry = entryFor(key);
+  entry.data = update(entry.hasData ? (entry.data as T) : null);
+  entry.hasData = true;
+  entry.fetchedAt = Date.now();
+  entry.error = null;
+  entry.invalidated = false;
+  entry.acceptedSeq = ++entry.seq;
+  publish(entry);
+}
+
+/**
  * Marca como velho. Quem está na tela revalida agora; quem não está, na
  * próxima visita. É o que o realtime chama quando uma tabela muda.
  */

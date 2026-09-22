@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cacheKey, clearApiCache, getView, invalidate, load, subscribe } from "./api-cache";
+import { cacheKey, clearApiCache, getView, invalidate, load, mutate, subscribe } from "./api-cache";
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -104,6 +104,16 @@ describe("store de tela", () => {
     subscribe("k", cb);
     await load("k", async () => 1);
     expect(cb).toHaveBeenCalled();
+  });
+
+  it("mutate mescla sem buscar, e carga completa mais antiga em voo não sobrescreve", async () => {
+    await load("k", async () => ({ a: 1, b: 1 }));
+    const antiga = deferred<{ a: number; b: number }>();
+    const emVoo = load("k", () => antiga.promise, { force: true });
+    mutate<{ a: number; b: number }>("k", (atual) => ({ ...atual!, b: 2 }));
+    antiga.resolve({ a: 0, b: 0 });
+    await emVoo;
+    expect(getView("k").data).toEqual({ a: 1, b: 2 });
   });
 
   it("clearApiCache esvazia tudo (logout)", async () => {
