@@ -5,6 +5,7 @@
 import { createClient } from "./client";
 import { filtrarPendentes } from "@/lib/followups";
 import type { Lead, Followup, CobrancaLog, Vendor } from "@/types";
+import type { ActivityItem } from "@/types/api";
 
 const supabase = createClient();
 
@@ -329,13 +330,7 @@ export async function getUrgentFollowupsCount(): Promise<number> {
   return count ?? 0;
 }
 
-export type ActivityItem = {
-  id: string;
-  type: "lead" | "cobranca" | "followup";
-  label: string;
-  sub: string;
-  date: string | null;
-};
+export type { ActivityItem };
 
 export async function getRecentActivity(): Promise<ActivityItem[]> {
   const [leadsRes, cobrancaRes, followupsRes] = await Promise.all([

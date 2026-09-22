@@ -59,7 +59,7 @@ public.product_metrics() returns table (
 
 **Regra de identidade (RF-004)**: `chave = coalesce(codigo_erp, 'linha:' || tabela || ':' || id)`. Hoje `codigo_erp` é único por tabela e nunca nulo. O fallback existe pra que uma linha sem código conte sozinha, em vez de todas colidirem numa chave só (mesma regra de `dedupePorProduto`).
 
-**Agregação por chave**: o estoque do produto é o `max(estoque)` entre os segmentos que têm a coluna. As 3 tabelas com estoque recebem o mesmo saldo do ERP: em 2026-09-22, dos 1.394 produtos presentes em mais de uma tabela, 0 tinham saldo divergente. Então `max` bate com qualquer uma delas e aguenta divergência transitória no meio do sync. `products_builder_architect` só entra em `total_distintos`, porque não tem `estoque`.
+**Agregação por chave**: o estoque do produto é o `max(estoque)` entre os segmentos que têm a coluna. As 3 tabelas com estoque recebem o mesmo saldo do ERP: em 2026-09-22, dos 1.394 produtos presentes em mais de uma tabela, 0 tinham saldo divergente. Então `max` bate com qualquer uma delas e aguenta divergência transitória no meio do sync. `products_builder_architect` **entra com o estoque dela**. O código antigo a deixava de fora dizendo que a tabela não tinha a coluna, mas ela tem: 30 dos 31 produtos têm saldo, e nenhum se repete nas outras tabelas. Efeito medido em 2026-09-22: "disponíveis" vai de 741 para 745 e "zerados" de 1.118 para 1.144. O total (1.921) não muda.
 
 **Semântica de nulo**: `estoque` nulo = "não sincronizado", que é diferente de 0. Uma chave só entra em `zerados` se tiver estoque **conhecido** ≤ 0.
 

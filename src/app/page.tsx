@@ -23,16 +23,13 @@ import {
   ConsoleTable,
 } from "@/components/console/console-shell";
 import { formatMoney, formatNumber, useApi } from "@/lib/client-api";
-import { useSupabase } from "@/hooks/use-supabase";
 import { createClient } from "@/lib/supabase/client";
-import { getRecentActivity, getUrgentFollowupsCount } from "@/lib/supabase/queries";
 import type {
-  AgentSummaryResponse,
   ApiMetric,
+  DashboardSnapshotResponse,
   DashboardSummaryResponse,
-  InventorySummaryResponse,
-  PendingCenterResponse,
   PendingSeverity,
+  SectionResult,
 } from "@/types/api";
 import { TvMode } from "./_components/tv-mode";
 
@@ -77,13 +74,25 @@ function firstBreakdown(items: DashboardSummaryResponse["breakdowns"]["leadsBySt
     : "Sem distribuição registrada";
 }
 
+type SectionView<T> = { data: T | null; loading: boolean; error: string | null; forbidden: boolean };
+
+/** Uma seção do snapshot no formato que os blocos da tela já consumiam. */
+function sectionState<T>(
+  section: SectionResult<T> | undefined,
+  request: { loading: boolean; error: string | null }
+): SectionView<T> {
+  if (section?.status === "ok") return { data: section.data, loading: false, error: null, forbidden: false };
+  if (section?.status === "forbidden") return { data: null, loading: false, error: null, forbidden: true };
+  if (section?.status === "error") return { data: null, loading: false, error: section.message, forbidden: false };
+  return { data: null, loading: request.loading, error: request.error, forbidden: false };
+}
+
 function timeOf(date: string | null) {
   return date ? new Date(date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
 }
 
 export default function DashboardPage() {
   const [refreshTick, setRefreshTick] = useState(0);
-  const [urgentFollowups, setUrgentFollowups] = useState(0);
   const [realtime, setRealtime] = useState<"connecting" | "live" | "paused">("connecting");
   const [tvMode, setTvMode] = useState(false);
 
@@ -120,20 +129,20 @@ export default function DashboardPage() {
     };
   }, [refresh]);
 
-  useEffect(() => {
-    getUrgentFollowupsCount().then(setUrgentFollowups);
-  }, [refreshTick]);
-
-  const suffix = refreshTick ? `?_r=${refreshTick}` : "";
-  const summary = useApi<DashboardSummaryResponse>(`/api/dashboard/summary${suffix}`);
-  const pending = useApi<PendingCenterResponse>(`/api/dashboard/pending-center${suffix}`);
-  const agents = useApi<AgentSummaryResponse>(`/api/agents/summary${suffix}`);
-  // `scope=summary`: o painel só usa `estoqueSincronizado` e o total de
-  // produtos, e a rota responde isso por contagem em vez de trazer o catálogo.
-  const inventory = useApi<InventorySummaryResponse>(
-    `/api/inventory/summary?scope=summary${refreshTick ? `&_r=${refreshTick}` : ""}`
-  );
-  const { data: activity, loading: loadingActivity } = useSupabase(() => getRecentActivity(), [refreshTick]);
+  // Uma request para a tela inteira: /api/dashboard/snapshot verifica o usuário
+  // uma vez e lê cada tabela uma vez. Antes eram quatro rotas, cada uma com a
+  // própria autenticação e as mesmas sete varreduras, mais três consultas do
+  // browser para atividade e follow-ups urgentes.
+  const snapshot = useApi<DashboardSnapshotResponse>(`/api/dashboard/snapshot${refreshTick ? `?_r=${refreshTick}` : ""}`);
+  const sections = snapshot.data?.sections;
+  const summary = sectionState(sections?.summary, snapshot);
+  const pending = sectionState(sections?.pending, snapshot);
+  const agents = sectionState(sections?.agents, snapshot);
+  const inventory = sectionState(sections?.inventory, snapshot);
+  const activityState = sectionState(sections?.activity, snapshot);
+  const activity = activityState.data;
+  const loadingActivity = activityState.loading;
+  const urgentFollowups = sections?.urgentFollowups?.status === "ok" ? sections.urgentFollowups.data.count : 0;
 
   const metrics = useMemo(
     () => new Map((summary.data?.metrics ?? []).map((metric) => [metric.id, metric])),
@@ -220,9 +229,19 @@ export default function DashboardPage() {
       {
         id: "stock",
         domain: "Estoque",
-        state: inventory.data?.estoqueSincronizado ? `${metricValue(stockMetric, "0")} produtos` : "ERP sem quantidade",
+        // Sem manage_estoque a seção nem é carregada. Antes a rota respondia 403
+        // e a linha dizia "ERP sem quantidade" — um estado do ERP que não era verdade.
+        state: inventory.forbidden
+          ? "Sem acesso"
+          : inventory.data?.estoqueSincronizado
+            ? `${metricValue(stockMetric, "0")} produtos`
+            : "ERP sem quantidade",
         owner: "ERP",
-        lastSignal: inventory.data?.estoqueSincronizado ? "Saldo sincronizado" : "Aguardando saldo do ERP",
+        lastSignal: inventory.forbidden
+          ? "Requer permissão de estoque"
+          : inventory.data?.estoqueSincronizado
+            ? "Saldo sincronizado"
+            : "Aguardando saldo do ERP",
         nextStep: "Conferir demanda",
         href: "/demanda-estoque",
         tone: inventory.data?.estoqueSincronizado ? "green" : "slate",
@@ -238,9 +257,14 @@ export default function DashboardPage() {
         tone: "blue",
       },
     ];
-  }, [activity, agents.data?.agents, inventory.data, metrics, pendingItems, summary.data?.breakdowns.leadsByStatus, urgentFollowups]);
+  }, [activity, agents.data?.agents, inventory.data, inventory.forbidden, metrics, pendingItems, summary.data?.breakdowns.leadsByStatus, urgentFollowups]);
 
-  const loading = summary.loading;
+  // Skeleton só enquanto não existe nada para mostrar; uma atualização com
+  // dados na tela não apaga a tela.
+  const loading = snapshot.isInitialLoading;
+  // "Utilizável" = resumo e pendências resolvidos (com dado ou com erro). É o
+  // marcador que a medição de aceite (e2e/perf) espera.
+  const ready = Boolean(sections?.summary && sections?.pending);
 
   return (
     <ConsolePage
@@ -261,10 +285,12 @@ export default function DashboardPage() {
         </>
       }
     >
-      {loading && <ConsoleLoading />}
+      <div data-dashboard-ready={ready ? "true" : "false"} hidden />
+      {loading && <div data-skeleton="full"><ConsoleLoading /></div>}
+      {!loading && !sections && snapshot.error && <ConsoleError message={snapshot.error} />}
       {summary.error && <ConsoleError message={summary.error} />}
 
-      {!loading && !summary.error && (
+      {!loading && sections && (
         <>
           {attention && (
             <ConsoleCard
@@ -397,6 +423,7 @@ export default function DashboardPage() {
                 <span className="font-data text-[16px] font-bold text-[var(--text-primary)]">{formatNumber(openQueue)}</span>
               </div>
               <div className="divide-y divide-[var(--border)]">
+                {pending.error && <div className="p-3"><ConsoleError message={pending.error} /></div>}
                 {pendingItems.map((item) => (
                   <Link
                     key={item.id}
@@ -411,7 +438,7 @@ export default function DashboardPage() {
                     </ConsoleStatus>
                   </Link>
                 ))}
-                {!pendingItems.length && (
+                {!pendingItems.length && !pending.error && (
                   <p className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
                     Nenhuma fila configurada ainda.
                   </p>
@@ -432,6 +459,7 @@ export default function DashboardPage() {
                 </span>
               </div>
               <div className="divide-y divide-[var(--border)]">
+                {agents.error && <div className="p-3"><ConsoleError message={agents.error} /></div>}
                 {(agents.data?.agents ?? []).map((agent) => (
                   <div key={agent.id} className="flex items-center gap-3 px-4 py-2.5">
                     <span
@@ -449,7 +477,7 @@ export default function DashboardPage() {
                     </ConsoleStatus>
                   </div>
                 ))}
-                {!agents.data?.agents.length && (
+                {!agents.data?.agents.length && !agents.error && (
                   <p className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
                     Nenhum agente cadastrado. Cadastre um agente para começar a distribuir leads.
                   </p>
@@ -469,6 +497,7 @@ export default function DashboardPage() {
                 {loadingActivity && (
                   <p className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">Carregando eventos…</p>
                 )}
+                {activityState.error && <div className="p-3"><ConsoleError message={activityState.error} /></div>}
                 {!loadingActivity &&
                   (activity ?? []).map((item, index) => (
                     <div key={`${item.id}-${index}`} className="flex items-center gap-3 px-4 py-2.5">
@@ -480,7 +509,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                   ))}
-                {!loadingActivity && !activity?.length && (
+                {!loadingActivity && !activity?.length && !activityState.error && (
                   <p className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
                     Nenhuma atividade recente registrada.
                   </p>

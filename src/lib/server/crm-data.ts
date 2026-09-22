@@ -2,6 +2,8 @@ import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { allTimePeriod, countBy, defaultPeriod, isOlderThan, metric, percent } from "@/lib/server/crm-metrics";
 import { isFollowupPendente } from "@/lib/followups";
+import { selectAllPages } from "@/lib/server/select-all-pages";
+import { fetchProductMetrics, type ProductMetrics } from "@/lib/server/product-metrics";
 
 /**
  * Devedor nao e prospect.
@@ -27,6 +29,7 @@ import {
   type FinancialHandoffDecision,
 } from "@/lib/server/financial-handoff";
 import type {
+  ActivityItem,
   ActivityLogResponse,
   AgentConversationsResponse,
   AgentSummaryItem,
@@ -72,6 +75,7 @@ type FollowupRow = {
   respondeu: boolean | null;
   followup_sent: boolean | null;
   created_at: string | null;
+  updated_at: string | null;
   ultima_msg_ia: string | null;
   ultima_msg_lead: string | null;
 };
@@ -383,64 +387,110 @@ const coreCache = new Map<string, CoreCacheEntry>();
  * abririam três consultas idênticas em voo. Compartilhando a promise, a
  * primeira busca e as outras duas esperam nela.
  */
-function cachedTable<T>(key: string, run: () => PromiseLike<{ data: unknown; error: unknown }>): Promise<T[]> {
+function cachedTable<T>(key: string, run: () => Promise<T[]>): Promise<T[]> {
   const now = Date.now();
   const hit = coreCache.get(key);
   if (hit && now - hit.at < CORE_TTL_MS) return hit.rows as Promise<T[]>;
 
-  const rows = Promise.resolve(run()).then((res) => {
-    if (res.error) throw res.error;
-    return (res.data ?? []) as unknown[];
-  });
+  const rows = run();
 
   // Uma falha não pode ficar memorizada por 5s: some com a entrada para que a
   // próxima chamada tente de novo em vez de herdar a promise rejeitada.
   rows.catch(() => coreCache.delete(key));
   coreCache.set(key, { at: now, rows });
-  return rows as Promise<T[]>;
+  return rows;
 }
 
+/**
+ * Colunas lidas das tabelas do núcleo: exatamente os campos dos tipos *Row
+ * acima, que são tudo o que este arquivo consegue ler sem erro de tipo. Antes
+ * era `select("*")`, e `cobranca_log.metadata` sozinho já é o grosso do payload.
+ */
+const CORE_COLUMNS = {
+  followups: "id,lead_id,nome_cliente,numero_cliente,tipo,status,respondeu,followup_sent,created_at,updated_at,ultima_msg_ia,ultima_msg_lead",
+  conversations: "id,lead_id,channel,intent,status,vendor_id,chatwoot_conv_id,started_at,ended_at",
+  vendors: "id,name,segment,wa_phone,active,created_at,chatwoot_inbox_id",
+  cobrancas: "id,telefone,nome,valor,vencimento,status_disparo,respondeu,pagamento_confirmado,data_disparo,created_at,metadata",
+  quotes: "id,lead_id,price_offered,status,created_at",
+  sales: "id,lead_id,vendor_id,final_price,status,confirmed_at",
+} as const;
+
+// Todas passam por selectAllPages: o PostgREST corta em 1.000 linhas sem
+// avisar, e `cobranca_log` cresce até 1.000 linhas por disparo. Com o corte, o
+// "Em aberto" do dashboard pararia de somar sem erro nenhum.
 const coreTables = {
   leads: () =>
     cachedTable<LeadRow>("leads", () =>
-      createAdminClient().from("leads").select(LEAD_SELECT).order("created_at", { ascending: false })
+      selectAllPages<LeadRow>((from, to) =>
+        createAdminClient().from("leads").select(LEAD_SELECT).order("created_at", { ascending: false }).order("id").range(from, to)
+      )
     ),
   followups: () =>
     cachedTable<FollowupRow>("followups", () =>
-      createAdminClient().from("followups").select("*").order("created_at", { ascending: false })
+      selectAllPages<FollowupRow>((from, to) =>
+        createAdminClient().from("followups").select(CORE_COLUMNS.followups).order("created_at", { ascending: false }).order("id").range(from, to)
+      )
     ),
   conversations: () =>
     cachedTable<ConversationRow>("conversations", () =>
-      createAdminClient().from("conversations").select("*").order("started_at", { ascending: false })
+      selectAllPages<ConversationRow>((from, to) =>
+        createAdminClient().from("conversations").select(CORE_COLUMNS.conversations).order("started_at", { ascending: false }).order("id").range(from, to)
+      )
     ),
   vendors: () =>
     cachedTable<VendorRow>("vendors", () =>
-      createAdminClient().from("vendors").select("*").order("created_at", { ascending: true })
+      selectAllPages<VendorRow>((from, to) =>
+        createAdminClient().from("vendors").select(CORE_COLUMNS.vendors).order("created_at", { ascending: true }).order("id").range(from, to)
+      )
     ),
   cobrancas: () =>
     cachedTable<CobrancaRow>("cobranca_log", () =>
-      createAdminClient().from("cobranca_log").select("*").order("created_at", { ascending: false })
+      selectAllPages<CobrancaRow>((from, to) =>
+        createAdminClient().from("cobranca_log").select(CORE_COLUMNS.cobrancas).order("created_at", { ascending: false }).order("id").range(from, to)
+      )
     ),
   quotes: () =>
     cachedTable<QuoteRow>("quotes", () =>
-      createAdminClient().from("quotes").select("*").order("created_at", { ascending: false })
+      selectAllPages<QuoteRow>((from, to) =>
+        createAdminClient().from("quotes").select(CORE_COLUMNS.quotes).order("created_at", { ascending: false }).order("id").range(from, to)
+      )
     ),
   sales: () =>
     cachedTable<SaleRow>("sales", () =>
-      createAdminClient().from("sales").select("*").order("confirmed_at", { ascending: false })
+      selectAllPages<SaleRow>((from, to) =>
+        createAdminClient().from("sales").select(CORE_COLUMNS.sales).order("confirmed_at", { ascending: false }).order("id").range(from, to)
+      )
     ),
   /** Só decisões vivas: uma correção supersede a anterior, e somar as duas
    *  contaria o mesmo boleto duas vezes no total recebido. */
   handoffDecisions: () =>
-    cachedTable<{ empresa: string | null; documento: string | null; status: string | null; cobranca_log_id: string | null }>(
-      "cobranca_handoff_boleto_decisions",
-      () =>
+    cachedTable<HandoffDecisionLite>("cobranca_handoff_boleto_decisions", () =>
+      selectAllPages<HandoffDecisionLite>((from, to) =>
         createAdminClient()
           .from("cobranca_handoff_boleto_decisions")
           .select("empresa,documento,status,cobranca_log_id")
           .is("superseded_at", null)
+          .order("recorded_at", { ascending: false })
+          .order("id")
+          .range(from, to)
+      )
     ),
 };
+
+type HandoffDecisionLite = {
+  empresa: string | null;
+  documento: string | null;
+  status: string | null;
+  cobranca_log_id: string | null;
+};
+
+type SheetSourceLite = Pick<SheetSourceRow, "id" | "last_synced_at">;
+
+async function fetchSheetSources(): Promise<SheetSourceLite[]> {
+  return selectAllPages<SheetSourceLite>((from, to) =>
+    createAdminClient().from("sheet_sources").select("id,last_synced_at").order("id").range(from, to)
+  );
+}
 
 /**
  * Quanto já entrou de cobrança. O valor de cada boleto vive no snapshot do
@@ -466,7 +516,9 @@ function sumReceived(
   }, 0);
 }
 
-async function fetchCore() {
+export type CoreData = Awaited<ReturnType<typeof fetchCore>>;
+
+export async function fetchCore() {
   const [leads, followups, conversations, vendors, cobrancas, quotes, sales] = await Promise.all([
     coreTables.leads(),
     coreTables.followups(),
@@ -480,14 +532,34 @@ async function fetchCore() {
   return { leads, followups, conversations, vendors, cobrancas, quotes, sales };
 }
 
+export function fetchHandoffDecisions() {
+  return coreTables.handoffDecisions();
+}
+
+export { fetchSheetSources };
+
 export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
-  const [{ leads, followups, vendors, quotes, sales, cobrancas }, handoffDecisions, conversas, produtosDisponiveis] =
-    await Promise.all([
-      fetchCore(),
-      coreTables.handoffDecisions(),
-      coreTables.conversations(),
-      contarProdutosDisponiveis(createAdminClient()),
-    ]);
+  const [core, handoffDecisions, productMetrics] = await Promise.all([
+    fetchCore(),
+    fetchHandoffDecisions(),
+    fetchProductMetrics(),
+  ]);
+  return buildSummary(core, handoffDecisions, productMetrics);
+}
+
+/**
+ * As seções do dashboard recebem os dados já carregados e não buscam nada por
+ * conta própria. É isso que deixa o snapshot (/api/dashboard/snapshot) ler cada
+ * tabela uma vez só para montar todas elas, e garante que resumo, pendências e
+ * estoque saem do mesmo instante.
+ */
+export function buildSummary(
+  core: CoreData,
+  handoffDecisions: HandoffDecisionLite[],
+  productMetrics: ProductMetrics
+): DashboardSummaryResponse {
+  const { leads, followups, vendors, quotes, sales, cobrancas, conversations: conversas } = core;
+  const produtosDisponiveis = productMetrics.disponiveis;
   // `chatwoot_conv_id` preenchido é a marca de que o agente de IA assumiu a
   // conversa — as linhas OUTBOUND de cobrança não têm, porque são disparo, não
   // atendimento.
@@ -628,7 +700,7 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
         id: "produtos_disponiveis",
         label: "Disponível para venda",
         value: produtosDisponiveis,
-        formula: "count(distinct codigo_erp em products_* where estoque > 0)",
+        formula: "count(distinct codigo_erp em products_* where max(estoque) > 0)",
         period: allTimePeriod(),
         previous: null,
         tooltip:
@@ -689,41 +761,25 @@ export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
 }
 
 export async function getPendingCenter(): Promise<PendingCenterResponse> {
-  const supabase = createAdminClient();
-  const { leads, followups, cobrancas } = await fetchCore();
-  // Esta rota só precisa de UM número sobre produto: quantos estão sem estoque.
-  // Antes ela trazia as 3.077 linhas das três tabelas para contar em memória, e
-  // media 4,2s em produção — empatada com /api/inventory/summary, que repetia a
-  // mesma carga. `head: true` faz o Postgres contar e devolver zero linha.
-  // Traz o `codigo_erp` em vez de contar linhas: o mesmo produto tem uma linha
-  // por segmento comercial, então somar `count` das três tabelas contava a mesma
-  // geladeira até três vezes — o dashboard dizia 1.918 onde Demanda & Estoque,
-  // que já deduplica, dizia 1.045. Duas telas, o mesmo dado, números diferentes.
-  const semEstoque = async (table: string) => {
-    const codigos: string[] = [];
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase
-        .from(table)
-        .select("codigo_erp")
-        .not("estoque", "is", null)
-        .lte("estoque", 0)
-        .range(from, from + PAGE - 1);
-      if (error) throw error;
-      for (const row of data ?? []) if (row.codigo_erp) codigos.push(String(row.codigo_erp));
-      if (!data || data.length < PAGE) break;
-    }
-    return codigos;
-  };
-
-  const [sheetSourcesRes, ...semEstoquePorTabela] = await Promise.all([
-    supabase.from("sheet_sources").select("*"),
-    ...PRODUCT_TABLES.slice(0, 3).map(semEstoque),
+  const [core, sheetSources, productMetrics] = await Promise.all([
+    fetchCore(),
+    fetchSheetSources(),
+    fetchProductMetrics(),
   ]);
+  return buildPending(core, sheetSources, productMetrics);
+}
 
-  if (sheetSourcesRes.error) throw sheetSourcesRes.error;
-
-  const sheetSources = (sheetSourcesRes.data ?? []) as SheetSourceRow[];
-  const outOfStockProducts = new Set(semEstoquePorTabela.flat()).size;
+export function buildPending(
+  core: CoreData,
+  sheetSources: SheetSourceLite[],
+  productMetrics: ProductMetrics
+): PendingCenterResponse {
+  const { leads, followups, cobrancas } = core;
+  // Contado por produto (codigo_erp), não por linha de segmento: a mesma
+  // geladeira tem uma linha por canal e já fez o dashboard dizer 1.918 onde
+  // Demanda & Estoque dizia 1.045. Vem de product_metrics(), a mesma fonte do
+  // card "Zerados no ERP".
+  const outOfStockProducts = productMetrics.zerados;
   const leadIdsWithFollowup = new Set(followups.map((f) => f.lead_id).filter(Boolean));
   const today = new Date().toISOString().slice(0, 10);
 
@@ -806,7 +862,7 @@ export async function getPendingCenter(): Promise<PendingCenterResponse> {
         label: "Produtos sem estoque",
         count: outOfStockProducts,
         severity: "warning",
-        formula: "count(distinct codigo_erp em products_* where estoque <= 0)",
+        formula: "count(distinct codigo_erp em products_* where max(estoque) <= 0)",
         period: allTimePeriod(),
         tooltip:
           "Produtos sem saldo nos depósitos de venda (HLB MS, HLB Parana e Londrina PDV). Contados por produto, não por linha de segmento — é o mesmo número do card \"Zerados no ERP\" em Demanda & Estoque.",
@@ -1132,7 +1188,11 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
 }
 
 export async function getAgentSummary(): Promise<AgentSummaryResponse> {
-  const { leads, conversations, vendors } = await fetchCore();
+  return buildAgents(await fetchCore());
+}
+
+export function buildAgents(core: CoreData): AgentSummaryResponse {
+  const { leads, conversations, vendors } = core;
 
   // Um lead pertence a UM agente. Antes cada agente contava todo lead cujo
   // segmento aparecesse na sua lista, e os segmentos se sobrepõem — os 6 leads
@@ -1451,8 +1511,19 @@ async function selectProdutos(
   // O cast passa por `unknown` porque o cliente tipado do Supabase interpreta a
   // string do select em tempo de tipo, e aqui ela só existe em tempo de execução.
   type Resultado = { data: ProductRow[] | null; error: PostgrestError | null };
-  const consultar = async (cols: string) =>
-    (await supabase.from(tabela).select(cols).order("nome")) as unknown as Resultado;
+  // Paginado: `products_reseller` tem mais de 1.000 linhas e o PostgREST corta
+  // no milésimo sem avisar — o catálogo e a busca do gerador perdiam o resto.
+  const consultar = async (cols: string): Promise<Resultado> => {
+    try {
+      const data = await selectAllPages<ProductRow>(
+        (from, to) =>
+          supabase.from(tabela).select(cols).order("nome").order("id").range(from, to) as unknown as PromiseLike<Resultado>
+      );
+      return { data, error: null };
+    } catch (error) {
+      return { data: null, error: error as PostgrestError };
+    }
+  };
 
   const comImagem = await consultar(`${colunas},imagem_url,sku`);
   // 42703 = undefined_column. Qualquer outro erro é problema de verdade e sobe.
@@ -1466,7 +1537,7 @@ async function loadProducts(): Promise<InventoryProduct[]> {
     selectProdutos(supabase, "products_consumer", "id,codigo_erp,nome,marca,btu,voltagem,preco_venda,estoque"),
     selectProdutos(supabase, "products_reseller", "id,codigo_erp,nome,marca,preco_venda,estoque"),
     selectProdutos(supabase, "products_installer", "id,codigo_erp,nome,categoria,preco_venda,estoque"),
-    selectProdutos(supabase, "products_builder_architect", "id,codigo_erp,nome,preco_venda"),
+    selectProdutos(supabase, "products_builder_architect", "id,codigo_erp,nome,preco_venda,estoque"),
   ]);
 
   for (const res of [consumerRes, resellerRes, installerRes, builderRes]) {
@@ -1510,20 +1581,6 @@ async function fetchOutOfStockRequests(): Promise<InventorySummaryResponse["outO
   return (data ?? []).map((r) => ({ id: r.id, productName: r.product_name, createdAt: r.created_at }));
 }
 
-const PRODUCT_TABLES = ["products_consumer", "products_reseller", "products_installer", "products_builder_architect"] as const;
-
-/** PostgREST corta o select em 1000 linhas por resposta; `products_reseller` tem
- *  1.477, então sem paginar a contagem sai errada e sem erro nenhum. */
-const PAGE = 1000;
-
-/**
- * Só os números do catálogo, sem trazer linha nenhuma.
- *
- * O dashboard pergunta duas coisas ao estoque: "o ERP já mandou saldo?" e
- * "quantos produtos existem?". Responder isso buscando as 3.077 linhas custava
- * 4,2s em produção — era, junto com a fila de pendências, o endpoint mais lento
- * da tela. `head: true` deixa a contagem no Postgres.
- */
 /**
  * Colapsa as linhas de segmento em um produto do ERP.
  *
@@ -1532,25 +1589,6 @@ const PAGE = 1000;
  * Linha sem `codigo_erp` não tem como ser pareada, então conta sozinha em vez de
  * todas colidirem numa chave só.
  */
-/** Produtos distintos com saldo. Mesmo critério de dedupe do resto do painel:
- *  a mesma geladeira tem uma linha por segmento comercial. */
-async function contarProdutosDisponiveis(supabase: SupabaseClient): Promise<number> {
-  const codigos = new Set<string>();
-  for (const table of PRODUCT_TABLES.slice(0, 3)) {
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase
-        .from(table)
-        .select("codigo_erp")
-        .gt("estoque", 0)
-        .range(from, from + PAGE - 1);
-      if (error) throw error;
-      for (const row of data ?? []) if (row.codigo_erp) codigos.add(String(row.codigo_erp));
-      if (!data || data.length < PAGE) break;
-    }
-  }
-  return codigos.size;
-}
-
 function dedupePorProduto<T extends { erpCode: string | null; id: string; source: string }>(rows: T[]): T[] {
   const porChave = new Map<string, T>();
   for (const row of rows) {
@@ -1560,48 +1598,21 @@ function dedupePorProduto<T extends { erpCode: string | null; id: string; source
   return [...porChave.values()];
 }
 
-async function getInventoryCounts(): Promise<InventorySummaryResponse> {
-  const supabase = createAdminClient();
-
-  // `head: true` conta linhas, e linha não é produto: o mesmo `codigo_erp` tem uma
-  // linha por segmento, o que fazia este card dizer 3.162 onde existem 1.768.
-  // Buscar só essa coluna traz uma string por linha — ainda muito mais barato que
-  // as linhas inteiras, que carregam `embedding` e `content`.
-  const porTabela = await Promise.all(
-    PRODUCT_TABLES.map(async (table) => {
-      const codigos: string[] = [];
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase.from(table).select("codigo_erp").range(from, from + PAGE - 1);
-        if (error) throw error;
-        for (const row of data ?? []) codigos.push(row.codigo_erp ? String(row.codigo_erp) : `linha:${table}:${from}:${codigos.length}`);
-        if (!data || data.length < PAGE) break;
-      }
-      return codigos;
-    })
-  );
-  // builder_architect não tem a coluna `estoque`, por isso fica de fora daqui.
-  const withStock = await Promise.all(
-    PRODUCT_TABLES.slice(0, 3).map((table) =>
-      supabase.from(table).select("id", { count: "exact", head: true }).not("estoque", "is", null)
-    )
-  );
-
-  for (const result of withStock) {
-    if (result.error) throw result.error;
-  }
-
-  const totalProducts = new Set(porTabela.flat()).size;
-  const estoqueSincronizado = withStock.reduce((sum, result) => sum + (result.count ?? 0), 0) > 0;
-
+/**
+ * O que o dashboard pergunta ao estoque: "o ERP já mandou saldo?" e "quantos
+ * produtos existem?". Sai de product_metrics() — antes eram quatro varreduras
+ * paginadas de `codigo_erp` só para isso.
+ */
+export function buildInventoryCounts(productMetrics: ProductMetrics): InventorySummaryResponse {
   return {
     generatedAt: nowIso(),
-    estoqueSincronizado,
+    estoqueSincronizado: productMetrics.sincronizado,
     topDemanda: [],
     metrics: [
       metric({
         id: "total_products",
         label: "Total de produtos",
-        value: totalProducts,
+        value: productMetrics.total_distintos,
         formula: "count(distinct codigo_erp em products_*)",
         period: allTimePeriod(),
         previous: null,
@@ -1615,10 +1626,85 @@ async function getInventoryCounts(): Promise<InventorySummaryResponse> {
   } as InventorySummaryResponse;
 }
 
+const ACTIVITY_PER_SOURCE = 6;
+const ACTIVITY_MAX = 15;
+
+const byDateDesc = <T>(date: (row: T) => string | null) => (a: T, b: T) => {
+  const da = date(a);
+  const db = date(b);
+  if (!da) return db ? 1 : 0;
+  if (!db) return -1;
+  return new Date(db).getTime() - new Date(da).getTime();
+};
+
+/**
+ * Feed "atividade recente" do dashboard, a partir do núcleo já carregado.
+ * Mesma regra que o browser aplicava em getRecentActivity (queries.ts), que
+ * fazia três consultas próprias a cada refresh.
+ */
+export function buildActivity(core: CoreData): ActivityItem[] {
+  const items: ActivityItem[] = [];
+
+  // Busca acima de 6 e só depois tira cobrança: todo disparo de cobrança já cria
+  // o lead, então uma fatia dos mais recentes é sempre desse segmento — sem a
+  // folga, um dia com só disparos esvaziaria o bloco. Lead de cobrança nasce
+  // junto com a linha de cobranca_log; mostrar os dois é o mesmo evento duas vezes.
+  const leads = [...core.leads].sort(byDateDesc((l) => l.created_at)).slice(0, ACTIVITY_PER_SOURCE * 2);
+  for (const l of leads.filter(ehLeadComercial).slice(0, ACTIVITY_PER_SOURCE)) {
+    items.push({ id: l.id, type: "lead", label: l.name ?? "Novo lead", sub: l.segment ?? "", date: l.created_at });
+  }
+
+  const cobrancas = [...core.cobrancas].sort(byDateDesc((c) => c.data_disparo)).slice(0, ACTIVITY_PER_SOURCE);
+  for (const c of cobrancas) {
+    items.push({ id: c.id, type: "cobranca", label: c.nome ?? "Cobrança", sub: c.valor ?? "", date: c.data_disparo });
+  }
+
+  const respondidos = core.followups
+    .filter((f) => f.respondeu === true)
+    .sort(byDateDesc((f) => f.created_at))
+    .slice(0, ACTIVITY_PER_SOURCE);
+  for (const f of respondidos) {
+    items.push({
+      id: String(f.id),
+      type: "followup",
+      label: "Follow-up respondido",
+      sub: f.tipo ?? "",
+      date: f.ultima_msg_lead ?? f.created_at,
+    });
+  }
+
+  return items
+    .filter((i) => i.date)
+    .sort(byDateDesc((i) => i.date))
+    .slice(0, ACTIVITY_MAX);
+}
+
+const URGENT_AFTER_MS = 48 * 3600 * 1000;
+
+/**
+ * Follow-ups urgentes: pendentes (regra única em @/lib/followups) parados há
+ * mais de 48h por `updated_at`. Mesma conta de getUrgentFollowupsCount, feita
+ * sobre o núcleo em vez de uma consulta a mais.
+ */
+export function countUrgentFollowups(core: CoreData, now = Date.now()): number {
+  const cutoff = now - URGENT_AFTER_MS;
+  return core.followups.filter(
+    (f) => isFollowupPendente(f) && f.updated_at != null && new Date(f.updated_at).getTime() < cutoff
+  ).length;
+}
+
+async function getInventoryCounts(): Promise<InventorySummaryResponse> {
+  return buildInventoryCounts(await fetchProductMetrics());
+}
+
 export async function getInventorySummary(searchParams?: URLSearchParams): Promise<InventorySummaryResponse> {
   if (searchParams?.get("scope") === "summary") return getInventoryCounts();
 
-  const [products, outOfStockRequests] = await Promise.all([fetchProducts(), fetchOutOfStockRequests()]);
+  const [products, outOfStockRequests, productMetrics] = await Promise.all([
+    fetchProducts(),
+    fetchOutOfStockRequests(),
+    fetchProductMetrics(),
+  ]);
   const q = searchParams?.get("search")?.toLowerCase().trim();
   const limit = Math.min(Number(searchParams?.get("limit") ?? 200) || 200, 1000);
   const filtered = products.filter((p) => {
@@ -1627,28 +1713,22 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
   });
   const outOfStock = outOfStockRequests.length;
 
-  // O ERP não sincroniza quantidade. Hoje `estoque` é null nas 3.043 linhas das
-  // quatro tabelas de produto — a coluna existe, ninguém escreve nela, e
-  // products_builder_architect nem tem a coluna. Contar sobre isso devolve 0, e
-  // "0 produtos com estoque baixo" se lê como "está tudo abastecido", que é o
-  // oposto de "não medimos". Enquanto não houver dado, os cards dizem isso.
-  // Um produto do ERP tem uma linha por segmento: 1.394 dos 1.768 produtos vivem
-  // em duas tabelas. Contar linhas inflava os cards em 79% — "Total produtos"
-  // dizia 3.162 onde existem 1.768, e "Disponível" contava cada item duas vezes.
-  // A tabela segue por segmento, que é onde o preço de cada canal aparece; só a
-  // contagem passa a ser por produto.
+  // `estoque` nulo é "o ERP não mandou saldo", não zero: "0 produtos com
+  // estoque baixo" se lê como "está tudo abastecido", que é o oposto de "não
+  // medimos". Enquanto não houver dado, os cards dizem isso.
+  // Um produto do ERP tem uma linha por segmento: 1.394 produtos vivem em mais
+  // de uma tabela. Contar linhas inflava os cards em 79%. A tabela segue por
+  // segmento, que é onde o preço de cada canal aparece; a contagem é por
+  // produto e vem de product_metrics() — a mesma fonte das pendências do
+  // dashboard, para "Zerados no ERP" e "Produtos sem estoque" nunca divergirem.
   const distintos = dedupePorProduto(products);
 
   const comEstoqueConhecido = distintos.filter((p) => p.stock != null);
-  const estoqueSincronizado = comEstoqueConhecido.length > 0;
+  const estoqueSincronizado = productMetrics.sincronizado;
   const SEM_DADO = "não sincronizado";
 
-  const lowStock = estoqueSincronizado
-    ? comEstoqueConhecido.filter((p) => p.stock! > 0 && p.stock! <= 10).length
-    : SEM_DADO;
-  const zerados = estoqueSincronizado
-    ? comEstoqueConhecido.filter((p) => p.stock === 0).length
-    : SEM_DADO;
+  const lowStock = estoqueSincronizado ? productMetrics.estoque_baixo : SEM_DADO;
+  const zerados = estoqueSincronizado ? productMetrics.zerados : SEM_DADO;
   const disponivel = estoqueSincronizado
     ? comEstoqueConhecido.filter((p) => p.stock! > 10).length
     : SEM_DADO;
@@ -1666,7 +1746,7 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
       metric({
         id: "total_products",
         label: "Total produtos",
-        value: distintos.length,
+        value: productMetrics.total_distintos,
         formula: "count(distinct codigo_erp em products_*)",
         tooltip:
           "Produtos distintos do ERP. Cada um tem uma linha por segmento comercial, então a tabela abaixo mostra mais linhas do que este número.",
@@ -1685,7 +1765,7 @@ export async function getInventorySummary(searchParams?: URLSearchParams): Promi
         id: "erp_zerado",
         label: "Zerados no ERP",
         value: zerados,
-        formula: "count(distinct products where estoque = 0)",
+        formula: "count(distinct codigo_erp where max(estoque) <= 0)",
         tooltip:
           "Sem saldo nos depósitos de venda (HLB MS, HLB Parana e Londrina PDV). O ERP já desconta as reservas, então zero aqui significa nada disponível para vender.",
         drilldown: { href: "/demanda-estoque", filters: { stock: "out" } },
