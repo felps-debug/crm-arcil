@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Configuração do servidor incompleta" }, { status: 500 });
   }
 
-  const { user, response } = await requireApiPermission("manage_gerador_imagem");
+  const { user, response } = await requireApiPermission("manage_gerador_imagem", { strict: true });
   if (response) return response;
 
   const supabase = await createClient();

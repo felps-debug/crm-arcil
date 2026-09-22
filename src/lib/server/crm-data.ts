@@ -454,13 +454,13 @@ function sumReceived(
   const paidKeys = new Set(
     decisions
       .filter((decision) => decision.status === "pago" && decision.cobranca_log_id && decision.empresa && decision.documento)
-      .map((decision) => `${decision.cobranca_log_id} ${decision.empresa} ${decision.documento}`)
+      .map((decision) => `${decision.cobranca_log_id}\u0000${decision.empresa}\u0000${decision.documento}`)
   );
   if (!paidKeys.size) return 0;
 
   return cobrancas.reduce((total, cobranca) => {
     const paid = parseSnapshotBoletos(cobranca.metadata).filter((boleto) =>
-      paidKeys.has(`${cobranca.id} ${boleto.empresa} ${boleto.documento}`)
+      paidKeys.has(`${cobranca.id}\u0000${boleto.empresa}\u0000${boleto.documento}`)
     );
     return total + paid.reduce((sum, boleto) => sum + boleto.valor, 0);
   }, 0);
@@ -943,10 +943,10 @@ export async function getFinancialHandoffBoard(): Promise<FinancialBoardItem[]> 
     // superseded_at is null), senão cada correção somaria de novo.
     const leadDecisions = decisionsByLead.get(lead.id) ?? [];
     const paidKeys = new Set(
-      leadDecisions.filter((decision) => decision.status === "pago").map((decision) => `${decision.empresa} ${decision.documento}`)
+      leadDecisions.filter((decision) => decision.status === "pago").map((decision) => `${decision.empresa}\u0000${decision.documento}`)
     );
     const paidBoletos = parseSnapshotBoletos(snapshot?.metadata ?? null)
-      .filter((boleto) => paidKeys.has(`${boleto.empresa} ${boleto.documento}`));
+      .filter((boleto) => paidKeys.has(`${boleto.empresa}\u0000${boleto.documento}`));
     const column = classifyFinancialHandoff({
       handoffAcceptedAt: lead.handoff_accepted_at ?? null,
       resolution: resolution ? { destination: resolution.destination, recordedAt: resolution.recorded_at, followupStatus: resolution.followup_status } : null,
