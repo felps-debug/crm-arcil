@@ -11,6 +11,7 @@ import {
   fetchSheetSources,
 } from "@/lib/server/crm-data";
 import { fetchProductMetrics } from "@/lib/server/product-metrics";
+import { timeStage } from "@/lib/perf/trace-context";
 import {
   DASHBOARD_SECTIONS,
   type DashboardSection,
@@ -87,10 +88,12 @@ export async function buildDashboardSnapshot(
   sections: DashboardSection[],
   loaders: SnapshotLoaders = defaultLoaders
 ): Promise<SnapshotResult> {
-  const core = once(loaders.core);
-  const handoffDecisions = once(loaders.handoffDecisions);
-  const sheetSources = once(loaders.sheetSources);
-  const productMetrics = once(loaders.productMetrics);
+  // Cada fonte cronometrada uma vez (lib/perf): é o que aparece no
+  // Server-Timing e em performance_traces para dizer onde o tempo foi.
+  const core = once(() => timeStage("core", loaders.core));
+  const handoffDecisions = once(() => timeStage("handoffDecisions", loaders.handoffDecisions));
+  const sheetSources = once(() => timeStage("sheetSources", loaders.sheetSources));
+  const productMetrics = once(() => timeStage("products", loaders.productMetrics));
 
   const builders: { [K in DashboardSection]: () => Promise<unknown> } = {
     summary: async () => buildSummary(await core(), await handoffDecisions(), await productMetrics()),
@@ -108,7 +111,7 @@ export async function buildDashboardSnapshot(
     sections.map(async (section): Promise<[DashboardSection, SectionResult<unknown>]> => {
       if (!allowed(ctx, section)) return [section, { status: "forbidden" }];
       try {
-        return [section, { status: "ok", data: await builders[section]() }];
+        return [section, { status: "ok", data: await timeStage(`section:${section}`, builders[section]) }];
       } catch (error) {
         // Detalhe fica no log do servidor; o cliente só sabe que a seção falhou.
         console.error(`[dashboard/snapshot] seção ${section} falhou`, error);

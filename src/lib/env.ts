@@ -42,3 +42,11 @@ export const V2_CASSETTE_LAYOUT = clean(process.env.V2_CASSETTE_LAYOUT) === "1";
  * Texto e card continuam vetoriais nos dois modos.
  */
 export const INFRA_VISUAL = clean(process.env.INFRA_VISUAL) === "vetorial" ? "vetorial" : "gemini_3d";
+
+/**
+ * Onde e qual build respondeu — gravados em performance_traces para confirmar
+ * que as funções rodam em gru1 (vercel.json) e comparar deploys. A Vercel
+ * preenche as duas sozinha; fora dela ficam como "local".
+ */
+export const VERCEL_REGION = clean(process.env.VERCEL_REGION) || "local";
+export const VERCEL_GIT_COMMIT_SHA = clean(process.env.VERCEL_GIT_COMMIT_SHA).slice(0, 7) || "local";

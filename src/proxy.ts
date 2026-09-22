@@ -14,6 +14,9 @@ const RATE_LIMITS: Record<string, number> = {
   "/api/generate-image": 10,
   "/api/cobranca/disparo": 5,
   "/api/cobranca/reenviar-nao-disparados": 5,
+  // Grava em performance_traces a cada abertura de tela; o teto só impede que
+  // alguém encha a tabela.
+  "/api/perf/traces": 60,
 };
 // Dynamic route — sends a real WhatsApp message via Chatwoot, same category as cobranca/disparo.
 const SEND_MESSAGE_RE = /^\/api\/atendimento\/conversations\/[^/]+\/messages$/;

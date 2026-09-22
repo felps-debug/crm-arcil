@@ -24,7 +24,8 @@ import {
   ConsoleTable,
 } from "@/components/console/console-shell";
 import { fetchJson, formatMoney, formatNumber, useApi } from "@/lib/client-api";
-import { mutate } from "@/lib/api-cache";
+import { cacheKey, getView, mutate } from "@/lib/api-cache";
+import { navigationPath, navigationTtfb, startJourney } from "@/lib/perf/trace-client";
 import { createSectionBatcher } from "@/lib/realtime-sections";
 import { createClient } from "@/lib/supabase/client";
 import { useUrgentFollowups } from "@/hooks/use-urgent-followups";
@@ -105,7 +106,19 @@ export default function DashboardPage() {
   // uma vez e lê cada tabela uma vez. Antes eram quatro rotas, cada uma com a
   // própria autenticação e as mesmas sete varreduras, mais três consultas do
   // browser para atividade e follow-ups urgentes.
-  const snapshot = useApi<DashboardSnapshotResponse>(SNAPSHOT_URL);
+  //
+  // A jornada (lib/perf) começa aqui: fria se não havia nada em cache desta
+  // tela, quente se é uma volta. O traceId vai no header e o servidor grava
+  // as etapas dele com o mesmo id.
+  const [journey] = useState(() =>
+    startJourney("dashboard", getView(cacheKey(SNAPSHOT_URL)).data ? "warm" : "cold")
+  );
+  // Aba aberta direto no dashboard: conta desde o início da navegação
+  // (performance.now() é relativo a ela), com o primeiro byte junto. Chegada
+  // por clique dentro do app: conta desde a montagem, que é quando clicou.
+  const [openedHere] = useState(() => navigationPath() === "/" && !getView(cacheKey(SNAPSHOT_URL)).data);
+  const [mountedAt] = useState(() => (openedHere ? 0 : performance.now()));
+  const snapshot = useApi<DashboardSnapshotResponse>(SNAPSHOT_URL, { headers: { "x-trace-id": journey.traceId } });
   const { revalidate } = snapshot;
 
   useEffect(() => {
@@ -293,6 +306,17 @@ export default function DashboardPage() {
   // "Utilizável" = resumo e pendências resolvidos (com dado ou com erro). É o
   // marcador que a medição de aceite (e2e/perf) espera.
   const ready = Boolean(sections?.summary && sections?.pending);
+
+  // Tela pronta: registra quanto levou e manda para performance_traces.
+  useEffect(() => {
+    if (!ready) return;
+    if (openedHere) {
+      const ttfb = navigationTtfb();
+      if (ttfb !== null) journey.mark("ttfb", ttfb);
+    }
+    journey.mark("ready", performance.now() - mountedAt);
+    journey.flush();
+  }, [ready, journey, mountedAt, openedHere]);
 
   return (
     <ConsolePage

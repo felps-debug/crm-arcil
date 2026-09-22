@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { timeStage } from "@/lib/perf/trace-context";
 
 /** O que as rotas usam do usuário autenticado — só id e e-mail. */
 export type ApiUser = { id: string; email: string | null };
@@ -76,10 +77,10 @@ export function isSuperAdmin(ctx: Pick<ApiContext, "role">) {
 export async function resolveApiContext(
   opts?: AuthOptions
 ): Promise<{ ctx: ApiContext; response: null } | { ctx: null; response: Response }> {
-  const user = await verifiedUser(opts);
+  const user = await timeStage("auth", () => verifiedUser(opts));
   if (!user) return { ctx: null, response: unauthorized() };
 
-  const profile = await loadProfile(user.id);
+  const profile = await timeStage("profile", () => loadProfile(user.id));
   return {
     ctx: {
       userId: user.id,
