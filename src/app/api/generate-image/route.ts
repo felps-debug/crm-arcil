@@ -558,7 +558,7 @@ export async function POST(request: NextRequest) {
   // ESPECIFICAÇÕES abaixo, que não depende de saber onde o aparelho está na
   // cena.
   const peDireitoFormatado = typeof collectedData.pe_direito === "string" ? formatarMetros(collectedData.pe_direito) : null;
-  const qr = await destinoDoQr(supabase, typeof collectedData.marca === "string" ? collectedData.marca : null, leadId);
+  const qr = await destinoDoQr(supabase, typeof collectedData.marca === "string" ? collectedData.marca : null);
   const finalImageUrl = await comporEEnviar(generatedImageUrl, leadId, {
     produto: String(collectedData.modelo ?? "Ar-condicionado"),
     marca: typeof collectedData.marca === "string" ? collectedData.marca : null,
@@ -769,7 +769,7 @@ async function referenciaDaFamilia(supabase: SupabaseClient, familia: string): P
  * houver. Um QR que não abre nada é pior que nenhum: o cliente escaneia na
  * frente do vendedor e não acontece nada.
  */
-async function destinoDoQr(supabase: SupabaseClient, marca: string | null, leadId: string): Promise<{ url: string; ehManual: boolean }> {
+async function destinoDoQr(supabase: SupabaseClient, marca: string | null): Promise<{ url: string; ehManual: boolean }> {
   if (marca?.trim()) {
     try {
       const { data } = await supabase.from("brand_warranty_notes").select("manual_url").ilike("brand", marca.trim()).limit(1);

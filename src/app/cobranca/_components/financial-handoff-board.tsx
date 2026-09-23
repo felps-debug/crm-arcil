@@ -15,6 +15,9 @@ const columns: { id: FinancialBoardColumn; label: string; empty: string }[] = [
   { id: "awaiting_response", label: "Aguardando resposta", empty: "Nenhuma cobrança aguardando resposta." },
   { id: "human", label: "Em atendimento humano", empty: "Nenhum atendimento humano ativo." },
   { id: "awaiting_return", label: "Aguardando retorno", empty: "Nenhuma retomada programada." },
+  // Caso com o advogado: régua parada, dívida continua contando. Antes isto
+  // caía em "Resolvido" e o valor sumia do board.
+  { id: "juridico", label: "Jurídico", empty: "Nenhum caso com o jurídico." },
   { id: "resolved", label: "Resolvido", empty: "Nenhum atendimento resolvido recentemente." },
 ];
 
@@ -156,7 +159,7 @@ export function FinancialHandoffBoard() {
         />
       </div>
       {error && <ConsoleError message={error} />}
-      <div className="grid gap-3 xl:grid-cols-4">
+      <div className="grid gap-3 xl:grid-cols-5">
         {columns.map((column) => {
           const columnItems = grouped.get(column.id) ?? [];
           const columnTotal = columnItems.reduce((sum, item) => sum + item.openAmount, 0);
@@ -240,6 +243,7 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
   const [showConversation, setShowConversation] = useState(false);
   const [choices, setChoices] = useState<Record<string, Choice>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [promised, setPromised] = useState<Record<string, string>>({});
   const [destination, setDestination] = useState<"devolver_ao_bot" | "sem_retorno">("devolver_ao_bot");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -270,7 +274,17 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
   const vencido = vencimentoMaisAntigo(item);
   const vencidoAtrasado = vencido ? vencido.data.getTime() < new Date().setHours(0, 0, 0, 0) : false;
 
-  const invalidRenegotiation = item.boletos.some((boleto) => choices[key(boleto.empresa, boleto.documento)] === "renegociado" && !notes[key(boleto.empresa, boleto.documento)]?.trim());
+  // Boleto que deixa de ser cobrado sem explicação vira mistério depois — vale
+  // para renegociado e para jurídico. A data só faz sentido no primeiro: é ela
+  // que traz a cobrança de volta sozinha, em vez de depender de alguém lembrar.
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const decisaoIncompleta = item.boletos.some((boleto) => {
+    const k = key(boleto.empresa, boleto.documento);
+    const escolha = choices[k];
+    if (escolha !== "renegociado" && escolha !== "juridico") return false;
+    if (!notes[k]?.trim()) return true;
+    return escolha === "renegociado" && (!promised[k] || promised[k] < hojeISO);
+  });
 
   // Um cliente com muitos boletos abertos esticava o card até estourar a coluna
   // do kanban. A lista rola dentro de uma altura fixa e o resumo diz o que já
@@ -299,13 +313,20 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
   }
 
   async function submit() {
-    if (!item.cobrancaLogId || saving || invalidRenegotiation) return;
+    if (!item.cobrancaLogId || saving || decisaoIncompleta) return;
     setSaving(true);
     setError(null);
     const decisions = item.boletos.flatMap((boleto) => {
       const boletoChoice = choices[key(boleto.empresa, boleto.documento)];
-      return boletoChoice === "pago" || boletoChoice === "renegociado"
-        ? [{ empresa: boleto.empresa, documento: boleto.documento, status: boletoChoice, note: notes[key(boleto.empresa, boleto.documento)]?.trim() || null }]
+      const k = key(boleto.empresa, boleto.documento);
+      return boletoChoice === "pago" || boletoChoice === "renegociado" || boletoChoice === "juridico"
+        ? [{
+            empresa: boleto.empresa,
+            documento: boleto.documento,
+            status: boletoChoice,
+            note: notes[k]?.trim() || null,
+            promisedAt: boletoChoice === "renegociado" ? (promised[k] || null) : null,
+          }]
         : [];
     });
     try {
@@ -344,7 +365,19 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
         <span className="font-data font-bold text-[var(--emerald)]">{money(markedAmount)}</span>
       </div>
       <div className="max-h-[264px] space-y-2 overflow-y-auto pr-1">
-      {item.boletos.map((boleto) => { const boletoKey = key(boleto.empresa, boleto.documento); const choice = choices[boletoKey] ?? "em_aberto"; return <div key={boletoKey} className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] p-2.5"><div className="flex gap-2"><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold text-[var(--text-primary)]">{boleto.documento}</p><p className="mt-1 text-[10px] text-[var(--text-muted)]">{boleto.empresa} · {money(boleto.valor)}{boleto.vencimento && <> · vence {boleto.vencimento}</>}</p></div><select value={choice} onChange={(event) => setChoices((current) => ({ ...current, [boletoKey]: event.target.value as Choice }))} className="rounded-[6px] border border-[var(--border)] bg-[var(--bg-base)] px-1.5 py-1 text-[10px] font-semibold text-[var(--text-primary)]"><option value="em_aberto">Em aberto</option><option value="pago">Pago</option><option value="renegociado">Renegociado</option></select></div>{choice === "renegociado" && <textarea value={notes[boletoKey] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [boletoKey]: event.target.value }))} rows={2} placeholder="Condições da renegociação" className="mt-2 w-full resize-none rounded-[6px] border border-[var(--border)] bg-[var(--bg-base)] px-2 py-1.5 text-[10px] text-[var(--text-primary)]" />}</div>; })}
+      {item.boletos.map((boleto) => { const boletoKey = key(boleto.empresa, boleto.documento); const choice = choices[boletoKey] ?? "em_aberto"; return <div key={boletoKey} className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)] p-2.5"><div className="flex gap-2"><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold text-[var(--text-primary)]">{boleto.documento}</p><p className="mt-1 text-[10px] text-[var(--text-muted)]">{boleto.empresa} · {money(boleto.valor)}{boleto.vencimento && <> · vence {boleto.vencimento}</>}</p></div><select value={choice} onChange={(event) => setChoices((current) => ({ ...current, [boletoKey]: event.target.value as Choice }))} className="rounded-[6px] border border-[var(--border)] bg-[var(--bg-base)] px-1.5 py-1 text-[10px] font-semibold text-[var(--text-primary)]"><option value="em_aberto">Em aberto</option><option value="pago">Pago</option><option value="renegociado">Renegociado</option><option value="juridico">Jurídico</option></select></div>{(choice === "renegociado" || choice === "juridico") && <>
+        {choice === "renegociado" && <label className="mt-2 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+          <span className="shrink-0 font-semibold">Promete pagar em</span>
+          <input
+            type="date"
+            min={hojeISO}
+            value={promised[boletoKey] ?? ""}
+            onChange={(event) => setPromised((current) => ({ ...current, [boletoKey]: event.target.value }))}
+            className="rounded-[6px] border border-[var(--border)] bg-[var(--bg-base)] px-1.5 py-1 font-data text-[10px] text-[var(--text-primary)]"
+          />
+        </label>}
+        <textarea value={notes[boletoKey] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [boletoKey]: event.target.value }))} rows={2} placeholder={choice === "renegociado" ? "Condições da renegociação" : "Por que está com o jurídico"} className="mt-2 w-full resize-none rounded-[6px] border border-[var(--border)] bg-[var(--bg-base)] px-2 py-1.5 text-[10px] text-[var(--text-primary)]" />
+      </>}</div>; })}
       </div>
 
       {/* Antes de baixar um boleto ou devolver ao bot, ver o que o cliente
@@ -381,8 +414,8 @@ function FinancialCard({ item, onSaved }: { item: FinancialBoardItem; onSaved: (
       ) : (
         <p className="pt-1 text-[10px] text-[var(--text-muted)]">Este cliente não passou por atendimento humano — aqui você só registra a baixa dos boletos.</p>
       )}
-      {invalidRenegotiation && <p className="text-[10px] font-semibold text-red-300">Informe a condição de cada renegociação.</p>}{error && <p className="text-[10px] font-semibold text-red-300">{error}</p>}
-      <ConsoleButton active className="w-full" disabled={saving || invalidRenegotiation} onClick={submit} icon={saving ? Loader2 : CheckCircle2}>{saving ? "Salvando..." : emHandoff ? "Confirmar atendimento" : "Registrar baixa"}</ConsoleButton>
+      {decisaoIncompleta && <p className="text-[10px] font-semibold text-red-300">Renegociado precisa de data futura e observação; jurídico precisa de observação.</p>}{error && <p className="text-[10px] font-semibold text-red-300">{error}</p>}
+      <ConsoleButton active className="w-full" disabled={saving || decisaoIncompleta} onClick={submit} icon={saving ? Loader2 : CheckCircle2}>{saving ? "Salvando..." : emHandoff ? "Confirmar atendimento" : "Registrar baixa"}</ConsoleButton>
 
       {/* A decisão foi salva mas o bot não foi liberado. Sem este reenvio a
           única saída era confirmar de novo, o que grava uma resolução duplicada
