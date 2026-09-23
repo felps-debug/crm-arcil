@@ -1,6 +1,11 @@
 import { after } from "next/server";
-import { handleApiError, resolveApiContext } from "@/lib/server/api-auth";
-import { buildDashboardSnapshot, InvalidSectionError, parseSections } from "@/lib/server/dashboard-snapshot";
+import { handleApiError, loadApiContext, verifyApiUser } from "@/lib/server/api-auth";
+import {
+  buildDashboardSnapshot,
+  InvalidSectionError,
+  parseSections,
+  prefetchSnapshotData,
+} from "@/lib/server/dashboard-snapshot";
 import {
   currentTrace,
   persistTrace,
@@ -66,15 +71,20 @@ export async function GET(request: Request) {
       throw error;
     }
 
-    const { ctx, response } = await resolveApiContext();
+    const { user, response } = await verifyApiUser();
     if (response) {
       outcome = "forbidden";
       return finish(response);
     }
-    userId = ctx.userId;
+    userId = user.id;
 
     try {
-      const snapshot = await buildDashboardSnapshot(ctx, sections);
+      // Identidade já verificada: as leituras saem agora, em paralelo com o
+      // perfil. As permissões por seção continuam decididas antes de qualquer
+      // dado entrar na resposta (buildDashboardSnapshot).
+      const data = prefetchSnapshotData(sections);
+      const ctx = await loadApiContext(user.id);
+      const snapshot = await buildDashboardSnapshot(ctx, sections, undefined, data);
       const results = Object.values(snapshot.sections);
       if (results.length && results.every((r) => r?.status === "error")) {
         outcome = "error";

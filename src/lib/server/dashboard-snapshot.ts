@@ -65,10 +65,56 @@ function allowed(ctx: ApiContext, section: DashboardSection) {
   return true;
 }
 
-/** Promise criada na primeira vez que alguém pede, compartilhada pelas demais. */
-function once<T>(load: () => Promise<T>) {
-  let promise: Promise<T> | undefined;
-  return () => (promise ??= load());
+/** O que cada seção precisa ler. */
+const SECTION_SOURCES: { [K in DashboardSection]: (keyof SnapshotLoaders)[] } = {
+  summary: ["core", "handoffDecisions", "productMetrics"],
+  pending: ["core", "sheetSources", "productMetrics"],
+  agents: ["core"],
+  inventory: ["productMetrics"],
+  activity: ["core"],
+  urgentFollowups: ["core"],
+};
+
+const STAGE_NAMES: Record<keyof SnapshotLoaders, string> = {
+  core: "core",
+  handoffDecisions: "handoffDecisions",
+  sheetSources: "sheetSources",
+  productMetrics: "products",
+};
+
+export type SnapshotData = { [K in keyof SnapshotLoaders]: () => ReturnType<SnapshotLoaders[K]> };
+
+/**
+ * Dispara AGORA, em paralelo, todas as leituras que as seções vão precisar.
+ *
+ * Antes cada fonte só começava quando a primeira seção pedia por ela, e as
+ * seções pediam em sequência (`await core()` e só depois `await
+ * productMetrics()`): no preview, produtos só saía depois dos ~4s do núcleo.
+ * A rota chama isto antes de ler o perfil, então dados e perfil correm juntos.
+ */
+export function prefetchSnapshotData(
+  sections: DashboardSection[],
+  loaders: SnapshotLoaders = defaultLoaders
+): SnapshotData {
+  const needed = new Set(sections.flatMap((s) => SECTION_SOURCES[s]));
+  const started = new Map<keyof SnapshotLoaders, Promise<unknown>>();
+  for (const key of needed) {
+    // Cronometrada uma vez (lib/perf): é o que aparece no Server-Timing e em
+    // performance_traces para dizer onde o tempo foi.
+    const promise = timeStage(STAGE_NAMES[key], loaders[key] as () => Promise<unknown>);
+    // Quem consome trata o erro; isto só evita "unhandled rejection" se
+    // nenhuma seção permitida chegar a usar a fonte.
+    promise.catch(() => {});
+    started.set(key, promise);
+  }
+  const get = <K extends keyof SnapshotLoaders>(key: K) => () =>
+    (started.get(key) ?? Promise.reject(new Error(`fonte ${key} não pré-carregada`))) as ReturnType<SnapshotLoaders[K]>;
+  return {
+    core: get("core"),
+    handoffDecisions: get("handoffDecisions"),
+    sheetSources: get("sheetSources"),
+    productMetrics: get("productMetrics"),
+  };
 }
 
 export type SnapshotResult = {
@@ -82,29 +128,34 @@ export type SnapshotResult = {
  * Antes eram quatro rotas em paralelo, cada uma com auth, perfil e o próprio
  * fetchCore; o cache de 5s dentro de crm-data só ajudava quando as quatro
  * caíam na mesma instância serverless. Aqui o compartilhamento é garantido.
+ *
+ * `data`: leituras já disparadas pela rota (prefetchSnapshotData). Sem ele,
+ * dispara aqui só o que as seções PERMITIDAS precisam.
  */
 export async function buildDashboardSnapshot(
   ctx: ApiContext,
   sections: DashboardSection[],
-  loaders: SnapshotLoaders = defaultLoaders
+  loaders: SnapshotLoaders = defaultLoaders,
+  data?: SnapshotData
 ): Promise<SnapshotResult> {
-  // Cada fonte cronometrada uma vez (lib/perf): é o que aparece no
-  // Server-Timing e em performance_traces para dizer onde o tempo foi.
-  const core = once(() => timeStage("core", loaders.core));
-  const handoffDecisions = once(() => timeStage("handoffDecisions", loaders.handoffDecisions));
-  const sheetSources = once(() => timeStage("sheetSources", loaders.sheetSources));
-  const productMetrics = once(() => timeStage("products", loaders.productMetrics));
+  const src = data ?? prefetchSnapshotData(sections.filter((s) => allowed(ctx, s)), loaders);
 
   const builders: { [K in DashboardSection]: () => Promise<unknown> } = {
-    summary: async () => buildSummary(await core(), await handoffDecisions(), await productMetrics()),
-    pending: async () => buildPending(await core(), await sheetSources(), await productMetrics()),
-    agents: async () => buildAgents(await core()),
+    summary: async () => {
+      const [core, decisions, metrics] = await Promise.all([src.core(), src.handoffDecisions(), src.productMetrics()]);
+      return buildSummary(core, decisions, metrics);
+    },
+    pending: async () => {
+      const [core, sheets, metrics] = await Promise.all([src.core(), src.sheetSources(), src.productMetrics()]);
+      return buildPending(core, sheets, metrics);
+    },
+    agents: async () => buildAgents(await src.core()),
     inventory: async () => {
-      const { estoqueSincronizado, metrics } = buildInventoryCounts(await productMetrics());
+      const { estoqueSincronizado, metrics } = buildInventoryCounts(await src.productMetrics());
       return { estoqueSincronizado, metrics };
     },
-    activity: async () => buildActivity(await core()),
-    urgentFollowups: async () => ({ count: countUrgentFollowups(await core()) }),
+    activity: async () => buildActivity(await src.core()),
+    urgentFollowups: async () => ({ count: countUrgentFollowups(await src.core()) }),
   };
 
   const results = await Promise.all(

@@ -77,17 +77,31 @@ export function isSuperAdmin(ctx: Pick<ApiContext, "role">) {
 export async function resolveApiContext(
   opts?: AuthOptions
 ): Promise<{ ctx: ApiContext; response: null } | { ctx: null; response: Response }> {
-  const user = await timeStage("auth", () => verifiedUser(opts));
-  if (!user) return { ctx: null, response: unauthorized() };
+  const { user, response } = await verifyApiUser(opts);
+  if (response) return { ctx: null, response };
+  return { ctx: await loadApiContext(user.id), response: null };
+}
 
-  const profile = await timeStage("profile", () => loadProfile(user.id));
+/**
+ * As duas metades de resolveApiContext, separadas para a rota poder disparar
+ * leituras de dados logo depois de saber QUEM é (identidade verificada) e
+ * enquanto ainda busca O QUE pode ver (perfil). Nenhum dado sai antes de
+ * loadApiContext decidir as permissões.
+ */
+export async function verifyApiUser(
+  opts?: AuthOptions
+): Promise<{ user: ApiUser; response: null } | { user: null; response: Response }> {
+  const user = await timeStage("auth", () => verifiedUser(opts));
+  if (!user) return { user: null, response: unauthorized() };
+  return { user, response: null };
+}
+
+export async function loadApiContext(userId: string): Promise<ApiContext> {
+  const profile = await timeStage("profile", () => loadProfile(userId));
   return {
-    ctx: {
-      userId: user.id,
-      role: String(profile?.role ?? ""),
-      permissions: (profile?.permissions as Record<string, boolean> | null) ?? {},
-    },
-    response: null,
+    userId,
+    role: String(profile?.role ?? ""),
+    permissions: (profile?.permissions as Record<string, boolean> | null) ?? {},
   };
 }
 

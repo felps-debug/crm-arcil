@@ -91,6 +91,18 @@ describe("buildDashboardSnapshot — carga", () => {
     expect(l.productMetrics).toHaveBeenCalledTimes(1);
   });
 
+  it("dispara todas as fontes juntas, sem esperar o núcleo terminar", async () => {
+    let liberaCore!: () => void;
+    const l = loaders({ core: vi.fn(() => new Promise<CoreData>((r) => { liberaCore = () => r(core); })) });
+    const pronto = buildDashboardSnapshot(ctx("owner"), ["summary", "pending"], l);
+    // O núcleo ainda não respondeu, e as outras três fontes já saíram.
+    expect(l.handoffDecisions).toHaveBeenCalled();
+    expect(l.sheetSources).toHaveBeenCalled();
+    expect(l.productMetrics).toHaveBeenCalled();
+    liberaCore();
+    await pronto;
+  });
+
   it("só pede o que a seção precisa", async () => {
     const l = loaders();
     const { sections } = await buildDashboardSnapshot(ctx("owner"), ["agents"], l);
