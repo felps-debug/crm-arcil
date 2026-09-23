@@ -142,6 +142,14 @@ Contagem de produto é por `codigo_erp` (a mesma geladeira tem uma linha por seg
 
 **O sync regrava todas as linhas mesmo sem mudança** (~2,4 mi de updates em `products_reseller`, que tem 1.509 linhas) — é o maior consumidor de CPU do banco. Correção descrita em `specs/001-otimizar-performance-crm/contracts/erp-sync-change.md` (`IS DISTINCT FROM` nos UPDATEs). `estoque_transito` (migração `20260824_add_estoque_transito.sql`) rastreia o que está a caminho, separado do vendável.
 
+### Lista de bloqueio (`blocked_phones`)
+
+Números da própria Arcil (agentes, números de vendas) que o agente de WhatsApp ignora. O workflow n8n **AGENTE COMPLETO ARCIL** consulta a tabela no nó **LISTA DE BLOQUEIO**, logo depois de `VERIFICA NUMERO1`: número ativo encerra a execução sem criar lead e sem resposta da IA. Se a consulta falhar, a mensagem segue normal — a lista nunca pode calar o bot.
+
+- Bloquear: `insert into blocked_phones (phone, motivo) values (55DDDNUMERO, motivo);` (13 dígitos, com o nono)
+- Liberar para teste (ex.: Paulo testando o agente): `update blocked_phones set ativo = false where phone = ...;` e depois voltar para `true`.
+- Os números não ficam no repositório, só no banco.
+
 ### Tabela `user_profiles`
 Colunas: `id` (FK auth.users), `email`, `full_name`, `role` (enum), `permissions` (jsonb), `created_at`, `updated_at`
 
