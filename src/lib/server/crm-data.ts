@@ -742,17 +742,48 @@ export function buildSummary(
 }
 
 export async function getPendingCenter(): Promise<PendingCenterResponse> {
-  const [core, productMetrics] = await Promise.all([fetchCore(), fetchProductMetrics()]);
-  return buildPending(core, productMetrics);
+  return buildPending(await fetchCore());
 }
 
-export function buildPending(core: CoreData, productMetrics: ProductMetrics): PendingCenterResponse {
+/**
+ * Lead que chegou há pouco ainda está com a agente de triagem: contar como
+ * "sem responsável" no primeiro minuto acusava pendência enquanto a IA ainda
+ * conversava. Duas horas é a janela para a triagem terminar.
+ */
+export const SEM_RESPONSAVEL_APOS_HORAS = 2;
+
+/** Regra única do card "Leads sem responsável" e do filtro `unassigned` em /leads. */
+export function isLeadSemResponsavel(lead: LeadRow): boolean {
+  return (
+    ehLeadComercial(lead) &&
+    !lead.owner_name &&
+    !lead.handoff_vendor_id &&
+    isOlderThan(lead.created_at, SEM_RESPONSAVEL_APOS_HORAS)
+  );
+}
+
+export const FOLLOWUP_ATRASADO_APOS_HORAS = 24;
+
+/**
+ * Regra única do card "Follow-ups atrasados" e do filtro `late` em /leads.
+ *
+ * - Só comercial: follow-up de cobrança é da régua do financeiro, que tem tela
+ *   própria. Antes um devedor sem resposta aparecia em vermelho no painel
+ *   comercial.
+ * - Atraso contado da ÚLTIMA mensagem da IA, não da criação da linha: uma
+ *   linha criada há 5 dias com mensagem enviada ontem não está atrasada.
+ */
+export function isFollowupAtrasado(followup: FollowupRow, leadsById: Map<string, LeadRow>): boolean {
+  if (!isFollowupPendente(followup) || followup.tipo === "cobranca") return false;
+  const lead = followup.lead_id ? leadsById.get(followup.lead_id) : undefined;
+  if (lead && !ehLeadComercial(lead)) return false;
+  const ultimoContato = followup.ultima_msg_ia ?? followup.updated_at ?? followup.created_at;
+  return isOlderThan(ultimoContato, FOLLOWUP_ATRASADO_APOS_HORAS);
+}
+
+export function buildPending(core: CoreData): PendingCenterResponse {
   const { leads, followups, cobrancas } = core;
-  // Contado por produto (codigo_erp), não por linha de segmento: a mesma
-  // geladeira tem uma linha por canal e já fez o dashboard dizer 1.918 onde
-  // Demanda & Estoque dizia 1.045. Vem de product_metrics(), a mesma fonte do
-  // card "Zerados no ERP".
-  const outOfStockProducts = productMetrics.zerados;
+  const leadsById = new Map(leads.map((l) => [l.id, l]));
   const leadIdsWithFollowup = new Set(followups.map((f) => f.lead_id).filter(Boolean));
   const today = new Date().toISOString().slice(0, 10);
 
@@ -762,11 +793,11 @@ export function buildPending(core: CoreData, productMetrics: ProductMetrics): Pe
       {
         id: "leads_without_owner",
         label: "Leads sem responsável",
-        count: leads.filter((l) => ehLeadComercial(l) && !l.owner_name && !l.handoff_vendor_id).length,
+        count: leads.filter(isLeadSemResponsavel).length,
         severity: "warning",
-        formula: "count(leads where owner_name is null and handoff_vendor_id is null and segment <> COBRANCA)",
+        formula: `count(leads where owner_name is null and handoff_vendor_id is null and segment <> COBRANCA and created_at older than ${SEM_RESPONSAVEL_APOS_HORAS}h)`,
         period: allTimePeriod(),
-        tooltip: "Leads comerciais sem responsável definido. Cobrança tem fluxo próprio e não entra aqui.",
+        tooltip: `Leads comerciais há mais de ${SEM_RESPONSAVEL_APOS_HORAS}h sem vendedor: a triagem não terminou nem encaminhou. Cobrança tem fluxo próprio e não entra aqui.`,
         drilldown: { href: "/leads", filters: { unassigned: "true", comercial: "true" } },
       },
       {
@@ -797,11 +828,11 @@ export function buildPending(core: CoreData, productMetrics: ProductMetrics): Pe
         label: "Follow-ups atrasados",
         // isFollowupPendente exige followup_sent: sem isso o card contava as
         // linhas de fila criadas junto com o lead e acusava atraso inexistente.
-        count: followups.filter((f) => isFollowupPendente(f) && isOlderThan(f.created_at, 24)).length,
+        count: followups.filter((f) => isFollowupAtrasado(f, leadsById)).length,
         severity: "danger",
-        formula: "count(followups where followup_sent=true and respondeu is not true and status=PENDING and created_at older than 24h)",
+        formula: `count(followups comerciais where followup_sent=true and respondeu is not true and status=PENDING and ultima_msg_ia older than ${FOLLOWUP_ATRASADO_APOS_HORAS}h)`,
         period: allTimePeriod(),
-        tooltip: "Atraso estimado por created_at enquanto não existir campo agendado_para.",
+        tooltip: `Follow-ups comerciais sem resposta há mais de ${FOLLOWUP_ATRASADO_APOS_HORAS}h desde a última mensagem da IA. Cobrança tem régua própria e não entra aqui.`,
         drilldown: { href: "/leads", filters: { view: "followups", late: "true" } },
       },
       {
@@ -818,23 +849,10 @@ export function buildPending(core: CoreData, productMetrics: ProductMetrics): Pe
       // daqui: contava sheet_sources, que são as planilhas de prospecção de
       // outro sistema — não estoque. Aparecia em vermelho como a pendência
       // mais grave do painel sem ter nada a ver com o CRM.
-      {
-        // `estoque` é null nas 3.077 linhas de produto — o ERP não sincroniza
-        // quantidade. Com `(p.estoque ?? 0) <= 0` cada null virava 0 e TODO o
-        // catálogo entrava na fila: 2.653 "produtos sem estoque" ao lado de uma
-        // linha da agenda dizendo "aguardando saldo do ERP", e inflando o total
-        // de "filas abertas" de 6 pendências reais para 2.659. Contar só onde há
-        // dado é o mesmo critério que getInventorySummary já aplica.
-        id: "out_of_stock_products",
-        label: "Produtos sem estoque",
-        count: outOfStockProducts,
-        severity: "warning",
-        formula: "count(distinct codigo_erp em products_* where max(estoque) <= 0)",
-        period: allTimePeriod(),
-        tooltip:
-          "Produtos sem saldo nos depósitos de venda (HLB MS, HLB Parana e Londrina PDV). Contados por produto, não por linha de segmento — é o mesmo número do card \"Zerados no ERP\" em Demanda & Estoque.",
-        drilldown: { href: "/demanda-estoque", filters: { stock: "out" } },
-      },
+      // "Produtos sem estoque" (out_of_stock_products) também saiu: eram ~1.100
+      // itens do catálogo com saldo 0 no ERP — peças, metades de split e modelos
+      // parados. Não é fila que alguém trate, e inflava "Filas abertas". O número
+      // continua em Demanda & Estoque ("Zerados no ERP").
     ],
   };
 }
@@ -848,8 +866,9 @@ export async function getLeads(filters: LeadFilters): Promise<LeadsResponse> {
 
   // Um lead pode ter vários follow-ups; o que importa é se ALGUM está no estado
   // que o card do dashboard contou.
+  const leadsById = new Map(leads.map((l) => [l.id, l]));
   const leadIdsComFollowupAtrasado = new Set(
-    followups.filter((f) => isFollowupPendente(f) && isOlderThan(f.created_at, 24)).map((f) => f.lead_id),
+    followups.filter((f) => isFollowupAtrasado(f, leadsById)).map((f) => f.lead_id),
   );
   const leadIdsQueResponderam = new Set(
     followups.filter((f) => f.followup_sent && f.respondeu).map((f) => f.lead_id),
@@ -867,7 +886,7 @@ export async function getLeads(filters: LeadFilters): Promise<LeadsResponse> {
       // Mesma fórmula do card "Leads sem responsável". Só `owner_name` deixava
       // passar quem já foi encaminhado a um vendedor, então a contagem do card
       // e o tamanho da lista nunca batiam.
-      if (filters.unassigned === "true" && (lead.owner_name || lead.handoff_vendor_id)) return false;
+      if (filters.unassigned === "true" && !isLeadSemResponsavel(lead)) return false;
       if (filters.withoutFollowup === "true" && leadIdsWithFollowup.has(lead.id)) return false;
       if (filters.handoff === "pending" && !(lead.handoff_sent_at && !lead.handoff_accepted_at)) return false;
       if (filters.late === "true" && !leadIdsComFollowupAtrasado.has(lead.id)) return false;

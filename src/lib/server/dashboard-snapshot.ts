@@ -65,7 +65,7 @@ function allowed(ctx: ApiContext, section: DashboardSection) {
 /** O que cada seção precisa ler. */
 const SECTION_SOURCES: { [K in DashboardSection]: (keyof SnapshotLoaders)[] } = {
   summary: ["core", "handoffDecisions", "productMetrics"],
-  pending: ["core", "productMetrics"],
+  pending: ["core"],
   agents: ["core"],
   inventory: ["productMetrics"],
   activity: ["core"],
@@ -141,8 +141,7 @@ export async function buildDashboardSnapshot(
       return buildSummary(core, decisions, metrics);
     },
     pending: async () => {
-      const [core, metrics] = await Promise.all([src.core(), src.productMetrics()]);
-      return buildPending(core, metrics);
+      return buildPending(await src.core());
     },
     agents: async () => buildAgents(await src.core()),
     inventory: async () => {
