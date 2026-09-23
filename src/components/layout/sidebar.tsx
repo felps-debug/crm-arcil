@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
@@ -27,7 +27,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { useTheme } from "@/hooks/use-theme";
-import { getUrgentFollowupsCount } from "@/lib/supabase/queries";
+import { useUrgentFollowups } from "@/hooks/use-urgent-followups";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -48,7 +48,7 @@ export function Sidebar() {
   const { profile, isSuperAdmin, isOwnerOrAbove, can } = useCurrentUser();
   const { theme, toggle: toggleTheme } = useTheme();
   const { collapsed, toggle: toggleCollapsed } = useSidebar();
-  const [urgentCount, setUrgentCount] = useState(0);
+  const { count: urgentCount } = useUrgentFollowups();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Close the mobile drawer on every route change — adjusted during render
@@ -59,12 +59,6 @@ export function Sidebar() {
     setPrevPathname(pathname);
     setMobileOpen(false);
   }
-
-  useEffect(() => {
-    getUrgentFollowupsCount().then(setUrgentCount);
-    const id = setInterval(() => getUrgentFollowupsCount().then(setUrgentCount), 5 * 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
 
   if (pathname === "/login") return null;
 

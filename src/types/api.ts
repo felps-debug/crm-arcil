@@ -263,3 +263,40 @@ export type InventorySummaryResponse = {
     lowStockBySource: ApiBreakdownItem[];
   };
 };
+
+/** Item do feed "atividade recente" do dashboard. */
+export type ActivityItem = {
+  id: string;
+  type: "lead" | "cobranca" | "followup";
+  label: string;
+  sub: string;
+  date: string | null;
+};
+
+/**
+ * Resultado de uma seção do snapshot. Cada seção falha sozinha: um erro no
+ * estoque não pode apagar o resumo que carregou certo.
+ */
+export type SectionResult<T> =
+  | { status: "ok"; data: T }
+  | { status: "error"; message: string }
+  | { status: "forbidden" };
+
+export const DASHBOARD_SECTIONS = ["summary", "pending", "agents", "inventory", "activity", "urgentFollowups"] as const;
+export type DashboardSection = (typeof DASHBOARD_SECTIONS)[number];
+
+export type DashboardSnapshotSections = {
+  summary: SectionResult<DashboardSummaryResponse>;
+  pending: SectionResult<PendingCenterResponse>;
+  agents: SectionResult<AgentSummaryResponse>;
+  inventory: SectionResult<Pick<InventorySummaryResponse, "estoqueSincronizado" | "metrics">>;
+  activity: SectionResult<ActivityItem[]>;
+  urgentFollowups: SectionResult<{ count: number }>;
+};
+
+/** GET /api/dashboard/snapshot — ver specs/001-otimizar-performance-crm/contracts/dashboard-snapshot.md */
+export type DashboardSnapshotResponse = {
+  generatedAt: string;
+  traceId: string;
+  sections: Partial<DashboardSnapshotSections>;
+};

@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getConversation, sendMessage, ChatwootNotConfiguredError, ChatwootApiError } from "@/lib/chatwoot/client";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { user, scopedInboxId, response } = await requireAtendimentoScope();
+  const { user, scopedInboxId, response } = await requireAtendimentoScope({ strict: true });
   if (response) return response;
 
   try {

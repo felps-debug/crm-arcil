@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -19,20 +19,22 @@ import {
   ConsoleLoading,
   ConsoleMetric,
   ConsolePage,
+  ConsoleStaleBadge,
   ConsoleStatus,
   ConsoleTable,
 } from "@/components/console/console-shell";
-import { formatMoney, formatNumber, useApi } from "@/lib/client-api";
-import { useSupabase } from "@/hooks/use-supabase";
+import { fetchJson, formatMoney, formatNumber, useApi } from "@/lib/client-api";
+import { cacheKey, getView, mutate } from "@/lib/api-cache";
+import { navigationPath, navigationTtfb, startJourney } from "@/lib/perf/trace-client";
+import { createSectionBatcher } from "@/lib/realtime-sections";
 import { createClient } from "@/lib/supabase/client";
-import { getRecentActivity, getUrgentFollowupsCount } from "@/lib/supabase/queries";
+import { useUrgentFollowups } from "@/hooks/use-urgent-followups";
 import type {
-  AgentSummaryResponse,
   ApiMetric,
+  DashboardSnapshotResponse,
   DashboardSummaryResponse,
-  InventorySummaryResponse,
-  PendingCenterResponse,
   PendingSeverity,
+  SectionResult,
 } from "@/types/api";
 import { TvMode } from "./_components/tv-mode";
 
@@ -77,37 +79,81 @@ function firstBreakdown(items: DashboardSummaryResponse["breakdowns"]["leadsBySt
     : "Sem distribuição registrada";
 }
 
+const SNAPSHOT_URL = "/api/dashboard/snapshot";
+
+type SectionView<T> = { data: T | null; loading: boolean; error: string | null; forbidden: boolean };
+
+/** Uma seção do snapshot no formato que os blocos da tela já consumiam. */
+function sectionState<T>(
+  section: SectionResult<T> | undefined,
+  request: { loading: boolean; error: string | null }
+): SectionView<T> {
+  if (section?.status === "ok") return { data: section.data, loading: false, error: null, forbidden: false };
+  if (section?.status === "forbidden") return { data: null, loading: false, error: null, forbidden: true };
+  if (section?.status === "error") return { data: null, loading: false, error: section.message, forbidden: false };
+  return { data: null, loading: request.loading, error: request.error, forbidden: false };
+}
+
 function timeOf(date: string | null) {
   return date ? new Date(date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
 }
 
 export default function DashboardPage() {
-  const [refreshTick, setRefreshTick] = useState(0);
-  const [urgentFollowups, setUrgentFollowups] = useState(0);
   const [realtime, setRealtime] = useState<"connecting" | "live" | "paused">("connecting");
   const [tvMode, setTvMode] = useState(false);
 
-  const refresh = useCallback(() => setRefreshTick((tick) => tick + 1), []);
+  // Uma request para a tela inteira: /api/dashboard/snapshot verifica o usuário
+  // uma vez e lê cada tabela uma vez. Antes eram quatro rotas, cada uma com a
+  // própria autenticação e as mesmas sete varreduras, mais três consultas do
+  // browser para atividade e follow-ups urgentes.
+  //
+  // A jornada (lib/perf) começa aqui: fria se não havia nada em cache desta
+  // tela, quente se é uma volta. O traceId vai no header e o servidor grava
+  // as etapas dele com o mesmo id.
+  const [journey] = useState(() =>
+    startJourney("dashboard", getView(cacheKey(SNAPSHOT_URL)).data ? "warm" : "cold")
+  );
+  // Aba aberta direto no dashboard: conta desde o início da navegação
+  // (performance.now() é relativo a ela), com o primeiro byte junto. Chegada
+  // por clique dentro do app: conta desde a montagem, que é quando clicou.
+  const [openedHere] = useState(() => navigationPath() === "/" && !getView(cacheKey(SNAPSHOT_URL)).data);
+  const [mountedAt] = useState(() => (openedHere ? 0 : performance.now()));
+  const snapshot = useApi<DashboardSnapshotResponse>(SNAPSHOT_URL, { headers: { "x-trace-id": journey.traceId } });
+  const { revalidate } = snapshot;
 
   useEffect(() => {
     const supabase = createClient();
+    let lastApplied = 0;
+    let flushSeq = 0;
 
-    // O realtime emite um evento por LINHA alterada. Um disparo de cobrança do
-    // n8n grava dezenas de linhas de uma vez, e sem isto cada uma refazia as
-    // quatro chamadas do painel. Meio segundo agrupa o lote em uma atualização
-    // só, sem que a tela pareça mais lenta para uma alteração isolada.
-    let batch: ReturnType<typeof setTimeout> | undefined;
-    const refreshBatched = () => {
-      clearTimeout(batch);
-      batch = setTimeout(refresh, 500);
-    };
+    // O realtime emite um evento por LINHA, e um disparo de cobrança grava
+    // dezenas de uma vez. O batcher junta tudo que chega em 2s e pede de volta
+    // só as seções que dependem das tabelas que mudaram — uma conversa nova
+    // não recarrega pendências nem estoque.
+    const batcher = createSectionBatcher(async (secoes) => {
+      const seq = ++flushSeq;
+      try {
+        const partial = await fetchJson<DashboardSnapshotResponse>(`${SNAPSHOT_URL}?sections=${secoes.join(",")}`);
+        // Um flush lento não pode apagar o que um flush mais novo já trouxe.
+        if (seq < lastApplied) return;
+        lastApplied = seq;
+        mutate<DashboardSnapshotResponse>(SNAPSHOT_URL, (atual) => ({
+          ...partial,
+          sections: { ...atual?.sections, ...partial.sections },
+        }));
+      } catch {
+        // Falhou a atualização parcial: refaz a tela inteira em segundo plano.
+        revalidate();
+      }
+    });
 
+    const onChange = (table: string) => () => batcher.add(table);
     const channel = supabase
       .channel("operacao-agora-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, refreshBatched)
-      .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, refreshBatched)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, refreshBatched)
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, refreshBatched)
+      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, onChange("leads"))
+      .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, onChange("followups"))
+      .on("postgres_changes", { event: "*", schema: "public", table: "cobranca_log" }, onChange("cobranca_log"))
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, onChange("conversations"))
       // Sem refletir o status da inscrição, o selo dizia "ao vivo" mesmo com o
       // canal derrubado — o pior estado possível num painel de operação.
       .subscribe((status) => {
@@ -115,25 +161,29 @@ export default function DashboardPage() {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setRealtime("paused");
       });
     return () => {
-      clearTimeout(batch);
+      batcher.dispose();
       supabase.removeChannel(channel);
     };
-  }, [refresh]);
+    // revalidate muda de identidade a cada render; o canal não pode ser refeito por isso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  const refresh = revalidate;
+  const sections = snapshot.data?.sections;
+  const summary = sectionState(sections?.summary, snapshot);
+  const pending = sectionState(sections?.pending, snapshot);
+  const agents = sectionState(sections?.agents, snapshot);
+  const inventory = sectionState(sections?.inventory, snapshot);
+  const activityState = sectionState(sections?.activity, snapshot);
+  const activity = activityState.data;
+  const loadingActivity = activityState.loading;
+  // Um número de follow-ups urgentes por sessão: o do snapshot abastece o
+  // contexto, que a sidebar também lê — em vez de cada um buscar o seu.
+  const { count: urgentFollowups, setFromSnapshot } = useUrgentFollowups();
+  const snapshotUrgent = sections?.urgentFollowups?.status === "ok" ? sections.urgentFollowups.data.count : null;
   useEffect(() => {
-    getUrgentFollowupsCount().then(setUrgentFollowups);
-  }, [refreshTick]);
-
-  const suffix = refreshTick ? `?_r=${refreshTick}` : "";
-  const summary = useApi<DashboardSummaryResponse>(`/api/dashboard/summary${suffix}`);
-  const pending = useApi<PendingCenterResponse>(`/api/dashboard/pending-center${suffix}`);
-  const agents = useApi<AgentSummaryResponse>(`/api/agents/summary${suffix}`);
-  // `scope=summary`: o painel só usa `estoqueSincronizado` e o total de
-  // produtos, e a rota responde isso por contagem em vez de trazer o catálogo.
-  const inventory = useApi<InventorySummaryResponse>(
-    `/api/inventory/summary?scope=summary${refreshTick ? `&_r=${refreshTick}` : ""}`
-  );
-  const { data: activity, loading: loadingActivity } = useSupabase(() => getRecentActivity(), [refreshTick]);
+    if (snapshotUrgent !== null) setFromSnapshot(snapshotUrgent);
+  }, [snapshotUrgent, setFromSnapshot]);
 
   const metrics = useMemo(
     () => new Map((summary.data?.metrics ?? []).map((metric) => [metric.id, metric])),
@@ -220,9 +270,19 @@ export default function DashboardPage() {
       {
         id: "stock",
         domain: "Estoque",
-        state: inventory.data?.estoqueSincronizado ? `${metricValue(stockMetric, "0")} produtos` : "ERP sem quantidade",
+        // Sem manage_estoque a seção nem é carregada. Antes a rota respondia 403
+        // e a linha dizia "ERP sem quantidade" — um estado do ERP que não era verdade.
+        state: inventory.forbidden
+          ? "Sem acesso"
+          : inventory.data?.estoqueSincronizado
+            ? `${metricValue(stockMetric, "0")} produtos`
+            : "ERP sem quantidade",
         owner: "ERP",
-        lastSignal: inventory.data?.estoqueSincronizado ? "Saldo sincronizado" : "Aguardando saldo do ERP",
+        lastSignal: inventory.forbidden
+          ? "Requer permissão de estoque"
+          : inventory.data?.estoqueSincronizado
+            ? "Saldo sincronizado"
+            : "Aguardando saldo do ERP",
         nextStep: "Conferir demanda",
         href: "/demanda-estoque",
         tone: inventory.data?.estoqueSincronizado ? "green" : "slate",
@@ -238,9 +298,25 @@ export default function DashboardPage() {
         tone: "blue",
       },
     ];
-  }, [activity, agents.data?.agents, inventory.data, metrics, pendingItems, summary.data?.breakdowns.leadsByStatus, urgentFollowups]);
+  }, [activity, agents.data?.agents, inventory.data, inventory.forbidden, metrics, pendingItems, summary.data?.breakdowns.leadsByStatus, urgentFollowups]);
 
-  const loading = summary.loading;
+  // Skeleton só enquanto não existe nada para mostrar; uma atualização com
+  // dados na tela não apaga a tela.
+  const loading = snapshot.isInitialLoading;
+  // "Utilizável" = resumo e pendências resolvidos (com dado ou com erro). É o
+  // marcador que a medição de aceite (e2e/perf) espera.
+  const ready = Boolean(sections?.summary && sections?.pending);
+
+  // Tela pronta: registra quanto levou e manda para performance_traces.
+  useEffect(() => {
+    if (!ready) return;
+    if (openedHere) {
+      const ttfb = navigationTtfb();
+      if (ttfb !== null) journey.mark("ttfb", ttfb);
+    }
+    journey.mark("ready", performance.now() - mountedAt);
+    journey.flush();
+  }, [ready, journey, mountedAt, openedHere]);
 
   return (
     <ConsolePage
@@ -248,6 +324,7 @@ export default function DashboardPage() {
       subtitle="Visão central da operação"
       actions={
         <>
+          <ConsoleStaleBadge show={snapshot.isStale} onRetry={snapshot.revalidate} />
           <ConsoleStatus tone={realtime === "live" ? "green" : realtime === "paused" ? "red" : "slate"}>
             {realtime === "live" ? "Ao vivo" : realtime === "paused" ? "Pausado" : "Conectando"}
           </ConsoleStatus>
@@ -261,10 +338,12 @@ export default function DashboardPage() {
         </>
       }
     >
-      {loading && <ConsoleLoading />}
+      <div data-dashboard-ready={ready ? "true" : "false"} hidden />
+      {loading && <div data-skeleton="full"><ConsoleLoading /></div>}
+      {!loading && !sections && snapshot.error && <ConsoleError message={snapshot.error} />}
       {summary.error && <ConsoleError message={summary.error} />}
 
-      {!loading && !summary.error && (
+      {!loading && sections && (
         <>
           {attention && (
             <ConsoleCard
@@ -397,6 +476,7 @@ export default function DashboardPage() {
                 <span className="font-data text-[16px] font-bold text-[var(--text-primary)]">{formatNumber(openQueue)}</span>
               </div>
               <div className="divide-y divide-[var(--border)]">
+                {pending.error && <div className="p-3"><ConsoleError message={pending.error} /></div>}
                 {pendingItems.map((item) => (
                   <Link
                     key={item.id}
@@ -411,7 +491,7 @@ export default function DashboardPage() {
                     </ConsoleStatus>
                   </Link>
                 ))}
-                {!pendingItems.length && (
+                {!pendingItems.length && !pending.error && (
                   <p className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
                     Nenhuma fila configurada ainda.
                   </p>
@@ -432,6 +512,7 @@ export default function DashboardPage() {
                 </span>
               </div>
               <div className="divide-y divide-[var(--border)]">
+                {agents.error && <div className="p-3"><ConsoleError message={agents.error} /></div>}
                 {(agents.data?.agents ?? []).map((agent) => (
                   <div key={agent.id} className="flex items-center gap-3 px-4 py-2.5">
                     <span
@@ -449,7 +530,7 @@ export default function DashboardPage() {
                     </ConsoleStatus>
                   </div>
                 ))}
-                {!agents.data?.agents.length && (
+                {!agents.data?.agents.length && !agents.error && (
                   <p className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
                     Nenhum agente cadastrado. Cadastre um agente para começar a distribuir leads.
                   </p>
@@ -469,6 +550,7 @@ export default function DashboardPage() {
                 {loadingActivity && (
                   <p className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">Carregando eventos…</p>
                 )}
+                {activityState.error && <div className="p-3"><ConsoleError message={activityState.error} /></div>}
                 {!loadingActivity &&
                   (activity ?? []).map((item, index) => (
                     <div key={`${item.id}-${index}`} className="flex items-center gap-3 px-4 py-2.5">
@@ -480,7 +562,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                   ))}
-                {!loadingActivity && !activity?.length && (
+                {!loadingActivity && !activity?.length && !activityState.error && (
                   <p className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
                     Nenhuma atividade recente registrada.
                   </p>

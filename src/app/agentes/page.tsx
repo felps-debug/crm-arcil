@@ -8,6 +8,7 @@ import {
   ConsoleError,
   ConsoleInput,
   ConsoleLoading,
+  ConsoleStaleBadge,
   ConsoleMetric,
   ConsoleButton,
   ConsolePage,
@@ -19,7 +20,7 @@ import { formatDateTime, formatNumber, useApi } from "@/lib/client-api";
 import type { AgentSummaryResponse } from "@/types/api";
 
 export default function AgentesPage() {
-  const { data, loading, error } = useApi<AgentSummaryResponse>("/api/agents/summary");
+  const { data, isInitialLoading, error, isStale, revalidate } = useApi<AgentSummaryResponse>("/api/agents/summary");
   const [search, setSearch] = useState("");
   const [selectedAgent, setSelectedAgent] = useState<{ id: string; name: string } | null>(null);
 
@@ -43,10 +44,11 @@ export default function AgentesPage() {
         />
       }
     >
-      {loading && <ConsoleLoading />}
-      {error && <ConsoleError message={error} />}
+      {isInitialLoading && <ConsoleLoading />}
+      {error && !data && <ConsoleError message={error} />}
+      <ConsoleStaleBadge show={isStale} onRetry={revalidate} />
 
-      {!loading && !error && data && (
+      {!isInitialLoading && data && (
         <>
           <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {data.metrics.slice(0, 3).map((m, index) => (

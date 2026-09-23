@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Configuração do servidor incompleta" }, { status: 500 });
   }
 
-  const { response } = await requireApiPermission("manage_gerador_imagem");
+  const { response } = await requireApiPermission("manage_gerador_imagem", { strict: true });
   if (response) return response;
 
   const {

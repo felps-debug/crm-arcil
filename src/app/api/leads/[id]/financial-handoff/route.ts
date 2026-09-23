@@ -29,7 +29,7 @@ type ResolutionResult = {
  * foram parar no banco assim, no dia em que o host do n8n ficou fora do ar.
  */
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const { response } = await requireApiPermission("manage_cobranca");
+  const { response } = await requireApiPermission("manage_cobranca", { strict: true });
   if (response) return response;
 
   let body: unknown;
@@ -86,7 +86,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
 }
 
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const { user, response } = await requireApiPermission("manage_cobranca");
+  const { user, response } = await requireApiPermission("manage_cobranca", { strict: true });
   if (response) return response;
 
   let body: unknown;

@@ -329,42 +329,6 @@ export async function getUrgentFollowupsCount(): Promise<number> {
   return count ?? 0;
 }
 
-export type ActivityItem = {
-  id: string;
-  type: "lead" | "cobranca" | "followup";
-  label: string;
-  sub: string;
-  date: string | null;
-};
-
-export async function getRecentActivity(): Promise<ActivityItem[]> {
-  const [leadsRes, cobrancaRes, followupsRes] = await Promise.all([
-    // Busca acima de 6: todo disparo de cobrança já cria o lead, então uma
-    // fatia dos mais recentes é sempre desse segmento e é filtrada abaixo —
-    // sem a folga, um dia com só disparos de cobrança esvaziaria esse bloco.
-    supabase.from("leads").select("id,name,segment,created_at").order("created_at", { ascending: false }).limit(12),
-    supabase.from("cobranca_log").select("id,nome,valor,data_disparo").order("data_disparo", { ascending: false }).limit(6),
-    // followups has no updated_at column — ordering by it made this query fail
-    // silently, so answered follow-ups never showed up in the activity feed.
-    supabase.from("followups").select("id,tipo,ultima_msg_lead,created_at").eq("respondeu", true).order("created_at", { ascending: false }).limit(6),
-  ]);
-
-  const items: ActivityItem[] = [];
-  // Lead de cobrança nasce junto com a linha de cobranca_log, no mesmo disparo
-  // — mostrar os dois é o mesmo evento contado duas vezes. Só o "lead" de
-  // segmento comercial de verdade (Novo/Consumidor) é notícia por si.
-  for (const l of (leadsRes.data ?? []).filter((l) => l.segment !== "COBRANCA").slice(0, 6))
-    items.push({ id: l.id, type: "lead", label: l.name ?? "Novo lead", sub: l.segment ?? "", date: l.created_at });
-  for (const c of cobrancaRes.data ?? [])
-    items.push({ id: c.id, type: "cobranca", label: c.nome ?? "Cobrança", sub: c.valor ?? "", date: c.data_disparo });
-  for (const f of followupsRes.data ?? [])
-    items.push({ id: f.id, type: "followup", label: "Follow-up respondido", sub: f.tipo ?? "", date: f.ultima_msg_lead ?? f.created_at });
-
-  return items
-    .filter((i) => i.date)
-    .sort((a, b) => new Date(b.date!).getTime() - new Date(a.date!).getTime())
-    .slice(0, 15);
-}
 
 export async function getRecentConversations(limit = 20) {
   const { data, error } = await supabase

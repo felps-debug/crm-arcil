@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
 
 // In-memory sliding-window limiter, scoped to the handful of routes that are
 // either unauthenticated (check-result) or trigger paid/real-world side effects
@@ -14,6 +15,9 @@ const RATE_LIMITS: Record<string, number> = {
   "/api/generate-image": 10,
   "/api/cobranca/disparo": 5,
   "/api/cobranca/reenviar-nao-disparados": 5,
+  // Grava em performance_traces a cada abertura de tela; o teto só impede que
+  // alguém encha a tabela.
+  "/api/perf/traces": 60,
 };
 // Dynamic route — sends a real WhatsApp message via Chatwoot, same category as cobranca/disparo.
 const SEND_MESSAGE_RE = /^\/api\/atendimento\/conversations\/[^/]+\/messages$/;
@@ -42,8 +46,12 @@ export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    // Via lib/env, nunca process.env cru: a anon key na Vercel vem com BOM no
+    // começo. getSession() não fazia request e nunca notou; getClaims() busca o
+    // JWKS mandando a chave no header, e o fetch recusa o caractere — todo
+    // mundo caía no /login.
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
     {
       cookies: {
         getAll() {
@@ -62,11 +70,12 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // Optimistic session check from cookie — no network call to Supabase auth server.
-  // Full JWT verification happens in API routes and server actions as needed.
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  // Verificação local da assinatura ES256 do JWT (JWKS em cache) — sem ida ao
+  // Auth server, e diferente de getSession() não aceita cookie adulterado.
+  // Também renova o token quando ele expira, gravando o cookie novo via setAll.
+  // Autorização (papel, permissão) continua nas rotas: aqui só decide login.
+  const { data } = await supabase.auth.getClaims();
+  const session = Boolean(data?.claims?.sub);
 
   const isLoginPage = request.nextUrl.pathname.startsWith("/login");
 

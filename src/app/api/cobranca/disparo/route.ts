@@ -128,7 +128,7 @@ function validateLeads(leads: DisparoLead[]): string | null {
 }
 
 export async function POST(req: NextRequest) {
-  const { user, response } = await requireApiPermission("manage_cobranca");
+  const { user, response } = await requireApiPermission("manage_cobranca", { strict: true });
   if (response) return response;
 
   const { leads, recusados = [] }: { leads: DisparoLead[]; recusados?: LinhaRecusada[] } = await req.json();

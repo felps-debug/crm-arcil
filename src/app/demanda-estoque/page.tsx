@@ -8,6 +8,7 @@ import {
   ConsoleInput,
   ConsoleLoading,
   ConsoleMetric,
+  ConsoleStaleBadge,
   ConsolePage,
   ConsoleStatus,
   ConsoleTable,
@@ -70,7 +71,7 @@ function DemandaEstoquePageInner() {
     return () => clearTimeout(t);
   }, [search]);
   const [tableFilter, setTableFilter] = useState("");
-  const { data, isInitialLoading, error } = useApi<InventorySummaryResponse>(`/api/inventory/summary?limit=600&search=${encodeURIComponent(debouncedSearch)}`);
+  const { data, isInitialLoading, error, isStale, revalidate } = useApi<InventorySummaryResponse>(`/api/inventory/summary?limit=600&search=${encodeURIComponent(debouncedSearch)}`);
   const products = useMemo(() => data?.products ?? [], [data]);
   const filteredProducts = useMemo(() => {
     const q = tableFilter.trim().toLowerCase();
@@ -111,9 +112,10 @@ function DemandaEstoquePageInner() {
       }
     >
       {isInitialLoading && <ConsoleLoading />}
-      {error && <ConsoleError message={error} />}
+      <ConsoleStaleBadge show={isStale} onRetry={revalidate} />
+      {error && !data && <ConsoleError message={error} />}
 
-      {!isInitialLoading && !error && data && (
+      {!isInitialLoading && data && (
         <>
           {!estoqueSincronizado && (
             <div className="flex items-start gap-2 rounded-[10px] border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-300">

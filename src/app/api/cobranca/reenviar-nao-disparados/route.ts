@@ -3,7 +3,7 @@ import { requireApiPermission } from "@/lib/server/api-auth";
 const PYTHON_BASE_URL = (process.env.PYTHON_BASE_URL || "https://arcil-arcil-cobranca-py.47nukb.easypanel.host").trim().replace(/^﻿/, "");
 
 export async function POST() {
-  const { response } = await requireApiPermission("manage_cobranca");
+  const { response } = await requireApiPermission("manage_cobranca", { strict: true });
   if (response) return response;
 
   let pythonStatus: string;

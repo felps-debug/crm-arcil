@@ -1,58 +1,82 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { cacheKey, getView, load, subscribe, type CacheView } from "@/lib/api-cache";
 
-export function useApi<T>(url: string | null) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const REQUEST_TIMEOUT_MS = 15_000;
+
+export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { cache: "no-store", ...init, signal: controller.signal });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+    return body as T;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("A consulta demorou mais que 15 segundos. Tente atualizar.");
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+// Sem URL a tela ainda não sabe o que pedir (ex.: drawer sem item escolhido).
+const NO_URL_VIEW: CacheView = { data: null, loading: true, error: null, isStale: false, fetchedAt: null };
+const noopSubscribe = () => () => {};
+
+/**
+ * Dado de uma rota /api, reaproveitado entre telas (ver lib/api-cache.ts).
+ *
+ * Voltar a uma tela mostra o último dado válido na hora; se ele tem mais de
+ * 30s, atualiza em segundo plano sem apagar a tela. `isInitialLoading` só é
+ * true quando não há nada para mostrar — é ele que decide o skeleton.
+ *
+ * Trocar `_r` na URL (padrão antigo de "atualizar") continua forçando refetch.
+ */
+export function useApi<T>(url: string | null, opts?: { freshMs?: number; headers?: HeadersInit }) {
+  const key = url ? cacheKey(url) : null;
+  const lastUrl = useRef<string | null>(null);
+  const headersRef = useRef(opts?.headers);
+  // Declarado antes do efeito que dispara a request, então roda antes dele.
+  useEffect(() => {
+    headersRef.current = opts?.headers;
+  });
+
+  const view = useSyncExternalStore(
+    key ? (cb) => subscribe(key, cb) : noopSubscribe,
+    () => (key ? getView<T>(key) : (NO_URL_VIEW as CacheView<T>)),
+    () => (key ? getView<T>(key) : (NO_URL_VIEW as CacheView<T>))
+  );
+
+  const run = useCallback(
+    (force: boolean) => {
+      if (!url || !key) return;
+      void load(key, () => fetchJson<T>(url, { headers: headersRef.current }), { freshMs: opts?.freshMs, force });
+    },
+    [url, key, opts?.freshMs]
+  );
 
   useEffect(() => {
-    let alive = true;
-    if (!url) {
-      return () => {
-        alive = false;
-      };
-    }
-    queueMicrotask(() => {
-      if (!alive) return;
-      setLoading(true);
-      setError(null);
-    });
+    // Mesma chave com `_r` diferente = alguém apertou "atualizar".
+    const forced = Boolean(url && lastUrl.current && url !== lastUrl.current && cacheKey(lastUrl.current) === key);
+    lastUrl.current = url;
+    run(forced);
+  }, [url, key, run]);
 
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+  const neverLoaded = Boolean(key) && view.fetchedAt === null && view.data === null && !view.error;
+  const loading = view.loading || neverLoaded || (!key && NO_URL_VIEW.loading);
 
-    fetch(url, { cache: "no-store", signal: controller.signal })
-      .then(async (res) => {
-        const body = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
-        return body as T;
-      })
-      .then((body) => {
-        if (!alive) return;
-        setData(body);
-      })
-      .catch((err) => {
-        if (!alive) return;
-        setError(err instanceof DOMException && err.name === "AbortError"
-          ? "A consulta demorou mais que 15 segundos. Tente atualizar."
-          : err instanceof Error ? err.message : "Erro ao carregar dados");
-      })
-      .finally(() => {
-        window.clearTimeout(timeout);
-        if (!alive) return;
-        setLoading(false);
-      });
-
-    return () => {
-      alive = false;
-      window.clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [url]);
-
-  return { data, loading, isInitialLoading: loading && data === null, error };
+  return {
+    data: view.data,
+    loading,
+    isInitialLoading: loading && view.data === null,
+    error: view.error,
+    isStale: view.isStale,
+    revalidate: () => run(true),
+  };
 }
 
 export function formatNumber(value: number | string | null | undefined) {
