@@ -797,7 +797,7 @@ export function buildPending(core: CoreData): PendingCenterResponse {
         severity: "warning",
         formula: `count(leads where owner_name is null and handoff_vendor_id is null and segment <> COBRANCA and created_at older than ${SEM_RESPONSAVEL_APOS_HORAS}h)`,
         period: allTimePeriod(),
-        tooltip: `Leads comerciais há mais de ${SEM_RESPONSAVEL_APOS_HORAS}h sem vendedor: a triagem não terminou nem encaminhou. Cobrança tem fluxo próprio e não entra aqui.`,
+        tooltip: `Chegaram há mais de ${SEM_RESPONSAVEL_APOS_HORAS}h e ainda não foram encaminhados a um vendedor. Confira a conversa em Atendimento e encaminhe.`,
         drilldown: { href: "/leads", filters: { unassigned: "true", comercial: "true" } },
       },
       {
@@ -810,7 +810,7 @@ export function buildPending(core: CoreData): PendingCenterResponse {
         severity: "danger",
         formula: "count(leads where handoff_sent_at is not null and handoff_accepted_at is null)",
         period: allTimePeriod(),
-        tooltip: "Encaminhados ao vendedor por WhatsApp que ainda não foram assumidos por ninguém.",
+        tooltip: "Enviados ao vendedor pelo WhatsApp, mas ninguém confirmou que assumiu o atendimento.",
         drilldown: { href: "/leads", filters: { handoff: "pending" } },
       },
       {
@@ -820,7 +820,7 @@ export function buildPending(core: CoreData): PendingCenterResponse {
         severity: "warning",
         formula: "count(active commercial leads without matching followups.lead_id)",
         period: allTimePeriod(),
-        tooltip: "Leads comerciais ativos sem registro em followups. Antes este card era 100% devedor, pedindo ação do time errado.",
+        tooltip: "Leads ativos que ainda não entraram na régua de follow-up.",
         drilldown: { href: "/leads", filters: { status: "ACTIVE", withoutFollowup: "true", comercial: "true" } },
       },
       {
@@ -832,7 +832,7 @@ export function buildPending(core: CoreData): PendingCenterResponse {
         severity: "danger",
         formula: `count(followups comerciais where followup_sent=true and respondeu is not true and status=PENDING and ultima_msg_ia older than ${FOLLOWUP_ATRASADO_APOS_HORAS}h)`,
         period: allTimePeriod(),
-        tooltip: `Follow-ups comerciais sem resposta há mais de ${FOLLOWUP_ATRASADO_APOS_HORAS}h desde a última mensagem da IA. Cobrança tem régua própria e não entra aqui.`,
+        tooltip: `O cliente não responde há mais de ${FOLLOWUP_ATRASADO_APOS_HORAS}h desde a última mensagem. Vale um contato do vendedor.`,
         drilldown: { href: "/leads", filters: { view: "followups", late: "true" } },
       },
       {
@@ -842,7 +842,7 @@ export function buildPending(core: CoreData): PendingCenterResponse {
         severity: "info",
         formula: "count(cobranca_log where vencimento=today and pagamento_confirmado=false)",
         period: { label: "Hoje", from: `${today}T00:00:00.000Z`, to: `${today}T23:59:59.999Z` },
-        tooltip: "Cobrancas importadas com vencimento no dia atual.",
+        tooltip: "Boletos que vencem hoje e ainda não foram pagos.",
         drilldown: { href: "/cobranca", filters: { vencimento: today } },
       },
       // O antigo "Fontes de estoque desatualizadas" (stale_integrations) saiu
