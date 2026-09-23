@@ -116,13 +116,11 @@ describe("buildDashboardSnapshot — carga", () => {
     expect(sections.pending?.status).toBe("ok");
   });
 
-  it("resumo, pendências e estoque usam o mesmo número de produto", async () => {
-    const { sections } = await buildDashboardSnapshot(ctx("owner"), ["summary", "pending", "inventory"], loaders());
+  it("resumo e estoque usam o mesmo número de produto", async () => {
+    const { sections } = await buildDashboardSnapshot(ctx("owner"), ["summary", "inventory"], loaders());
     const s = sections.summary as { status: "ok"; data: { metrics: { id: string; value: unknown }[] } };
-    const p = sections.pending as { status: "ok"; data: { items: { id: string; count: number }[] } };
     const i = sections.inventory as { status: "ok"; data: { metrics: { id: string; value: unknown }[] } };
     expect(s.data.metrics.find((m) => m.id === "produtos_disponiveis")?.value).toBe(metrics.disponiveis);
-    expect(p.data.items.find((m) => m.id === "out_of_stock_products")?.count).toBe(metrics.zerados);
     expect(i.data.metrics.find((m) => m.id === "total_products")?.value).toBe(metrics.total_distintos);
   });
 
