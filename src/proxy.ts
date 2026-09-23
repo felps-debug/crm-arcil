@@ -69,7 +69,7 @@ export async function proxy(request: NextRequest) {
   // Auth server, e diferente de getSession() não aceita cookie adulterado.
   // Também renova o token quando ele expira, gravando o cookie novo via setAll.
   // Autorização (papel, permissão) continua nas rotas: aqui só decide login.
-  const { data } = await supabase.auth.getClaims();
+  const { data, error: claimsError } = await supabase.auth.getClaims();
   const session = Boolean(data?.claims?.sub);
 
   const isLoginPage = request.nextUrl.pathname.startsWith("/login");
@@ -77,7 +77,15 @@ export async function proxy(request: NextRequest) {
   if (!session && !isLoginPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
+    const redirect = NextResponse.redirect(url);
+    // DIAGNÓSTICO TEMPORÁRIO (preview da feature 001): motivo da recusa, sem
+    // token nem dado de usuário. Remover antes do merge.
+    const hasAuthCookie = request.cookies.getAll().some((c) => c.name.includes("-auth-token"));
+    redirect.headers.set(
+      "x-auth-diag",
+      `cookie=${hasAuthCookie} ${claimsError ? `${claimsError.name}:${claimsError.message}`.replace(/[^\x20-\x7E]/g, "").slice(0, 160) : "no-error"}`
+    );
+    return redirect;
   }
 
   if (session && isLoginPage) {
