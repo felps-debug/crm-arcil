@@ -8,7 +8,6 @@ import {
   countUrgentFollowups,
   fetchCore,
   fetchHandoffDecisions,
-  fetchSheetSources,
 } from "@/lib/server/crm-data";
 import { fetchProductMetrics } from "@/lib/server/product-metrics";
 import { timeStage } from "@/lib/perf/trace-context";
@@ -22,14 +21,12 @@ import {
 export type SnapshotLoaders = {
   core: typeof fetchCore;
   handoffDecisions: typeof fetchHandoffDecisions;
-  sheetSources: typeof fetchSheetSources;
   productMetrics: typeof fetchProductMetrics;
 };
 
 const defaultLoaders: SnapshotLoaders = {
   core: fetchCore,
   handoffDecisions: fetchHandoffDecisions,
-  sheetSources: fetchSheetSources,
   productMetrics: fetchProductMetrics,
 };
 
@@ -68,7 +65,7 @@ function allowed(ctx: ApiContext, section: DashboardSection) {
 /** O que cada seção precisa ler. */
 const SECTION_SOURCES: { [K in DashboardSection]: (keyof SnapshotLoaders)[] } = {
   summary: ["core", "handoffDecisions", "productMetrics"],
-  pending: ["core", "sheetSources", "productMetrics"],
+  pending: ["core", "productMetrics"],
   agents: ["core"],
   inventory: ["productMetrics"],
   activity: ["core"],
@@ -78,7 +75,6 @@ const SECTION_SOURCES: { [K in DashboardSection]: (keyof SnapshotLoaders)[] } = 
 const STAGE_NAMES: Record<keyof SnapshotLoaders, string> = {
   core: "core",
   handoffDecisions: "handoffDecisions",
-  sheetSources: "sheetSources",
   productMetrics: "products",
 };
 
@@ -112,7 +108,6 @@ export function prefetchSnapshotData(
   return {
     core: get("core"),
     handoffDecisions: get("handoffDecisions"),
-    sheetSources: get("sheetSources"),
     productMetrics: get("productMetrics"),
   };
 }
@@ -146,8 +141,8 @@ export async function buildDashboardSnapshot(
       return buildSummary(core, decisions, metrics);
     },
     pending: async () => {
-      const [core, sheets, metrics] = await Promise.all([src.core(), src.sheetSources(), src.productMetrics()]);
-      return buildPending(core, sheets, metrics);
+      const [core, metrics] = await Promise.all([src.core(), src.productMetrics()]);
+      return buildPending(core, metrics);
     },
     agents: async () => buildAgents(await src.core()),
     inventory: async () => {
