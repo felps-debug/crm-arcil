@@ -18,6 +18,11 @@ import { test, expect, type Browser, type Page } from "@playwright/test";
  */
 
 const RUNS = Number(process.env.PERF_RUNS ?? 30);
+// Pausa entre cargas. Preview e produção usam o MESMO banco, e a instância não
+// tem folga: em 2026-09-22 cargas coladas + o sync horário derrubaram o Auth.
+const PAUSE_MS = Number(process.env.PERF_PAUSE_MS ?? 3000);
+// Preview protegido por SSO da Vercel: "Protection Bypass for Automation".
+const BYPASS = process.env.PERF_VERCEL_BYPASS;
 const LABEL = process.env.PERF_LABEL ?? "run";
 const OUT_DIR = path.resolve("perf-results");
 const STATE_FILE = process.env.PERF_STORAGE_STATE ?? path.join(OUT_DIR, ".auth-state.json");
@@ -73,6 +78,25 @@ async function waitUsable(page: Page): Promise<Marker> {
   }
 }
 
+const bypassHeaders = BYPASS
+  ? { "x-vercel-protection-bypass": BYPASS, "x-vercel-set-bypass-cookie": "true" }
+  : undefined;
+
+const pause = () => new Promise((r) => setTimeout(r, PAUSE_MS));
+
+/**
+ * O sync do ERP e o upsert de catálogo rodam na virada de cada hora. Medir
+ * junto mistura o custo deles no número e soma carga num banco sem folga.
+ */
+async function avoidTopOfHour() {
+  for (;;) {
+    const m = new Date().getUTCMinutes();
+    if (m >= 5 && m <= 57) return;
+    console.info(`[perf] minuto ${m}: esperando passar a virada da hora (sync do ERP)`);
+    await new Promise((r) => setTimeout(r, 60_000));
+  }
+}
+
 async function ensureLoggedIn(browser: Browser) {
   if (existsSync(STATE_FILE) && process.env.PERF_STORAGE_STATE) return;
 
@@ -82,7 +106,7 @@ async function ensureLoggedIn(browser: Browser) {
     throw new Error("Defina PERF_USER_EMAIL/PERF_USER_PASSWORD ou PERF_STORAGE_STATE.");
   }
 
-  const context = await browser.newContext();
+  const context = await browser.newContext({ extraHTTPHeaders: bypassHeaders });
   const page = await context.newPage();
   await page.goto("/login");
   await page.locator('input[type="email"]').fill(email);
@@ -96,7 +120,7 @@ async function ensureLoggedIn(browser: Browser) {
 
 test("dashboard: cargas frias e quentes", async ({ browser, baseURL }) => {
   test.skip(!process.env.PERF_BASE_URL, "PERF_BASE_URL não definida — medição só roda contra preview.");
-  test.setTimeout(15 * 60_000);
+  test.setTimeout(45 * 60_000);
 
   await ensureLoggedIn(browser);
 
@@ -108,20 +132,24 @@ test("dashboard: cargas frias e quentes", async ({ browser, baseURL }) => {
   // Carga que falhou ou estourou entra na amostra com o tempo que levou até
   // falhar: tirar ela deixaria o p95 bonito justamente onde a tela quebrou.
   for (let i = 0; i < RUNS; i++) {
-    const context = await browser.newContext({ storageState: STATE_FILE });
+    await avoidTopOfHour();
+    const context = await browser.newContext({ storageState: STATE_FILE, extraHTTPHeaders: bypassHeaders });
     const page = await context.newPage();
     const started = Date.now();
     await page.goto("/", { waitUntil: "commit" });
     count("cold", await waitUsable(page));
     cold.push(Date.now() - started);
     await context.close();
+    await pause();
   }
 
-  const context = await browser.newContext({ storageState: STATE_FILE });
+  const context = await browser.newContext({ storageState: STATE_FILE, extraHTTPHeaders: bypassHeaders });
   const page = await context.newPage();
   await page.goto("/");
   await waitUsable(page);
   for (let i = 0; i < RUNS; i++) {
+    await avoidTopOfHour();
+    await pause();
     await page.locator('a[href="/leads"]').first().click();
     await page.waitForURL("**/leads");
     const started = Date.now();

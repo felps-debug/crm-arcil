@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
 
 // In-memory sliding-window limiter, scoped to the handful of routes that are
 // either unauthenticated (check-result) or trigger paid/real-world side effects
@@ -45,8 +46,12 @@ export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    // Via lib/env, nunca process.env cru: a anon key na Vercel vem com BOM no
+    // começo. getSession() não fazia request e nunca notou; getClaims() busca o
+    // JWKS mandando a chave no header, e o fetch recusa o caractere — todo
+    // mundo caía no /login.
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
     {
       cookies: {
         getAll() {
@@ -69,7 +74,7 @@ export async function proxy(request: NextRequest) {
   // Auth server, e diferente de getSession() não aceita cookie adulterado.
   // Também renova o token quando ele expira, gravando o cookie novo via setAll.
   // Autorização (papel, permissão) continua nas rotas: aqui só decide login.
-  const { data, error: claimsError } = await supabase.auth.getClaims();
+  const { data } = await supabase.auth.getClaims();
   const session = Boolean(data?.claims?.sub);
 
   const isLoginPage = request.nextUrl.pathname.startsWith("/login");
@@ -77,15 +82,7 @@ export async function proxy(request: NextRequest) {
   if (!session && !isLoginPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    const redirect = NextResponse.redirect(url);
-    // DIAGNÓSTICO TEMPORÁRIO (preview da feature 001): motivo da recusa, sem
-    // token nem dado de usuário. Remover antes do merge.
-    const hasAuthCookie = request.cookies.getAll().some((c) => c.name.includes("-auth-token"));
-    redirect.headers.set(
-      "x-auth-diag",
-      `cookie=${hasAuthCookie} ${claimsError ? `${claimsError.name}:${claimsError.message}`.replace(/[^\x20-\x7E]/g, "").slice(0, 160) : "no-error"}`
-    );
-    return redirect;
+    return NextResponse.redirect(url);
   }
 
   if (session && isLoginPage) {
