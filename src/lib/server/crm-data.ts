@@ -157,15 +157,6 @@ type FinancialPositionRow = {
   observacao: string | null;
 };
 
-type SheetSourceRow = {
-  id: string;
-  vendedor_id: string | null;
-  cidade: string | null;
-  estado: string | null;
-  last_synced_at: string | null;
-  created_at: string | null;
-};
-
 /** Imagens geradas pelo n8n, indexadas por telefone. */
 type GeneratedImageRow = {
   id: string;
@@ -484,14 +475,6 @@ type HandoffDecisionLite = {
   cobranca_log_id: string | null;
 };
 
-type SheetSourceLite = Pick<SheetSourceRow, "id" | "last_synced_at">;
-
-async function fetchSheetSources(): Promise<SheetSourceLite[]> {
-  return selectAllPages<SheetSourceLite>((from, to) =>
-    createAdminClient().from("sheet_sources").select("id,last_synced_at").order("id").range(from, to)
-  );
-}
-
 /**
  * Quanto já entrou de cobrança. O valor de cada boleto vive no snapshot do
  * disparo (`cobranca_log.metadata`), não na tabela de decisões, então o
@@ -535,8 +518,6 @@ export async function fetchCore() {
 export function fetchHandoffDecisions() {
   return coreTables.handoffDecisions();
 }
-
-export { fetchSheetSources };
 
 export async function getDashboardSummary(): Promise<DashboardSummaryResponse> {
   const [core, handoffDecisions, productMetrics] = await Promise.all([
@@ -761,19 +742,11 @@ export function buildSummary(
 }
 
 export async function getPendingCenter(): Promise<PendingCenterResponse> {
-  const [core, sheetSources, productMetrics] = await Promise.all([
-    fetchCore(),
-    fetchSheetSources(),
-    fetchProductMetrics(),
-  ]);
-  return buildPending(core, sheetSources, productMetrics);
+  const [core, productMetrics] = await Promise.all([fetchCore(), fetchProductMetrics()]);
+  return buildPending(core, productMetrics);
 }
 
-export function buildPending(
-  core: CoreData,
-  sheetSources: SheetSourceLite[],
-  productMetrics: ProductMetrics
-): PendingCenterResponse {
+export function buildPending(core: CoreData, productMetrics: ProductMetrics): PendingCenterResponse {
   const { leads, followups, cobrancas } = core;
   // Contado por produto (codigo_erp), não por linha de segmento: a mesma
   // geladeira tem uma linha por canal e já fez o dashboard dizer 1.918 onde
@@ -841,16 +814,10 @@ export function buildPending(
         tooltip: "Cobrancas importadas com vencimento no dia atual.",
         drilldown: { href: "/cobranca", filters: { vencimento: today } },
       },
-      {
-        id: "stale_integrations",
-        label: "Fontes de estoque desatualizadas",
-        count: sheetSources.filter((s) => isOlderThan(s.last_synced_at, 24)).length,
-        severity: "danger",
-        formula: "count(sheet_sources where last_synced_at older than 24h)",
-        period: allTimePeriod(),
-        tooltip: "Fontes de planilha/ERP sem sincronizacao nas ultimas 24 horas.",
-        drilldown: { href: "/demanda-estoque", filters: {} },
-      },
+      // O antigo "Fontes de estoque desatualizadas" (stale_integrations) saiu
+      // daqui: contava sheet_sources, que são as planilhas de prospecção de
+      // outro sistema — não estoque. Aparecia em vermelho como a pendência
+      // mais grave do painel sem ter nada a ver com o CRM.
       {
         // `estoque` é null nas 3.077 linhas de produto — o ERP não sincroniza
         // quantidade. Com `(p.estoque ?? 0) <= 0` cada null virava 0 e TODO o

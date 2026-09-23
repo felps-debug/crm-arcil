@@ -40,7 +40,6 @@ function loaders(overrides: Partial<SnapshotLoaders> = {}) {
   const l: SnapshotLoaders = {
     core: vi.fn(async () => core),
     handoffDecisions: vi.fn(async () => []),
-    sheetSources: vi.fn(async () => []),
     productMetrics: vi.fn(async () => metrics),
     ...overrides,
   };
@@ -95,9 +94,8 @@ describe("buildDashboardSnapshot — carga", () => {
     let liberaCore!: () => void;
     const l = loaders({ core: vi.fn(() => new Promise<CoreData>((r) => { liberaCore = () => r(core); })) });
     const pronto = buildDashboardSnapshot(ctx("owner"), ["summary", "pending"], l);
-    // O núcleo ainda não respondeu, e as outras três fontes já saíram.
+    // O núcleo ainda não respondeu, e as outras fontes já saíram.
     expect(l.handoffDecisions).toHaveBeenCalled();
-    expect(l.sheetSources).toHaveBeenCalled();
     expect(l.productMetrics).toHaveBeenCalled();
     liberaCore();
     await pronto;
@@ -108,14 +106,14 @@ describe("buildDashboardSnapshot — carga", () => {
     const { sections } = await buildDashboardSnapshot(ctx("owner"), ["agents"], l);
     expect(Object.keys(sections)).toEqual(["agents"]);
     expect(l.productMetrics).not.toHaveBeenCalled();
-    expect(l.sheetSources).not.toHaveBeenCalled();
+    expect(l.handoffDecisions).not.toHaveBeenCalled();
   });
 
   it("uma seção que falha não derruba as outras", async () => {
-    const l = loaders({ sheetSources: vi.fn(async () => { throw new Error("sheet fora"); }) });
+    const l = loaders({ handoffDecisions: vi.fn(async () => { throw new Error("decisoes fora"); }) });
     const { sections } = await buildDashboardSnapshot(ctx("owner"), ["summary", "pending"], l);
-    expect(sections.pending).toEqual({ status: "error", message: "Erro ao carregar esta seção." });
-    expect(sections.summary?.status).toBe("ok");
+    expect(sections.summary).toEqual({ status: "error", message: "Erro ao carregar esta seção." });
+    expect(sections.pending?.status).toBe("ok");
   });
 
   it("resumo, pendências e estoque usam o mesmo número de produto", async () => {
@@ -136,5 +134,13 @@ describe("buildDashboardSnapshot — carga", () => {
     // lead de cobrança fica fora; follow-up respondido entra
     expect(activity.map((a) => a.label)).toEqual(expect.arrayContaining(["Ana", "Follow-up respondido"]));
     expect(activity.map((a) => a.label)).not.toContain("Devedor");
+  });
+});
+
+describe("pendências", () => {
+  it("não inclui mais as planilhas de prospecção (sheet_sources, outro sistema)", async () => {
+    const { sections } = await buildDashboardSnapshot(ctx("owner"), ["pending"], loaders());
+    const ids = (sections.pending as { status: "ok"; data: { items: { id: string }[] } }).data.items.map((i) => i.id);
+    expect(ids).not.toContain("stale_integrations");
   });
 });
