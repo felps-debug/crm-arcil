@@ -25,10 +25,11 @@ const STATE_FILE = process.env.PERF_STORAGE_STATE ?? path.join(OUT_DIR, ".auth-s
 // O dashboard marca data-dashboard-ready quando resumo e pendências resolveram.
 // Antes dessa marca existir (linha de base no master atual), o primeiro card
 // de métrica visível é o sinal mais próximo de "tela utilizável".
-const READY_MARKER = '[data-dashboard-ready="true"]';
-const FALLBACK_MARKER = "text=Total leads";
+const FALLBACK_TEXT = "Atendimentos do agente";
+const ERROR_TEXT = "demorou mais que 15 segundos";
+const USABLE_TIMEOUT_MS = 30_000;
 
-type Marker = "ready" | "fallback";
+type Marker = "ready" | "fallback" | "error" | "timeout";
 
 function percentile(values: number[], p: number) {
   if (!values.length) return null;
@@ -37,23 +38,39 @@ function percentile(values: number[], p: number) {
   return sorted[Math.max(0, index)];
 }
 
+/**
+ * Uma espera só, avaliada no browser: pronto quando o marcador existe e está
+ * "true"; sem marcador na página (versão antiga), quando o card aparece.
+ * Duas esperas em corrida deixavam a perdedora pendurada, e ela estourava o
+ * timeout no meio da rodada seguinte.
+ */
 async function waitUsable(page: Page): Promise<Marker> {
-  const ready = page.locator(READY_MARKER);
-  const fallback = page.locator(FALLBACK_MARKER).first();
-  const winner = await Promise.race([
-    ready.waitFor({ state: "attached", timeout: 30_000 }).then(() => "ready" as const),
-    // Só vale o fallback se a página nem tem o atributo — com o atributo em
-    // "false" a tela ainda não está pronta, mesmo com o card já pintado.
-    fallback.waitFor({ state: "visible", timeout: 30_000 }).then(async () => {
-      const hasAttr = await page.locator("[data-dashboard-ready]").count();
-      if (hasAttr) {
-        await ready.waitFor({ state: "attached", timeout: 30_000 });
-        return "ready" as const;
-      }
-      return "fallback" as const;
-    }),
-  ]);
-  return winner;
+  try {
+    const handle = await page.waitForFunction(
+      ({ fallbackText, errorText }) => {
+        // Só o que está visível: com cacheComponents o Next 16 mantém a tela
+        // anterior montada e escondida (<Activity>), e o texto dela "já estaria
+        // lá" antes de a tela nova existir.
+        const visible = (el: Element) => el.checkVisibility();
+        const leaves = () =>
+          [...document.querySelectorAll("p, span, div")].filter((el) => el.childElementCount === 0 && visible(el));
+        // A versão antiga desiste depois de 15 s e troca a tela por um erro:
+        // para quem está usando, isso é uma carga que falhou, não um "pronto".
+        if (leaves().some((el) => el.textContent?.includes(errorText))) return "error";
+        // O marcador é um <div hidden>; o que conta é o container dele estar visível.
+        const marker = [...document.querySelectorAll("[data-dashboard-ready]")].find(
+          (el) => el.parentElement && visible(el.parentElement)
+        );
+        if (marker) return marker.getAttribute("data-dashboard-ready") === "true" ? "ready" : false;
+        return leaves().some((el) => el.textContent?.trim() === fallbackText) ? "fallback" : false;
+      },
+      { fallbackText: FALLBACK_TEXT, errorText: ERROR_TEXT },
+      { timeout: USABLE_TIMEOUT_MS, polling: 50 }
+    );
+    return (await handle.jsonValue()) as Marker;
+  } catch {
+    return "timeout";
+  }
 }
 
 async function ensureLoggedIn(browser: Browser) {
@@ -85,14 +102,17 @@ test("dashboard: cargas frias e quentes", async ({ browser, baseURL }) => {
 
   const cold: number[] = [];
   const warm: number[] = [];
-  const markers = new Set<Marker>();
+  const outcomes = { cold: {} as Record<Marker, number>, warm: {} as Record<Marker, number> };
+  const count = (kind: "cold" | "warm", m: Marker) => (outcomes[kind][m] = (outcomes[kind][m] ?? 0) + 1);
 
+  // Carga que falhou ou estourou entra na amostra com o tempo que levou até
+  // falhar: tirar ela deixaria o p95 bonito justamente onde a tela quebrou.
   for (let i = 0; i < RUNS; i++) {
     const context = await browser.newContext({ storageState: STATE_FILE });
     const page = await context.newPage();
     const started = Date.now();
     await page.goto("/", { waitUntil: "commit" });
-    markers.add(await waitUsable(page));
+    count("cold", await waitUsable(page));
     cold.push(Date.now() - started);
     await context.close();
   }
@@ -107,17 +127,19 @@ test("dashboard: cargas frias e quentes", async ({ browser, baseURL }) => {
     const started = Date.now();
     await page.locator('a[href="/"]').first().click();
     await page.waitForURL((url) => url.pathname === "/");
-    markers.add(await waitUsable(page));
+    count("warm", await waitUsable(page));
     warm.push(Date.now() - started);
   }
   await context.close();
 
+  const markerOf = (o: Record<string, number>) => (o.fallback ? "fallback" : "ready");
   const result = {
     label: LABEL,
     baseURL,
     measuredAt: new Date().toISOString(),
     runs: RUNS,
-    marker: markers.has("fallback") ? "fallback" : "ready",
+    marker: markerOf({ ...outcomes.cold, ...outcomes.warm }),
+    outcomes,
     cold: { samples: cold, p50: percentile(cold, 50), p95: percentile(cold, 95) },
     warm: { samples: warm, p50: percentile(warm, 50), p95: percentile(warm, 95) },
   };
@@ -125,7 +147,11 @@ test("dashboard: cargas frias e quentes", async ({ browser, baseURL }) => {
   mkdirSync(OUT_DIR, { recursive: true });
   const file = path.join(OUT_DIR, `${LABEL}-${result.measuredAt.replace(/[:.]/g, "-")}.json`);
   writeFileSync(file, JSON.stringify(result, null, 2));
-  console.info(`[perf] ${file}\n  cold p50=${result.cold.p50} p95=${result.cold.p95}\n  warm p50=${result.warm.p50} p95=${result.warm.p95}`);
+  console.info(
+    `[perf] ${file}\n` +
+      `  cold p50=${result.cold.p50} p95=${result.cold.p95} ${JSON.stringify(outcomes.cold)}\n` +
+      `  warm p50=${result.warm.p50} p95=${result.warm.p95} ${JSON.stringify(outcomes.warm)}`
+  );
 
   expect(cold).toHaveLength(RUNS);
 });
