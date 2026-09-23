@@ -194,10 +194,10 @@ description: "Lista de tarefas: Otimizar Performance do CRM"
 
 **Independent Test**: duas execuções seguidas sem mudança no ERP → `rowCount = 0` em todos os UPDATEs. `PERF_LABEL=sync` rodando durante uma execução → `cold.p95 ≤ 2000`.
 
-- [ ] T059 [US4] Nomear o responsável pelo workflow n8n "ERP — SALDO DE ESTOQUE" e registrar o nome no campo **Responsável** de `specs/001-otimizar-performance-crm/contracts/erp-sync-change.md` (RF-017). **Bloqueia T060–T064**
-- [ ] T060 [US4] Recarregar a aba do editor do n8n (armadilha do AGENTS.md), exportar o workflow para `docs/backups/n8n/erp-saldo-estoque-<AAAA-MM-DD>.json` e registrar a linha de base: `select relname, n_tup_upd from pg_stat_user_tables where relname like 'products_%' order by 1`
-- [ ] T061 [US4] No workflow, acrescentar `AND p.estoque IS DISTINCT FROM v.qtd` a todo `UPDATE products_* p SET estoque = v.qtd FROM (VALUES …)` e `AND p.estoque_transito IS DISTINCT FROM v.qtd` a todo `UPDATE … SET estoque_transito`. Fazer o nó registrar `rowCount` de cada UPDATE no log da execução
-- [ ] T062 [US4] No upsert de catálogo que reescreve `content`/`embedding` (PostgREST em `products_installer` e similares), comparar o hash de `content`/`nome` com o valor gravado e só gerar embedding e enviar as linhas alteradas
+- [X] T059 [US4] Nomear o responsável pelo workflow n8n "ERP — SALDO DE ESTOQUE" e registrar o nome no campo **Responsável** de `specs/001-otimizar-performance-crm/contracts/erp-sync-change.md` (RF-017). **Bloqueia T060–T064**
+- [X] T060 [US4] Recarregar a aba do editor do n8n (armadilha do AGENTS.md), exportar o workflow para `docs/backups/n8n/erp-saldo-estoque-<AAAA-MM-DD>.json` e registrar a linha de base: `select relname, n_tup_upd from pg_stat_user_tables where relname like 'products_%' order by 1`
+- [X] T061 [US4] No workflow, acrescentar `AND p.estoque IS DISTINCT FROM v.qtd` a todo `UPDATE products_* p SET estoque = v.qtd FROM (VALUES …)` e `AND p.estoque_transito IS DISTINCT FROM v.qtd` a todo `UPDATE … SET estoque_transito`. Fazer o nó registrar `rowCount` de cada UPDATE no log da execução
+- [X] T062 [US4] No upsert de catálogo que reescreve `content`/`embedding` (PostgREST em `products_installer` e similares), comparar o hash de `content`/`nome` com o valor gravado e só gerar embedding e enviar as linhas alteradas
 - [ ] T063 [US4] Validar CS-006: depois de 2 execuções, o delta de `n_tup_upd` por tabela é ≤ o número de produtos com saldo alterado, e uma execução sem mudança no ERP dá `rowCount = 0`. Registrar os números em `contracts/erp-sync-change.md`
 - [ ] T064 [US4] Validar CS-007: rodar `PERF_LABEL=sync npx playwright test --project=perf` durante uma execução do sync e conferir `cold.p95 ≤ 2000` e os cards do dashboard sem valor parcial. Rollback: reimportar o JSON da T060
 

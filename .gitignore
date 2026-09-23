@@ -53,3 +53,4 @@ next-env.d.ts
 
 # medições de performance (e2e/perf) — contém storageState com sessão
 /perf-results/
+/test-results/
