@@ -79,3 +79,17 @@ Seguir [contracts/erp-sync-change.md](./contracts/erp-sync-change.md). Rodar o �
 - Região: reverter `vercel.json`.
 - Snapshot: o dashboard volta a usar as 4 rotas antigas, que continuam no ar (reverter o commit da página).
 - Migrações: cada uma tem o `down` descrito no cabeçalho (recriar as políticas originais, `drop function product_metrics`, `drop table performance_traces` + `cron.unschedule`).
+
+## Medições registradas
+
+Script: `e2e/perf/dashboard.perf.ts` (30 cargas frias + 30 quentes, pausa de 3 s, evita a virada da hora).
+
+| Rodada | Onde | Frio p50 | Frio p95 | Quente p50 | Quente p95 | Observação |
+|---|---|---|---|---|---|---|
+| baseline (2026-09-22) | produção (`master`) | 1.927 ms | 15.529 ms | inválido | inválido | 3/30 caíram no erro de 15 s. Rodada sem pausa; contribuiu para saturar o Supabase (ver memória do projeto) |
+| feature (7779549) | preview | 8.187 ms | 15.538 ms | 69 ms | 87 ms | fontes lidas em série; 3/30 no erro de 15 s |
+| feature2 (c36b53a) | preview | **934 ms** | 12.522 ms | **54 ms** | **55 ms** | fontes e perfil em paralelo |
+
+Na rodada feature2: 12 idas ao Supabase por carga no máximo (CS-003 ✅), região `gru1`, 28/28 traços com etapas de browser e servidor (CS-009 ✅), 0 chamadas ao Auth server.
+
+**Cauda (p95) ainda fora do CS-001.** As cargas lentas se concentraram em 04:32–04:37 UTC e batem no timeout de 12 s das requisições ao Supabase. Diagnóstico no banco: CPU estrangulada — `count(*)` de 1 milhão de números em 272 ms (normal ~60–90 ms) e seq scan de 1.509 linhas em cache em 121 ms (normal < 1 ms); `product_metrics()` com média 1,3 s e máximo 7,5 s. `max_connections = 60` indica compute Nano/Micro (CPU compartilhada com crédito de rajada). Mitigação no código: `product_metrics()` em cache de 60 s no servidor (commit seguinte). O restante depende do compute do Supabase.

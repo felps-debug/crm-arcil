@@ -59,8 +59,34 @@ export function aggregateProductMetrics(rows: ProductMetricRow[]): ProductMetric
   };
 }
 
-export async function fetchProductMetrics(): Promise<ProductMetrics> {
-  const { data, error } = await createAdminClient().rpc("product_metrics").single();
-  if (error) throw error;
-  return data as ProductMetrics;
+/**
+ * O catálogo só muda quando o sync do ERP roda (de hora em hora, e só o que
+ * mudou), mas o dashboard pedia estes números a cada abertura. É a consulta
+ * mais cara da tela: com a CPU da instância estrangulada chegou a 7 s. Um
+ * minuto é bem menor que o intervalo do sync — mesmo prazo de fetchProducts.
+ *
+ * Guarda a promise, não o valor: aberturas simultâneas esperam a mesma ida.
+ */
+export const PRODUCT_METRICS_TTL_MS = 60_000;
+let cache: { at: number; value: Promise<ProductMetrics> } | undefined;
+
+export function fetchProductMetrics(now = Date.now()): Promise<ProductMetrics> {
+  if (cache && now - cache.at < PRODUCT_METRICS_TTL_MS) return cache.value;
+
+  const value = (async () => {
+    const { data, error } = await createAdminClient().rpc("product_metrics").single();
+    if (error) throw error;
+    return data as ProductMetrics;
+  })();
+  // Falha não fica guardada: a próxima abertura tenta de novo.
+  value.catch(() => {
+    if (cache?.value === value) cache = undefined;
+  });
+  cache = { at: now, value };
+  return value;
+}
+
+/** Só para testes. */
+export function resetProductMetricsCache() {
+  cache = undefined;
 }

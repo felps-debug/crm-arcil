@@ -75,3 +75,30 @@ describe("aggregateProductMetrics", () => {
     expect(m.zerados).toBe(750);
   });
 });
+
+describe("fetchProductMetrics (cache de 1 minuto)", () => {
+  it("reaproveita dentro do prazo, busca de novo depois, e não guarda falha", async () => {
+    const { vi } = await import("vitest");
+    const single = vi.fn();
+    vi.doMock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: () => ({ single }) }) }));
+    vi.resetModules();
+    const mod = await import("./product-metrics");
+    mod.resetProductMetricsCache();
+
+    const valor = { total_distintos: 1 } as never;
+    single.mockResolvedValue({ data: valor, error: null });
+    expect(await mod.fetchProductMetrics(0)).toBe(valor);
+    await mod.fetchProductMetrics(59_999);
+    expect(single).toHaveBeenCalledTimes(1);
+
+    await mod.fetchProductMetrics(60_000);
+    expect(single).toHaveBeenCalledTimes(2);
+
+    mod.resetProductMetricsCache();
+    single.mockResolvedValueOnce({ data: null, error: new Error("fora") });
+    await expect(mod.fetchProductMetrics(100_000)).rejects.toThrow("fora");
+    await mod.fetchProductMetrics(100_001);
+    expect(single).toHaveBeenCalledTimes(4);
+    vi.doUnmock("@/lib/supabase/admin");
+  });
+});
