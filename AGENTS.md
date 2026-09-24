@@ -13,7 +13,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Supabase** (auth + database + storage + realtime)
 - **Chatwoot** (Application API) — caixa de atendimento em `/atendimento`
 - **n8n** (geração de imagem do chatbot) + **serviço Python externo** (disparo de cobrança)
-- **OpenAI GPT-4o** (chatbot + vision) / **Gemini 3 Pro Image** via n8n
+- **OpenAI GPT-4o** (chatbot + vision, no CRM) / **Seedream 5.0 Pro** (BytePlus ModelArk) via n8n para a imagem
 - **sharp + satori** (composição da prévia técnica no servidor)
 - **Sentry** (`@sentry/nextjs`) — opcional, desliga sozinho sem DSN
 - **Tailwind CSS v4** + Framer Motion + Recharts
@@ -228,7 +228,7 @@ NEXT_PUBLIC_SENTRY_DSN=...           ← client
 SENTRY_DSN=...                       ← server/edge
 SENTRY_ORG=, SENTRY_PROJECT=, SENTRY_AUTH_TOKEN=   ← upload de sourcemap no build
 V2_CASSETTE_LAYOUT=1                 ← liga o layout V2 pra família cassete
-INFRA_VISUAL=vetorial                ← rollback: CRM desenha o feixe em vez do Gemini
+INFRA_VISUAL=vetorial|gemini_3d     ← padrão modelo_3d (ver "Divisão de responsabilidade")
 PREVIA_DUMP=1                        ← dump de debug da prévia
 ```
 Sem DSN, o Sentry fica desabilitado e não envia nada — é seguro deixar em branco.
@@ -257,7 +257,7 @@ Abas de `/cobranca`: Disparar · Logs · Financeiro (board de handoff) · Follow
 2. GPT-4o (via `/api/chat`) conduz conversa e coleta: modelo, pé direito, ponto elétrico, unidade externa, tubulação
 3. Quando tudo coletado, `/api/chat` retorna `readyToGenerate: true` (sinalizado pelo `##READY##` no response)
 4. `/api/generate-image` extrai dados estruturados + analisa imagem com Vision + chama n8n webhook
-5. n8n gera imagem, salva no bucket `PDF/{lead_id}`, responde via "Respond to Webhook"
+5. n8n monta o prompt (código, sem LLM), gera a imagem no Seedream, salva no bucket `PDF/{lead_id}`, responde via "Respond to Webhook"
 6. URL retornada é exibida no chat com opção de download
 
 ### Marcação na foto
@@ -273,7 +273,7 @@ Pular a marcação é sempre permitido: sem ela a prévia usa o layout antigo (t
 
 ### Divisão de responsabilidade (não quebrar)
 
-O Gemini desenha SÓ a cena física. Todo texto, cota, ícone e legenda é vetor desenhado por `installation-overlay.ts` com satori e fonte local. Modelo de imagem erra texto — já saiu "2,80m" onde o vendedor respondeu 2,70 e uma legenda "FLOXO DE AR" colada no teto. Deixar o Gemini desenhar texto ou tubulação faz o resultado colidir e duplicar com a nossa camada.
+O modelo de imagem desenha SÓ a cena física: sala, aparelho e — no modo padrão `modelo_3d` — a tubulação/canaleta em 3D, **sem nenhuma letra**. Todo texto, cota, ícone, legenda e fluxo de ar é vetor desenhado por `installation-overlay.ts` / `preview-annotations.ts` com satori e fonte local. Modelo de imagem erra texto — o Gemini já escreveu "2,80m" onde o vendedor respondeu 2,70 e "FLOXO DE AR"; o Seedream, "EVAPORADora" e "eté o teto". Quem desenha o quê por modo: `ModoInfra` em `lib/server/previa-tipos.ts` (`modelo_3d` padrão, `gemini_3d` legado com texto do modelo, `vetorial` CRM desenha tudo).
 
 `preview-annotations.ts` desenha só linha em SVG; o texto vem como nó satori por cima. SVG embutido como `<img>` NÃO recebe as fontes passadas ao `satori()`, e `<text>` ali sai em branco.
 
@@ -282,9 +282,12 @@ O Gemini desenha SÓ a cena física. Todo texto, cota, ícone e legenda é vetor
 `PVtyGZ6gQrBABe83` tem três grupos de nós no mesmo canvas. O do CRM é o do `Webhook` de path `6fdf0bcb-…` (o que bate com `N8N_CHATBOT_WEBHOOK`):
 
 ```
-Webhook → Edit Fields2 → GERADOR DE PROMPT2 → HTTP Request1 (gemini-3-pro-image)
+Webhook → Edit Fields2 → MONTA PROMPT SEEDREAM (Code) → HTTP Request1 (Seedream 5.0 Pro)
   → Edit Fields3 → Convert to File2 → COLOCA NO STORAGE3 → link da imagem2 → Respond to Webhook
 ```
+
+- **MONTA PROMPT SEEDREAM**: prompt montado por código a partir das respostas do vendedor (antes um GPT-5.1 fazia isso — a conta ficou sem crédito em 2026-09-24 e o gerador parou). Mesmas regras do roteiro antigo; imagens na ordem base → produto → referência da família → guia.
+- **HTTP Request1**: `POST https://ark.ap-southeast.bytepluses.com/api/v3/images/generations`, modelo `dola-seedream-5-0-pro-260628` (o flash é `dola-seedream-5-0-flash-260915`), credencial n8n **"Seedream (BytePlus ModelArk)"**, `size` no mesmo formato da foto base (o CRM desenha por cima em frações). Não aceita `sequential_image_generation`. ~55 s por imagem; o CRM espera até 240 s.
 
 **Armadilha:** com o editor do n8n aberto numa aba, salvar de lá sobrescreve qualquer alteração feita via API depois que a aba foi aberta — o editor grava o estado inteiro que tem em memória. Um ramo inteiro (modo de ajuste) já sumiu assim. Recarregue a aba antes de editar manualmente.
 
