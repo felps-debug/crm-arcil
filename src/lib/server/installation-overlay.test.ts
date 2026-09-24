@@ -118,6 +118,12 @@ describe("comporPrevia", () => {
     expect(meta.height).toBe(864);
   }, 30_000);
 
+  it("compõe a camada ancorada em modoInfra=modelo_3d (padrão): legendas vetoriais, tubulação do modelo", async () => {
+    const meta = await render("ancorado-modelo3d", { ...COM_MARCACAO, modoInfra: "modelo_3d" }, 1536, 864);
+    expect(meta.width).toBe(1536);
+    expect(meta.height).toBe(864);
+  }, 30_000);
+
   it("compõe a camada ancorada em modoInfra=gemini_3d sem desenhar callout vetorial duplicado", async () => {
     const meta = await render("ancorado-gemini3d", { ...COM_MARCACAO, modoInfra: "gemini_3d" }, 1536, 864);
     expect(meta.width).toBe(1536);

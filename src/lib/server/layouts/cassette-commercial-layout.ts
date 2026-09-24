@@ -1,5 +1,5 @@
 import { el, img, b64svg, logoArcil, type No } from "../satori-nodes";
-import type { DadosOverlay } from "../previa-tipos";
+import { tubulacaoPeloModelo, type DadosOverlay } from "../previa-tipos";
 import type { Marcacao, PontoFrac } from "@/lib/marcacao";
 import {
   INFRA,
@@ -457,7 +457,7 @@ export function planoCassetteCommercialV2(
   // com sombra. Desenhar o feixe vetorial por cima colocaria a MESMA
   // informação duas vezes, em duas linguagens diferentes e nunca no mesmo
   // lugar — é o erro que este projeto já pagou uma vez.
-  const desenhaFeixe = d.modoInfra !== "gemini_3d";
+  const desenhaFeixe = !tubulacaoPeloModelo(d.modoInfra);
   if (desenhaFeixe) {
     const larguraFeixe = Math.max(1.8, escala * 2.6) * 1.7 * 4;
     linhas.push(faixaPlenum(rotaFinal, larguraFeixe * 1.9));

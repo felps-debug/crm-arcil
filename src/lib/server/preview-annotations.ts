@@ -1,5 +1,5 @@
 import { el, b64svg, type No } from "./satori-nodes";
-import type { DadosOverlay } from "./previa-tipos";
+import { legendasPeloModelo, tubulacaoPeloModelo, type DadosOverlay } from "./previa-tipos";
 import type { Marcacao, PontoFrac } from "@/lib/marcacao";
 import { CLARO, INFRA, ORDEM_INFRA, SOMBRA_TEXTO, FAIXA, TRACO_ORTOGONAL, TRACO_ORTOGONAL_PONTO } from "@/constants/arcil-brand";
 
@@ -460,7 +460,7 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   // n8n) -- desenhar de novo aqui duplicaria o texto, desalinhado com o que
   // já está na foto. Esta função só roda de verdade no modo `vetorial`
   // (rollback via INFRA_VISUAL=vetorial).
-  if (d.modoInfra === "gemini_3d") return { linhas: "", nos: [] };
+  if (legendasPeloModelo(d.modoInfra)) return { linhas: "", nos: [] };
 
   const familia = familiaDe(d.tipoEquipamento);
   const escala = Math.min(W, H) / 1024;
@@ -545,17 +545,20 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   const folgaCards = W * 0.022;
   const bordaCards = ladoTexto === 1 ? xCards + larguraCards + folgaCards : xCards - folgaCards;
   const rotaVisivel = recortarNaColuna(rotaPx, bordaCards, ladoTexto === 1 ? 1 : -1);
-  // O gate para `gemini_3d` (o modelo já desenha a tubulação em volume, com
-  // sombra, na cena — o mesmo erro que o layout do cassete comercial evita em
-  // `cassette-commercial-layout.ts`) agora é o early-return no topo desta
-  // função: chegando aqui, o modo é sempre `vetorial`.
-  linhas.push(feixeInfra(rotaVisivel, escala));
+  // Em `modelo_3d` o modelo já desenhou a tubulação em volume, com sombra, na
+  // cena — desenhar o feixe por cima duplica a mesma informação em duas
+  // linguagens (o erro que o layout do cassete comercial também evita). A
+  // rota continua sendo usada para ancorar "LIGAÇÃO ATÉ CONDENSADORA".
+  if (!tubulacaoPeloModelo(d.modoInfra)) linhas.push(feixeInfra(rotaVisivel, escala));
 
   // --- Silhueta acima do forro + cota do plenum ------------------------------
   // O topo útil é mais baixo que `FAIXA.topoFrac` porque o selo "Design created
   // by ARCIL AI" é composto depois, colado na borda de cima.
   const topoUtilCena = H * 0.085;
-  const cabeFantasma = familia === "forro" && caixa.cy - caixa.h / 2 - topoUtilCena > caixa.h * 1.1;
+  // O corpo fantasma acima do forro é tubulação/volume: em `modelo_3d` quem
+  // desenha é o modelo, em 3D.
+  const cabeFantasma =
+    !tubulacaoPeloModelo(d.modoInfra) && familia === "forro" && caixa.cy - caixa.h / 2 - topoUtilCena > caixa.h * 1.1;
   if (cabeFantasma) {
     const fantasma = fantasmaGabinete(caixa, topoUtilCena);
     linhas.push(fantasma.svg);

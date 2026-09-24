@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 import { el, img, b64svg, fontes, logoArcilClaro, type No } from "./satori-nodes";
 import { esquemaInstalacao, esquemaCondensadora, ESQUEMA_W, ESQUEMA_H, ESQUEMA_COND_H } from "./install-schematic";
 import { planoAnotacoes, legendaInfraNo, svgDasLinhas } from "./preview-annotations";
-import type { DadosOverlay } from "./previa-tipos";
+import { tubulacaoPeloModelo, type DadosOverlay } from "./previa-tipos";
 import {
   AZUL,
   CLARO,
@@ -343,7 +343,7 @@ async function camadaAncorada(d: DadosOverlay, W: number, H: number, qrDataUrl: 
       // Legenda de cores só faz sentido explicando o feixe vetorial que nós
       // desenhamos. Em `gemini_3d` a tubulação sai em cobre/conduíte reais, e
       // uma legenda de cores não corresponde a nada na imagem.
-      d.modoInfra !== "gemini_3d" ? legendaInfraNo(larguraCard) : null,
+      !tubulacaoPeloModelo(d.modoInfra) ? legendaInfraNo(larguraCard) : null,
       condensadoraGarantiaNo(d, larguraCard, CARD_FUNDO, CARD_BORDA, CARD_RAIO),
       cardModeloNo(d, larguraCard, CARD_FUNDO, CARD_BORDA, CARD_RAIO),
       detalhesInstalacaoNo(d, larguraCard, CARD_FUNDO, CARD_BORDA, CARD_RAIO)

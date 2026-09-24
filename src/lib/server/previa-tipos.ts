@@ -57,11 +57,32 @@ export type DadosOverlay = {
    *  leva à própria prévia. Muda o rótulo impresso ao lado dele — prometer
    *  "manual" e abrir a imagem é pior que não prometer nada. */
   qrEhManual?: boolean;
-  /** Quem desenhou a tubulação na cena. Em `gemini_3d` o CRM não desenha o
-   *  feixe: o modelo já colocou a tubulação em 3D, e desenhar por cima duplica
-   *  a mesma informação em duas linguagens diferentes. */
-  modoInfra?: "vetorial" | "gemini_3d";
+  /** Quem desenha o quê na prévia. Ver `ModoInfra`. */
+  modoInfra?: ModoInfra;
   /** Força o layout V2 nesta composição, independentemente da feature flag.
    *  Existe para o comparativo lado a lado da mesma cena. */
   forcarV2?: boolean;
 };
+
+/**
+ * Divisão de trabalho entre o modelo de imagem e o CRM:
+ *
+ * - `modelo_3d` (padrão): o modelo desenha a cena física COM a tubulação em
+ *   3D e SEM nenhuma letra; o CRM escreve legendas, cotas e fluxo de ar como
+ *   vetor. Modelo de imagem erra texto ("EVAPORADora", "eté o teto" no teste
+ *   do Seedream), vetor não.
+ * - `gemini_3d`: legado — o modelo desenha tubulação E legendas; o CRM não
+ *   desenha nenhuma das duas.
+ * - `vetorial`: o modelo desenha só sala e aparelho; o CRM desenha tudo.
+ */
+export type ModoInfra = "modelo_3d" | "gemini_3d" | "vetorial";
+
+/** O modelo de imagem já pôs a tubulação na cena: o CRM não desenha o feixe por cima. */
+export function tubulacaoPeloModelo(modo: ModoInfra | undefined): boolean {
+  return modo === "modelo_3d" || modo === "gemini_3d";
+}
+
+/** O modelo de imagem já escreveu as legendas na cena: o CRM não escreve de novo. */
+export function legendasPeloModelo(modo: ModoInfra | undefined): boolean {
+  return modo === "gemini_3d";
+}

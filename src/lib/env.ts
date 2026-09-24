@@ -28,20 +28,19 @@ export const CHATWOOT_API_ACCESS_TOKEN = clean(process.env.CHATWOOT_API_ACCESS_T
 export const V2_CASSETTE_LAYOUT = clean(process.env.V2_CASSETTE_LAYOUT) === "1";
 
 /**
- * Quem desenha a infraestrutura na cena.
+ * Quem desenha o quê na prévia (ver `ModoInfra` em lib/server/previa-tipos.ts).
  *
- * `gemini_3d` (padrão): o modelo de imagem desenha a tubulação e a canaleta em
- * 3D, semitransparentes, saindo do aparelho na direção da condensadora — e o
- * CRM NÃO desenha o feixe nem a cota do pé-direito como seta, senão as duas
- * representações se sobrepõem, que é o erro documentado deste projeto.
+ * `modelo_3d` (padrão): o modelo de imagem (Seedream, via n8n) desenha a cena
+ * com a tubulação e a canaleta em 3D e SEM nenhum texto; o CRM escreve
+ * legendas, cotas e fluxo de ar como vetor — modelo de imagem erra letra.
  *
- * `vetorial`: o CRM desenha o feixe de quatro cores e a faixa de plenum por
- * cima da foto. Determinístico, mas chapado — mantido só pra comparação/
- * rollback via `INFRA_VISUAL=vetorial`.
+ * `gemini_3d`: legado — o modelo desenha tubulação e legendas.
  *
- * Texto e card continuam vetoriais nos dois modos.
+ * `vetorial`: o CRM desenha também o feixe de quatro cores por cima da foto.
+ * Determinístico, mas chapado — rollback via `INFRA_VISUAL=vetorial`.
  */
-export const INFRA_VISUAL = clean(process.env.INFRA_VISUAL) === "vetorial" ? "vetorial" : "gemini_3d";
+export const INFRA_VISUAL: "modelo_3d" | "gemini_3d" | "vetorial" = ((v) =>
+  v === "vetorial" || v === "gemini_3d" ? v : "modelo_3d")(clean(process.env.INFRA_VISUAL));
 
 /**
  * Onde e qual build respondeu — gravados em performance_traces para confirmar
