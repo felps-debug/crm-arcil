@@ -1,6 +1,7 @@
 import { el, img, b64svg, logoArcil, type No } from "../satori-nodes";
 import { tubulacaoPeloModelo, type DadosOverlay } from "../previa-tipos";
 import type { Marcacao, PontoFrac } from "@/lib/marcacao";
+import { nomeComMarca } from "../texto-previa";
 import {
   INFRA,
   ORDEM_INFRA,
@@ -584,9 +585,7 @@ export function planoCassetteCommercialV2(
   // Card MODELO
   {
     const largura = Z.modelo.w * W;
-    const marca = (d.marca ?? "").trim();
-    const nome = d.produto.trim();
-    const linhaProduto = marca && !nome.toUpperCase().startsWith(marca.toUpperCase()) ? `${marca} ${nome}` : nome;
+    const linhaProduto = nomeComMarca(d.produto, d.marca);
     nos.push(
       cartaoVidro(
         Z.modelo.x * W,

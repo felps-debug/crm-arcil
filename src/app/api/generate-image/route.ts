@@ -10,6 +10,7 @@ import { comporPrevia } from "@/lib/server/installation-overlay";
 import type { DadosOverlay } from "@/lib/server/previa-tipos";
 import { parseMarcacao, descreverMarcacao, type Marcacao } from "@/lib/marcacao";
 import { renderGuideMask } from "@/lib/server/guide-mask";
+import { semPontoFinal } from "@/lib/server/texto-previa";
 import { resolveEquipmentSpecs, type EquipmentSpecs, type HvacStandardRule } from "@/constants/hvac-standards";
 
 // A rota espera o n8n desenhar a imagem, o que passa de um minuto. O padrão da
@@ -243,6 +244,12 @@ export async function POST(request: NextRequest) {
   if (answers?.tipo_forro) collectedData.tipo_forro = answers.tipo_forro;
   if (answers?.alcapao) collectedData.alcapao = answers.alcapao === "Sim";
   if (answers?.metragem_infra) collectedData.metragem_infra = answers.metragem_infra;
+  // Normalizado antes do prompt: "2,80 cm" (digitado assim numa prévia real)
+  // chegava cru ao modelo de imagem, e só o cartão final saía corrigido.
+  if (typeof collectedData.unidade_externa === "string") collectedData.unidade_externa = semPontoFinal(collectedData.unidade_externa);
+  if (typeof collectedData.pe_direito === "string") {
+    collectedData.pe_direito = formatarMetros(collectedData.pe_direito) ?? collectedData.pe_direito;
+  }
 
   // Analyze image with Vision. Pede em JSON pra separar a descrição livre
   // (compatibilidade — é o texto que sempre foi mandado ao n8n como "resumo
@@ -253,6 +260,10 @@ export async function POST(request: NextRequest) {
   let ancoragemRecomendada = "";
   let direcaoIluminacao = "";
   let obstaculosDesvio = "";
+  // Falha da OpenAI não derruba a geração, mas também não pode passar calada:
+  // em 2026-09-29 a conta estava sem crédito, a análise da foto não rodou, e a
+  // prévia saiu sem descrição do ambiente sem ninguém saber.
+  let analiseFalhou = false;
   if (imageUrl) {
     try {
       const raw = await openAI({
@@ -282,6 +293,7 @@ export async function POST(request: NextRequest) {
       direcaoIluminacao = typeof parsed.direcao_iluminacao === "string" ? parsed.direcao_iluminacao : "";
       obstaculosDesvio = typeof parsed.obstaculos_desvio === "string" ? parsed.obstaculos_desvio : "";
     } catch (err) {
+      analiseFalhou = true;
       console.error("[generate-image] Vision estruturada falhou:", err instanceof Error ? err.message : err);
     }
   }
@@ -407,8 +419,10 @@ export async function POST(request: NextRequest) {
   // reservada pros cards vetoriais), local respondido e foto do produto pra
   // o modelo copiar o aparelho real — sem qualquer um dos três o Gemini não
   // teria o que precisa e o inset saía inventado ou genérico demais.
-  const unidadeExternaTexto = typeof collectedData.unidade_externa === "string" ? collectedData.unidade_externa.trim() : "";
-  const desenharInsetCondensadora = Boolean(marcacao) && Boolean(unidadeExternaTexto) && Boolean(productImageBase64);
+  // Desligado: o Seedream colou o quadrinho na persiana da porta, como um
+  // adesivo, e a condensadora parecia instalada na porta. A foto do aparelho
+  // agora vai no card MODELO, desenhada pelo CRM.
+  const desenharInsetCondensadora = false;
   // Mesmo lado que `installation-overlay.ts` (`camadaAncorada`) vai calcular
   // depois pra coluna de cards — os dois olham só `marcacao.caixa`, então
   // ficam sempre de acordo mesmo calculados em processos/momentos diferentes.
@@ -600,6 +614,12 @@ export async function POST(request: NextRequest) {
       ok: false,
       mensagem: "A marcação da foto foi desenhada na imagem gerada mesmo após tentar novamente. Gere outra versão antes de enviar ao cliente.",
     };
+  }
+  // `null` com marcação = a conferência de posição também dependia da OpenAI.
+  if (analiseFalhou || (marcacao && posicionamento === null)) {
+    const aviso =
+      "A análise da foto pela IA (OpenAI) não funcionou nesta geração — verifique o crédito da conta. A imagem saiu sem descrição do ambiente e sem conferência de posição: revise com atenção antes de enviar ao cliente.";
+    posicionamento = { ok: false, mensagem: posicionamento && !posicionamento.ok ? `${posicionamento.mensagem} ${aviso}` : aviso };
   }
 
   const { installationNotes, notesSource } = await getInstallationNotes(

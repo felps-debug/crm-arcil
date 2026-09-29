@@ -5,6 +5,7 @@ import { el, img, b64svg, fontes, logoArcilClaro, type No } from "./satori-nodes
 import { esquemaInstalacao, esquemaCondensadora, ESQUEMA_W, ESQUEMA_H, ESQUEMA_COND_H } from "./install-schematic";
 import { planoAnotacoes, legendaInfraNo, svgDasLinhas } from "./preview-annotations";
 import { tubulacaoPeloModelo, type DadosOverlay } from "./previa-tipos";
+import { nomeComMarca, semPontoFinal } from "./texto-previa";
 import {
   AZUL,
   CLARO,
@@ -186,13 +187,22 @@ function cardModeloNo(d: DadosOverlay, largura: number, fundo: string, borda: st
   // Sem repetir a marca quando o nome de catálogo do ERP já começa por ela —
   // "SPRINGER MIDEA SPLIT CASSETE ... SPRINGER MIDEA" saiu assim na primeira
   // prévia real.
-  const nome = d.produto.trim();
-  const marca = (d.marca ?? "").trim();
-  const linhaProduto = marca && !nome.toUpperCase().startsWith(marca.toUpperCase()) ? `${marca} ${nome}` : nome;
+  const linhaProduto = nomeComMarca(d.produto, d.marca);
+  const larguraFoto = largura - 24;
   return el(
     "div",
     { width: largura, flexDirection: "column", background: fundo, border: `1px solid ${borda}`, borderRadius: raio, padding: "10px 12px" },
     el("div", { fontSize: 11, fontWeight: 700, color: CLARO, letterSpacing: 0.9, textShadow: SOMBRA_TEXTO }, "MODELO"),
+    // Foto de catálogo (evaporadora + condensadora) desenhada pelo CRM. Antes o
+    // Seedream desenhava a condensadora como um "inset" dentro da cena, e ele
+    // colou o quadrinho na persiana da porta, como um adesivo.
+    d.produtoImagemBase64
+      ? el(
+          "div",
+          { width: larguraFoto, height: Math.round(larguraFoto * 0.58), marginTop: 6, background: "#FFFFFF", borderRadius: 6, justifyContent: "center", alignItems: "center" },
+          img(d.produtoImagemBase64, { width: larguraFoto - 8, height: Math.round(larguraFoto * 0.58) - 8, objectFit: "contain" })
+        )
+      : null,
     // -24 = padding esquerda+direita do card (12px cada lado), agora que o
     // texto mora dentro de uma caixa em vez de solto sobre a cena.
     el("div", { fontSize: 12, fontWeight: 700, color: CLARO, marginTop: 4, lineHeight: 1.35, width: largura - 24, textShadow: SOMBRA_TEXTO }, linhaProduto || d.produto),
@@ -238,24 +248,11 @@ function detalhesInstalacaoNo(d: DadosOverlay, largura: number, fundo: string, b
 
 /** INSTALAÇÃO DA CONDENSADORA: recomendações reais de garantia por tipo de
  *  equipamento (`HVAC_STANDARDS[tipo].recomendacoes_garantia`, via
- *  `route.ts`) — nunca um número inventado. Substitui o antigo card
- *  EQUIPAMENTO (foto de vitrine estática do catálogo): agora é o Gemini quem
- *  desenha a condensadora de verdade instalada no local escolhido, como um
- *  inset na mesma faixa lateral (ver `# CONDENSADORA INSET` no prompt do
- *  n8n) — este card só acompanha com o texto, nunca a imagem.
- *
- *  `temInsetCondensadora()` (mesma condição usada aqui e em
- *  `camadaAncorada` pra abrir espaço acima do card) tem que bater com o
- *  `desenharInsetCondensadora` calculado em `route.ts` antes de chamar o
- *  n8n — os dois olham exatamente os mesmos dois dados (local da
- *  condensadora respondido e foto do produto disponível) pra decidir se o
- *  Gemini teve o que precisava pra desenhar o inset. */
-function temInsetCondensadora(d: DadosOverlay): boolean {
-  return Boolean(d.unidadeExterna) && Boolean(d.produtoImagemBase64);
-}
-
+ *  `route.ts`) — nunca um número inventado. Só texto: a foto do aparelho
+ *  fica no card MODELO. O modelo de imagem não desenha mais a condensadora
+ *  num inset dentro da cena — ele colou o quadrinho na persiana da porta. */
 function condensadoraGarantiaNo(d: DadosOverlay, largura: number, fundo: string, borda: string, raio: number): No | null {
-  if (!temInsetCondensadora(d) || d.recomendacoesGarantia.length === 0) return null;
+  if (!d.unidadeExterna || d.recomendacoesGarantia.length === 0) return null;
   // Só as 2 primeiras: a coluna lateral já empilha inset + este card + MODELO
   // + DETALHES, e as 4 recomendações completas deixavam essa pilha alta
   // demais — pesada visualmente mesmo com dado correto (HVAC_STANDARDS já
@@ -268,7 +265,9 @@ function condensadoraGarantiaNo(d: DadosOverlay, largura: number, fundo: string,
     el(
       "div",
       { fontSize: 10.5, color: CLARO, marginTop: 3, marginBottom: 6, lineHeight: 1.35, width: largura - 24, textShadow: SOMBRA_TEXTO },
-      d.nivelCondensadora ? `${d.unidadeExterna} · nível ${d.nivelCondensadora.toLowerCase()}.` : `${d.unidadeExterna}.`
+      d.nivelCondensadora
+        ? `${semPontoFinal(d.unidadeExterna)} · nível ${semPontoFinal(d.nivelCondensadora).toLowerCase()}.`
+        : `${semPontoFinal(d.unidadeExterna)}.`
     ),
     ...recomendacoes.map((texto) =>
       el("div", { fontSize: 10, color: CINZA, lineHeight: 1.45, textShadow: SOMBRA_TEXTO, width: largura - 24 }, `- ${texto}`)
@@ -310,11 +309,10 @@ async function camadaAncorada(d: DadosOverlay, W: number, H: number, qrDataUrl: 
   // callouts já estão na cena, desenhados pelo Gemini.
   const plano = planoAnotacoes(d, marcacao, W, H, ladoTexto);
 
-  // Quando o Gemini desenha o inset da condensadora, ele é um cartão pequeno
-  // (até ~22% da altura, instrução no prompt do n8n) perto do topo da faixa
-  // lateral — a coluna de cards vetoriais começa logo abaixo disso pra não
-  // empilhar texto por cima da cena que o modelo acabou de desenhar.
-  const topoCards = temInsetCondensadora(d) ? Math.round(H * 0.26) : Math.max(Math.round(H * 0.05), 64);
+  // A coluna começa no topo: não existe mais inset da condensadora desenhado
+  // pelo modelo reservando o alto da faixa (a foto do produto vive no card
+  // MODELO).
+  const topoCards = Math.max(Math.round(H * 0.05), 64);
   const logo = await logoNo(W, H);
 
   return el(
