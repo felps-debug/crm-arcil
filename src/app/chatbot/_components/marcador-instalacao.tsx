@@ -228,17 +228,23 @@ export function MarcadorInstalacao({
           : "Desenhe com o dedo o caminho que a tubulação, o dreno e o cabo elétrico vão seguir."}
       </p>
 
-      <div
-        ref={areaRef}
-        onPointerDown={onPointerDownArea}
-        onPointerMove={onPointerMoveArea}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        className="relative min-h-0 flex-1 touch-none select-none overflow-hidden bg-black"
-        style={{ cursor: modo === "tubulacao" ? "crosshair" : "default" }}
-      >
+      {/* A foto cabe inteira na tela: sem teto de altura, foto em pé no desktop
+          ocupava a largura toda e ficava mais alta que a janela — a caixa e as
+          alças iam parar fora da vista. A área de toque tem o tamanho exato da
+          foto (não da faixa preta em volta), senão as frações 0-1 da marcação
+          deixam de bater com os pixels da imagem. */}
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-black p-2">
+        <div
+          ref={areaRef}
+          onPointerDown={onPointerDownArea}
+          onPointerMove={onPointerMoveArea}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          className="relative touch-none select-none"
+          style={{ cursor: modo === "tubulacao" ? "crosshair" : "default" }}
+        >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={fotoUrl} alt="Foto do ambiente" className="h-full w-full object-contain" draggable={false} />
+        <img src={fotoUrl} alt="Foto do ambiente" className="block h-auto max-h-[60dvh] w-auto max-w-full" draggable={false} />
 
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full">
           <rect
@@ -269,6 +275,7 @@ export function MarcadorInstalacao({
               aria-label={`Redimensionar pelo canto ${h.id}`}
             />
           ))}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2 p-3">
