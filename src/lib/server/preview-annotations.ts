@@ -1,6 +1,7 @@
 import { el, b64svg, type No } from "./satori-nodes";
 import { legendasPeloModelo, tubulacaoPeloModelo, type DadosOverlay } from "./previa-tipos";
 import type { Marcacao, PontoFrac } from "@/lib/marcacao";
+import { semPontoFinal } from "./texto-previa";
 import { CLARO, INFRA, ORDEM_INFRA, SOMBRA_TEXTO, FAIXA, TRACO_ORTOGONAL, TRACO_ORTOGONAL_PONTO } from "@/constants/arcil-brand";
 
 /**
@@ -271,13 +272,15 @@ function petalaFluxo(origem: Ponto, anguloGraus: number, comprimento: number, la
   const larguraBase = larguraTopo * 0.22;
   const baseA = { x: origem.x + (perpX * larguraBase) / 2, y: origem.y + (perpY * larguraBase) / 2 };
   const baseB = { x: origem.x - (perpX * larguraBase) / 2, y: origem.y - (perpY * larguraBase) / 2 };
-  const pontaCentro = { x: origem.x + dx * comprimento, y: origem.y + dy * comprimento };
+  const pontaCentro = { x: origem.x + dx * comprimento * 0.82, y: origem.y + dy * comprimento * 0.82 };
   const pontaA = { x: pontaCentro.x + (perpX * larguraTopo) / 2, y: pontaCentro.y + (perpY * larguraTopo) / 2 };
   const pontaB = { x: pontaCentro.x - (perpX * larguraTopo) / 2, y: pontaCentro.y - (perpY * larguraTopo) / 2 };
-  const entalhe = { x: origem.x + dx * comprimento * 0.8, y: origem.y + dy * comprimento * 0.8 };
+  // Bico para FORA do aparelho. A versão anterior tinha um entalhe em V nessa
+  // ponta — lido como a cauda de uma flecha, parecia o ar entrando no aparelho.
+  const bico = { x: origem.x + dx * comprimento, y: origem.y + dy * comprimento };
   const meioA = { x: (baseA.x + pontaA.x) / 2 + perpX * larguraTopo * 0.14, y: (baseA.y + pontaA.y) / 2 + perpY * larguraTopo * 0.14 };
   const meioB = { x: (baseB.x + pontaB.x) / 2 - perpX * larguraTopo * 0.14, y: (baseB.y + pontaB.y) / 2 - perpY * larguraTopo * 0.14 };
-  return `<path d="M ${baseA.x} ${baseA.y} Q ${meioA.x} ${meioA.y} ${pontaA.x} ${pontaA.y} L ${entalhe.x} ${entalhe.y} L ${pontaB.x} ${pontaB.y} Q ${meioB.x} ${meioB.y} ${baseB.x} ${baseB.y} Z" fill="url(#${gradId})"/>`;
+  return `<path d="M ${baseA.x} ${baseA.y} Q ${meioA.x} ${meioA.y} ${pontaA.x} ${pontaA.y} L ${bico.x} ${bico.y} L ${pontaB.x} ${pontaB.y} Q ${meioB.x} ${meioB.y} ${baseB.x} ${baseB.y} Z" fill="url(#${gradId})"/>`;
 }
 
 /** Silhueta "raio-x" do gabinete acima do forro — o corpo da unidade que fica
@@ -529,9 +532,13 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   const ladoRota: 1 | -1 = m.rota.length >= 2 ? (m.rota[m.rota.length - 1].x * W >= caixa.cx ? 1 : -1) : caixa.cx <= W / 2 ? 1 : -1;
 
   // --- Rota da infraestrutura ------------------------------------------------
+  // Em `modelo_3d` a tubulação da cena termina onde o traço termina (é o que o
+  // prompt pede). Prolongar aqui mandava a chamada LIGAÇÃO ATÉ CONDENSADORA
+  // para um ponto da parede onde não há cano nenhum.
+  const simplificada = simplificar(m.rota.map((p: PontoFrac) => ({ x: p.x * W, y: p.y * H })), Math.min(W, H) * 0.004);
   const rotaDesenhada: Ponto[] =
     m.rota.length >= 2
-      ? suavizar(prolongarAteBorda(simplificar(m.rota.map((p: PontoFrac) => ({ x: p.x * W, y: p.y * H })), Math.min(W, H) * 0.004), W, H))
+      ? suavizar(tubulacaoPeloModelo(d.modoInfra) ? simplificada : prolongarAteBorda(simplificada, W, H))
       : [
           { x: caixa.cx + ladoRota * (caixa.w / 2), y: caixa.cy - caixa.h * 0.1 },
           { x: caixa.cx + ladoRota * caixa.w * 1.6, y: caixa.cy - caixa.h * 0.35 },
@@ -697,7 +704,7 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   };
   empurrar(
     "LIGAÇÃO ATÉ CONDENSADORA",
-    d.unidadeExterna ? `Caminho da infraestrutura até a unidade externa: ${d.unidadeExterna}.` : "Caminho da infraestrutura até a unidade externa.",
+    d.unidadeExterna ? `Caminho da infraestrutura até a unidade externa: ${semPontoFinal(d.unidadeExterna)}.` : "Caminho da infraestrutura até a unidade externa.",
     CLARO,
     alvoLigacao,
     [
@@ -710,11 +717,14 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   );
 
   if (familia !== "monobloco") {
+    // Sem linha de chamada: o valor é o mínimo da norma, não uma medida desta
+    // parede, e o CRM não sabe onde está o teto na foto. A linha antiga descia
+    // até o meio do aparelho, cruzando a cota de largura, e parecia medir algo.
     empurrar(
       familia === "forro" ? "FORRO ATÉ LAJE" : "DISTÂNCIA DO TETO",
-      familia === "forro" ? "Espaço técnico para unidade e infraestrutura." : `Afastamento até o teto: ${d.distanciaTeto}.`,
+      familia === "forro" ? "Espaço técnico para unidade e infraestrutura." : `Afastamento mínimo até o teto: ${semPontoFinal(d.distanciaTeto.replace(/^m[ií]n\.?\s*/i, ""))}.`,
       CLARO,
-      { x: caixa.cx, y: caixa.cy - caixa.h / 2 - H * 0.015 },
+      null,
       [{ x: xTexto, y: H * 0.17 }]
     );
   }

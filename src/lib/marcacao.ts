@@ -78,12 +78,35 @@ export function parseMarcacao(bruto: unknown): Marcacao | null {
         .slice(0, MAX_PONTOS_ROTA)
     : [];
 
+  const rotaLimpa = semRetrocesso(rota);
   return {
     caixa: { x: Math.min(x, 1 - w), y: Math.min(y, 1 - h), w, h },
     // Uma rota de 1 ponto não é um caminho, é um toque solto — descartada aqui
     // em vez de virar uma "linha" de comprimento zero lá na frente.
-    rota: rota.length >= 2 ? rota : [],
+    rota: rotaLimpa.length >= 2 ? rotaLimpa : [],
   };
+}
+
+/**
+ * Corta o traço no ponto mais longe de onde ele começou, quando o fim volta
+ * para perto do início.
+ *
+ * O vendedor risca até a saída e, sem levantar o dedo, volta um pedaço. A volta
+ * virava o "fim" da rota: a imagem-guia pedia a tubulação indo e voltando, e o
+ * callout LIGAÇÃO ATÉ CONDENSADORA foi parar na parede oposta — o CRM estica a
+ * direção do último trecho até a borda, e o último trecho apontava para trás.
+ * Só corta se a volta for de verdade (o fim ficou 15% mais perto do início que
+ * o ponto mais distante); rota que só dobra uma esquina continua inteira.
+ */
+export function semRetrocesso(rota: PontoFrac[]): PontoFrac[] {
+  if (rota.length < 3) return rota;
+  const inicio = rota[0];
+  const dist = (p: PontoFrac) => Math.hypot(p.x - inicio.x, p.y - inicio.y);
+  let iMaisLonge = 0;
+  for (let i = 1; i < rota.length; i++) if (dist(rota[i]) > dist(rota[iMaisLonge])) iMaisLonge = i;
+  const maisLonge = dist(rota[iMaisLonge]);
+  if (dist(rota[rota.length - 1]) >= maisLonge * 0.85) return rota;
+  return rota.slice(0, iMaisLonge + 1);
 }
 
 /** Descrição textual da marcação para o prompt do n8n. Redundante com a

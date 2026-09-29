@@ -50,6 +50,20 @@ describe("parseMarcacao", () => {
     expect(m!.rota).toEqual(rota.slice(0, 200));
   });
 
+  it("corta a volta quando o vendedor risca até a saída e retorna", () => {
+    // Traço real (2026-09-29): foi até x=0,63 e voltou até 0,54. A volta fazia
+    // o callout de ligação apontar para a parede oposta.
+    const ida = Array.from({ length: 23 }, (_, i) => ({ x: 0.41 + i * 0.01, y: 0.27 }));
+    const volta = Array.from({ length: 9 }, (_, i) => ({ x: 0.62 - i * 0.01, y: 0.28 }));
+    const m = parseMarcacao({ caixa: caixaValida, rota: [...ida, ...volta] });
+    expect(m!.rota).toEqual(ida);
+  });
+
+  it("mantém inteira a rota que só dobra uma esquina", () => {
+    const rota = [{ x: 0.5, y: 0.3 }, { x: 0.8, y: 0.3 }, { x: 0.8, y: 0.7 }];
+    expect(parseMarcacao({ caixa: caixaValida, rota })!.rota).toEqual(rota);
+  });
+
   it("ignora pontos malformados dentro do traço sem descartar os válidos", () => {
     const rota = [{ x: 0.1, y: 0.1 }, { x: "bad", y: 0.2 }, { x: 0.3, y: 0.3 }] as unknown[];
     const m = parseMarcacao({ caixa: caixaValida, rota });
