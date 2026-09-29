@@ -4,6 +4,7 @@
 
 import { createClient } from "./client";
 import { filtrarPendentes } from "@/lib/followups";
+import { parseMoneyToNumber } from "@/lib/money";
 import type { Lead, Followup, CobrancaLog, Vendor } from "@/types";
 
 const supabase = createClient();
@@ -173,11 +174,7 @@ export async function getCobrancaDashboardMetrics() {
   if (error) throw error;
   const logs = data ?? [];
 
-  function parseBRL(v: string | null): number {
-    if (!v) return 0;
-    const n = parseFloat(v.replace(/[^\d,]/g, "").replace(",", "."));
-    return isNaN(n) ? 0 : n;
-  }
+  const parseBRL = (v: string | null) => parseMoneyToNumber(v) ?? 0;
 
   const comValor = logs.filter((l) => l.valor);
   const emAberto  = comValor.filter((l) => !l.pagamento_confirmado).reduce((s, l) => s + parseBRL(l.valor), 0);

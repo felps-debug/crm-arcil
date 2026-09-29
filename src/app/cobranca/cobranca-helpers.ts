@@ -35,21 +35,8 @@ export function parseClienteField(raw: string): { codigo: string; nome: string }
   return { codigo, nome: nome.trim() };
 }
 
-// Converte texto monetário ("530,00" pt-BR, "1.234,56" pt-BR ou "17.16" en-US) para número.
-export function parseMoneyToNumber(raw: string): number | null {
-  if (!raw) return null;
-  let s = raw.replace(/[^\d.,-]/g, "").trim();
-  if (!s) return null;
-  const lastComma = s.lastIndexOf(",");
-  const lastDot = s.lastIndexOf(".");
-  if (lastComma > -1 && lastDot > -1) {
-    s = lastComma > lastDot ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
-  } else if (lastComma > -1) {
-    s = s.replace(",", ".");
-  }
-  const num = parseFloat(s);
-  return Number.isFinite(num) ? num : null;
-}
+import { parseMoneyToNumber } from "@/lib/money";
+export { parseMoneyToNumber };
 
 /* ── Telefone ───────────────────────────────────────────────────────
    O ERP mantém a coluna `Telefone` no formato antigo, de 8 dígitos, e só
@@ -311,11 +298,14 @@ function parseRawBoletos(rows: Record<string, unknown>[]): {
     const telefone = normalizarTelefone(rawPhone);
     if (typeof telefone !== "string") {
       // Descartar em silêncio é o que fazia a carteira encolher sem ninguém ver.
+      // O valor vai com ponto decimal e sem milhar: no .xlsx o SheetJS entrega
+      // "823.11", e a rota lia esse ponto como milhar — gravava R$ 82.311,00.
+      const valorRecusado = parseMoneyToNumber(n["receber"] ?? "");
       recusados.push({
         nome: nomeParaRecusa,
         telefone: rawPhone,
         documento: n["serdocpar"] ?? n["documento"] ?? "",
-        valor: n["receber"] ?? "",
+        valor: valorRecusado !== null ? valorRecusado.toFixed(2) : "",
         motivo: telefone.motivo,
       });
       continue;

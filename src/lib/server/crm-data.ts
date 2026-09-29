@@ -1,5 +1,6 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { parseMoneyToNumber } from "@/lib/money";
 import { allTimePeriod, countBy, defaultPeriod, isOlderThan, metric, percent } from "@/lib/server/crm-metrics";
 import { isFollowupPendente } from "@/lib/followups";
 import { selectAllPages } from "@/lib/server/select-all-pages";
@@ -323,14 +324,8 @@ function phoneTail(phone: string | null | undefined) {
 }
 
 function parseCobrancaMoney(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value !== "string") return 0;
-  const clean = value.replace(/[^\d,.-]/g, "");
-  const normalized = clean.includes(",")
-    ? clean.replace(/\./g, "").replace(",", ".")
-    : clean;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (typeof value !== "number" && typeof value !== "string") return 0;
+  return parseMoneyToNumber(value) ?? 0;
 }
 
 function parseSnapshotBoletos(metadata: Record<string, unknown> | null) {

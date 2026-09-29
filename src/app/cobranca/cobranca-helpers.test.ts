@@ -142,6 +142,18 @@ describe("parseSheetRecusados", () => {
     // O boleto do WILLIAN continua disparável.
     expect(parseSheetLeads(rows)).toHaveLength(1);
   });
+
+  it("sends the value with a decimal point, whatever format the sheet came in", () => {
+    // No .xlsx o SheetJS devolve "823.11" (ponto). A rota tirava o ponto como se
+    // fosse milhar e gravava R$ 82.311,00 no lugar de R$ 823,11.
+    const rows = [
+      { Telefone: "(43) 3551-2575", Cliente: "17229 - IGREJA", Receber: "823.11" },
+      { Telefone: "(42) 3646-4042", Cliente: "1058 - GUILHERME", Receber: "743,47" },
+      { Telefone: "(41) 3333-4444", Cliente: "1 - GRANDE", Receber: "1.234,56" },
+    ];
+
+    expect(parseSheetRecusados(rows).map((r) => r.valor)).toEqual(["823.11", "743.47", "1234.56"]);
+  });
 });
 
 describe("excelSerialToBR", () => {

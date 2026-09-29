@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireApiPermission } from "@/lib/server/api-auth";
+import { parseMoneyToNumber } from "@/lib/money";
 
 type DisparoLead = Record<string, string>;
 
@@ -44,10 +45,9 @@ async function gravarRecusados(
 
   const agora = new Date().toISOString();
   const linhas = [...porCliente.values()].map((grupo) => {
-    const total = grupo.reduce((s, r) => {
-      const n = Number(String(r.valor).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", "."));
-      return s + (Number.isFinite(n) ? n : 0);
-    }, 0);
+    // parseMoneyToNumber e não "tira ponto, troca vírgula": o valor chega como
+    // "823.11", e tirar o ponto gravou R$ 82.311,00 num boleto de R$ 823,11.
+    const total = grupo.reduce((s, r) => s + (parseMoneyToNumber(String(r.valor ?? "")) ?? 0), 0);
     return {
       telefone: grupo[0].telefone || "",
       nome: grupo[0].nome || null,
