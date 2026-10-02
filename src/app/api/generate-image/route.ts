@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireApiPermission } from "@/lib/server/api-auth";
 import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK, INFRA_VISUAL } from "@/lib/env";
 import { assertEnv } from "@/lib/server/env-guard";
+import { openAI, MODELO_TEXTO } from "@/lib/server/openai";
 import { ARCIL_WATERMARK_BADGE_BASE64, ARCIL_WATERMARK_BADGE_WIDTH, ARCIL_WATERMARK_BADGE_HEIGHT } from "@/lib/watermark-badge";
 import { comporPrevia } from "@/lib/server/installation-overlay";
 import type { DadosOverlay } from "@/lib/server/previa-tipos";
@@ -101,42 +102,6 @@ function comDiretrizNbr(type: unknown, guidance: string, specs: EquipmentSpecs):
   const dimensao = `(${specs.dimensoesFormatadas}${specs.origemDimensoes === "padrao_estimado" ? ", estimado por tipo/capacidade" : ""})`;
   const resumoNbr = `Equipamento ${tipo} ${capacidade}${dimensao}. Padrão NBR 16655/5410: teto ${regra.cota_teto}, laterais ${regra.cota_lateral}, piso ${regra.cota_piso}${regra.plenum_minimo ? `, plenum ${regra.plenum_minimo}` : ""}${regra.alcapao ? `, alçapão ${regra.alcapao}` : ""}; tubulação ${regra.tubulacao_minima}; vácuo ${regra.vacuo_obrigatorio}; elétrica ${regra.eletrica_norma}; dreno ${regra.dreno_norma}.`;
   return `${guidance} ${resumoNbr}`;
-}
-
-/** Modelo usado em todas as chamadas de texto e visão desta rota.
- *
- *  gpt-5.1 custa metade do gpt-4o na entrada (US$ 1,25 contra US$ 2,50 por
- *  milhão), e entrada é o grosso do gasto aqui — a análise da foto sozinha
- *  manda quase mil tokens de imagem. */
-const MODELO_TEXTO = "gpt-5.1";
-
-async function openAI(body: object) {
-  // A família gpt-5 recusa `max_tokens` e exige `max_completion_tokens`. Como
-  // as chamadas desta rota nasceram no gpt-4o, a tradução fica aqui em vez de
-  // em cada chamada — trocar o modelo não pode obrigar a revisar cinco lugares.
-  const corpo = body as Record<string, unknown>;
-  if (typeof corpo.model === "string" && corpo.model.startsWith("gpt-5") && "max_tokens" in corpo) {
-    const { max_tokens, ...resto } = corpo;
-    body = { ...resto, max_completion_tokens: max_tokens };
-  }
-
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    // "OpenAI error" sem corpo custou uma rodada de investigação inteira pra
-    // achar que era "Error while downloading file" (imagem ainda não
-    // propagada no Storage) — o status/corpo real vai no log a partir daqui.
-    const corpo = await res.text().catch(() => "");
-    throw new Error(`OpenAI error (HTTP ${res.status}): ${corpo.slice(0, 300)}`);
-  }
-  const data = await res.json();
-  return data.choices[0].message.content as string;
 }
 
 export async function POST(request: NextRequest) {
