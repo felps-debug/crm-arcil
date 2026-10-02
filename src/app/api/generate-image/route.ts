@@ -7,6 +7,7 @@ import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK, N8N_CONDENSADORA_WEB
 import { assertEnv } from "@/lib/server/env-guard";
 import { openAI, MODELO_TEXTO } from "@/lib/server/openai";
 import { preservarFoto } from "@/lib/server/preservar-foto";
+import { detectarVazamentoDaGuia } from "@/lib/server/vazamento-guia";
 import { inspecionarCena, deveRegenerar, motivoDaInspecao, type ResultadoInspecao } from "@/lib/server/inspetor-cena";
 import { diretrizRaioX } from "@/lib/server/diretriz-raio-x";
 import { gerarCenaCondensadora } from "@/lib/server/cena-condensadora";
@@ -577,7 +578,7 @@ export async function POST(request: NextRequest) {
     }
 
     const ultima = tentativa === MAX_TENTATIVAS_GERACAO;
-    if (cenaDestaTentativa && marcacao && guideImageBase64 && (await detectarVazamentoDaGuia(cenaDestaTentativa))) {
+    if (cenaDestaTentativa && marcacao && guideImageBase64 && (await detectarVazamentoDaGuia(cenaDestaTentativa, fotoBuffer))) {
       console.error(`[generate-image] guia vazou na tentativa ${tentativa}/${MAX_TENTATIVAS_GERACAO}`);
       if (!ultima) {
         reserva = { url: urlDestaTentativa, cena: cenaDestaTentativa, motivo: "vazamento" };
@@ -726,46 +727,6 @@ export async function POST(request: NextRequest) {
 
 type Posicionamento = { ok: boolean; mensagem: string };
 
-/**
- * Procura na cena gerada as cores da imagem-guia.
- *
- * Aconteceu em produção: o modelo pintou o retângulo magenta da guia na parede
- * do cliente e a prévia foi entregue assim, sem ninguém perceber. O prompt
- * proíbe, mas proibição não é garantia — e esta checagem é determinística,
- * custa milissegundos e não depende de IA nenhuma.
- *
- * Só magenta e ciano saturados contam. Amarelo forte existe em ambiente real
- * (luminária, almofada, madeira clara), então incluí-lo geraria alarme falso.
- */
-async function detectarVazamentoDaGuia(cena: Buffer): Promise<boolean> {
-  try {
-    // 640 px, não 160: o traço da guia é fino, e reduzir demais mistura ele com
-    // a parede antes da contagem. Na primeira versão o vazamento real passou
-    // batido exatamente por isso.
-    const { data, info } = await sharp(cena).resize(640, 640, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true });
-    const canais = info.channels;
-    let suspeitos = 0;
-    for (let i = 0; i < data.length; i += canais) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      // Critério relativo, não absoluto: o magenta que o modelo pinta sai
-      // dessaturado pela iluminação da cena (medido em rgb(176,80,176) no
-      // vazamento real), e um corte fixo em 170/110 não pegava.
-      const magenta = r > 140 && b > 140 && g < r - 45 && g < b - 45;
-      const ciano = g > 140 && b > 140 && r < g - 45 && r < b - 45;
-      if (magenta || ciano) suspeitos++;
-    }
-    const total = (data.length / canais) || 1;
-    // Aferido contra cenas reais: o vazamento deu 0,35% da imagem e as cenas
-    // limpas não passaram de 0,02%. O corte fica no meio, com folga dos dois
-    // lados.
-    return suspeitos / total > 0.0012;
-  } catch (err) {
-    console.error("[generate-image] checagem de vazamento da guia falhou:", err instanceof Error ? err.message : err);
-    return false;
-  }
-}
 
 /**
  * Confere se o modelo de imagem instalou o aparelho onde o vendedor marcou.
