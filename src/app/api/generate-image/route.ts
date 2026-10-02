@@ -437,7 +437,9 @@ export async function POST(request: NextRequest) {
   const ladoInsetCondensadora: "esquerda" | "direita" =
     marcacao && marcacao.caixa.x + marcacao.caixa.w / 2 <= 0.55 ? "direita" : "esquerda";
 
-  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_GERACAO; tentativa++) {
+  // Uma chamada ao n8n da cena principal. Devolve a URL ou a resposta de erro
+  // já pronta — quem decide se o erro derruba a geração é o laço abaixo.
+  const chamarN8n = async (tentativa: number): Promise<{ url: string } | { erro: Response }> => {
     // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node.
     // O fetch fica dentro de try/catch porque, sem ele, uma falha de rede virava um
     // 500 sem corpo: o cliente tentava `res.json()`, estourava e mostrava "Erro de
@@ -491,10 +493,10 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       const motivo = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       console.error("[generate-image] a chamada ao n8n nem completou:", motivo);
-      return Response.json(
+      return { erro: Response.json(
         { error: `Não consegui falar com a automação de imagem (${motivo}). Nenhuma execução foi criada no n8n.` },
         { status: 502 }
-      );
+      ) };
     }
 
     // O corpo é lido como texto antes de virar JSON porque o n8n responde vazio
@@ -506,18 +508,18 @@ export async function POST(request: NextRequest) {
 
     if (!n8nRes.ok) {
       console.error(`[generate-image] n8n HTTP ${n8nRes.status}:`, n8nBody.slice(0, 600) || "(corpo vazio)");
-      return Response.json(
+      return { erro: Response.json(
         { error: `A automação de imagem respondeu ${n8nRes.status}. Verifique a execução no n8n.` },
         { status: 502 }
-      );
+      ) };
     }
 
     if (!n8nBody.trim()) {
       console.error("[generate-image] n8n respondeu 200 com corpo vazio — algum nó falhou antes do Respond to Webhook.");
-      return Response.json(
+      return { erro: Response.json(
         { error: "A automação de imagem parou no meio e não devolveu resultado. Verifique a última execução no n8n." },
         { status: 502 }
-      );
+      ) };
     }
 
     let n8nData: Record<string, unknown>;
@@ -525,10 +527,10 @@ export async function POST(request: NextRequest) {
       n8nData = JSON.parse(n8nBody);
     } catch {
       console.error("[generate-image] n8n devolveu algo que não é JSON:", n8nBody.slice(0, 600));
-      return Response.json(
+      return { erro: Response.json(
         { error: "A automação de imagem devolveu uma resposta inesperada. Verifique a última execução no n8n." },
         { status: 502 }
-      );
+      ) };
     }
 
     const rawUrl = primeiraString(
@@ -542,8 +544,29 @@ export async function POST(request: NextRequest) {
     const urlDestaTentativa = rawUrl ? rawUrl.replace(/_\d+$/, "") : null;
 
     if (!urlDestaTentativa) {
-      return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
+      return { erro: Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 }) };
     }
+    return { url: urlDestaTentativa };
+  };
+
+  // Cena de uma tentativa anterior, guardada quando pedimos outra. Se a nova
+  // chamada falhar no n8n, entregamos esta — ela já foi paga, e uma prévia
+  // com aviso é melhor que nenhuma.
+  let reserva: { url: string; cena: Buffer | null; motivo: "vazamento" | "inspecao" } | null = null;
+  let regeneracaoFalhou = false;
+
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_GERACAO; tentativa++) {
+    const chamada = await chamarN8n(tentativa);
+    if ("erro" in chamada) {
+      if (!reserva) return chamada.erro;
+      console.error(`[generate-image] tentativa ${tentativa} falhou no n8n; entregando a cena anterior`);
+      generatedImageUrl = reserva.url;
+      cenaBuffer = reserva.cena;
+      if (reserva.motivo === "vazamento") vazamentoPersistente = true;
+      regeneracaoFalhou = true;
+      break;
+    }
+    const urlDestaTentativa = chamada.url;
 
     let cenaDestaTentativa: Buffer | null = null;
     try {
@@ -556,7 +579,10 @@ export async function POST(request: NextRequest) {
     const ultima = tentativa === MAX_TENTATIVAS_GERACAO;
     if (cenaDestaTentativa && marcacao && guideImageBase64 && (await detectarVazamentoDaGuia(cenaDestaTentativa))) {
       console.error(`[generate-image] guia vazou na tentativa ${tentativa}/${MAX_TENTATIVAS_GERACAO}`);
-      if (!ultima) continue;
+      if (!ultima) {
+        reserva = { url: urlDestaTentativa, cena: cenaDestaTentativa, motivo: "vazamento" };
+        continue;
+      }
       vazamentoPersistente = true;
     }
 
@@ -572,6 +598,7 @@ export async function POST(request: NextRequest) {
         : null;
     if (inspecao && !ultima && !vazamentoPersistente && deveRegenerar(inspecao, String(collectedData.tipo_equipamento ?? ""))) {
       console.error(`[generate-image] inspetor reprovou a tentativa ${tentativa}:`, inspecao.motivo);
+      reserva = { url: urlDestaTentativa, cena: cenaDestaTentativa, motivo: "inspecao" };
       continue;
     }
 
@@ -657,6 +684,10 @@ export async function POST(request: NextRequest) {
     posicionamento = { ok: false, mensagem: posicionamento && !posicionamento.ok ? `${posicionamento.mensagem} ${aviso}` : aviso };
   }
 
+  if (regeneracaoFalhou) {
+    const aviso = "A segunda tentativa de geração falhou no n8n; esta é a primeira versão gerada.";
+    posicionamento = { ok: false, mensagem: posicionamento && !posicionamento.ok ? `${posicionamento.mensagem} ${aviso}` : aviso };
+  }
   const avisoInspecao = inspecao ? motivoDaInspecao(inspecao, String(collectedData.tipo_equipamento ?? "")) : null;
   if (avisoInspecao) {
     posicionamento = { ok: false, mensagem: posicionamento && !posicionamento.ok ? `${posicionamento.mensagem} ${avisoInspecao}` : avisoInspecao };
