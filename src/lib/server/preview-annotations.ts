@@ -53,7 +53,7 @@ function setaDuplaVertical(x: number, y1: number, y2: number, cor: string): stri
 /**
  * Linha de chamada ortogonal: sai do texto na horizontal, dobra uma vez,
  * desce/sobe até o ponto. Substitui a diagonal pontilhada (`linhaChamada`) —
- * mesma técnica já validada em `cassette-commercial-layout.ts`
+ * mesma técnica validada no antigo layout comercial do cassete
  * (`chamadaOrtogonal`), generalizada pro layout ancorado padrão.
  */
 function chamadaOrtogonal(de: Ponto, para: Ponto): string {

@@ -112,7 +112,7 @@ src/
       crm-metrics.ts, crm-labels.ts, demanda.ts
       financial-handoff.ts → handoff financeiro → vendedor
       installation-overlay.ts / preview-annotations.ts / satori-nodes.ts /
-      guide-mask.ts / install-schematic.ts / previa-tipos.ts / layouts/
+      guide-mask.ts / preservar-foto.ts / inspetor-cena.ts / previa-tipos.ts
       env-guard.ts
   types/index.ts   → tipos das tabelas Supabase
   types/api.ts     → contratos das rotas /api
@@ -227,7 +227,6 @@ NEXT_PUBLIC_TURNSTILE_SITE_KEY=...   ← sem isso o captcha do login some silenc
 NEXT_PUBLIC_SENTRY_DSN=...           ← client
 SENTRY_DSN=...                       ← server/edge
 SENTRY_ORG=, SENTRY_PROJECT=, SENTRY_AUTH_TOKEN=   ← upload de sourcemap no build
-V2_CASSETTE_LAYOUT=1                 ← liga o layout V2 pra família cassete
 INFRA_VISUAL=vetorial|gemini_3d     ← padrão modelo_3d (ver "Divisão de responsabilidade")
 PREVIA_DUMP=1                        ← dump de debug da prévia
 ```

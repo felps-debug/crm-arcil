@@ -3,9 +3,14 @@ import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireApiPermission } from "@/lib/server/api-auth";
-import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK, INFRA_VISUAL } from "@/lib/env";
+import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK, N8N_CONDENSADORA_WEBHOOK, INFRA_VISUAL } from "@/lib/env";
 import { assertEnv } from "@/lib/server/env-guard";
 import { openAI, MODELO_TEXTO } from "@/lib/server/openai";
+import { preservarFoto } from "@/lib/server/preservar-foto";
+import { inspecionarCena, deveRegenerar, motivoDaInspecao, type ResultadoInspecao } from "@/lib/server/inspetor-cena";
+import { diretrizRaioX } from "@/lib/server/diretriz-raio-x";
+import { gerarCenaCondensadora } from "@/lib/server/cena-condensadora";
+import { alertasInstalacao, chaveDoLocal } from "@/lib/alertas-instalacao";
 import { ARCIL_WATERMARK_BADGE_BASE64, ARCIL_WATERMARK_BADGE_WIDTH, ARCIL_WATERMARK_BADGE_HEIGHT } from "@/lib/watermark-badge";
 import { comporPrevia } from "@/lib/server/installation-overlay";
 import type { DadosOverlay } from "@/lib/server/previa-tipos";
@@ -37,10 +42,15 @@ async function seloReduzido(): Promise<Buffer> {
   return seloReduzidoCache;
 }
 
-interface ApiMessage {
-  role: "user" | "assistant";
-  content: string;
-  imageUrl?: string;
+/** URL pública do nosso Storage, num dos buckets permitidos. Evita que a rota
+ *  baixe (e mande ao modelo) qualquer endereço que chegue no corpo. */
+function urlDoStorage(url: string, prefixos: string[]): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === new URL(SUPABASE_URL).hostname && prefixos.some((p) => parsed.pathname.startsWith(p));
+  } catch {
+    return false;
+  }
 }
 
 const EQUIPMENT_GUIDANCE: Record<string, string> = {
@@ -119,17 +129,21 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient();
 
   const {
-    messages,
     imageUrl,
     answers,
     referenceImageUrl,
+    cenaUrl: cenaUrlBruta,
+    condensadoraUrl: condensadoraUrlBruta,
     revisionPrompt,
     marcacao: marcacaoBruta,
   }: {
-    messages: ApiMessage[];
     imageUrl?: string;
     answers?: Record<string, string>;
     referenceImageUrl?: string;
+    /** Cena crua da versão anterior (sem a faixa da prancha) — vem num ajuste. */
+    cenaUrl?: string;
+    /** Cena da condensadora da versão anterior — reaproveitada num ajuste. */
+    condensadoraUrl?: string;
     revisionPrompt?: string;
     marcacao?: unknown;
   } = await request.json();
@@ -165,29 +179,24 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Inválidas são ignoradas, não recusadas: sem elas o ajuste ainda funciona
+  // (usa a prévia final como referência e gera a condensadora de novo).
+  const cenaUrl = cenaUrlBruta && urlDoStorage(cenaUrlBruta, ["/storage/v1/object/public/PDF/"]) ? cenaUrlBruta : null;
+  const condensadoraUrl =
+    condensadoraUrlBruta && urlDoStorage(condensadoraUrlBruta, ["/storage/v1/object/public/PDF/"]) ? condensadoraUrlBruta : null;
+  // A prévia final agora tem a faixa da prancha ao lado: o modelo precisa
+  // receber a cena crua, senão desenha a faixa dentro da foto.
+  const referenciaAjuste = cenaUrl ?? referenceImageUrl ?? null;
+
   if (revisionPrompt && (typeof revisionPrompt !== "string" || revisionPrompt.trim().length < 4 || revisionPrompt.length > 1200)) {
     return Response.json({ error: "Descreva o ajuste desejado em até 1200 caracteres" }, { status: 400 });
   }
 
   const leadId = crypto.randomUUID();
 
-  // Extract structured data from conversation
-  let collectedData: Record<string, unknown> = {};
-  try {
-    const raw = await openAI({
-      model: MODELO_TEXTO,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Extraia as informações da conversa e retorne um JSON com os campos: tipo_equipamento, marca, modelo, pe_direito, ponto_eletrico (boolean), unidade_externa, nivel_condensadora, tubulacao. Retorne APENAS o JSON válido, sem markdown.",
-        },
-        ...messages.map((m) => ({ role: m.role, content: m.content })),
-      ],
-      max_tokens: 300,
-    });
-    collectedData = JSON.parse(raw);
-  } catch {}
+  // O wizard manda respostas fechadas; não há conversa para "extrair". A
+  // chamada ao GPT que fazia isso trocava valor ("embutida" virou "canaleta").
+  const collectedData: Record<string, unknown> = {};
 
   // Respostas do usuário sobrescrevem o que a IA extraiu do texto — a
   // reextração por IA já causou perda/troca de valor (ex: "embutida" virou
@@ -209,6 +218,13 @@ export async function POST(request: NextRequest) {
   if (answers?.tipo_forro) collectedData.tipo_forro = answers.tipo_forro;
   if (answers?.alcapao) collectedData.alcapao = answers.alcapao === "Sim";
   if (answers?.metragem_infra) collectedData.metragem_infra = answers.metragem_infra;
+  if (answers?.ambiente) collectedData.ambiente = answers.ambiente;
+  // `unidade_externa` é a chave que o n8n já lê; agora vem da escolha fechada.
+  if (answers?.local_condensadora) collectedData.unidade_externa = answers.local_condensadora;
+  if (answers?.distancia_condensadora) collectedData.distancia_condensadora = answers.distancia_condensadora;
+  if (answers?.dreno) collectedData.dreno = answers.dreno;
+  if (answers?.tensao) collectedData.tensao = answers.tensao;
+  if (answers?.obstaculos) collectedData.obstaculos = answers.obstaculos;
   // Normalizado antes do prompt: "2,80 cm" (digitado assim numa prévia real)
   // chegava cru ao modelo de imagem, e só o cartão final saía corrigido.
   if (typeof collectedData.unidade_externa === "string") collectedData.unidade_externa = semPontoFinal(collectedData.unidade_externa);
@@ -282,6 +298,9 @@ export async function POST(request: NextRequest) {
     collectedData.unidade_externa ? `Unidade externa: ${collectedData.unidade_externa}` : null,
     collectedData.nivel_condensadora ? `Nível da condensadora em relação ao ambiente: ${collectedData.nivel_condensadora}` : null,
     collectedData.tubulacao ? `Tubulação: ${collectedData.tubulacao}` : null,
+    collectedData.ambiente ? `Ambiente: ${collectedData.ambiente}` : null,
+    collectedData.distancia_condensadora ? `Distância até a condensadora: ${collectedData.distancia_condensadora}` : null,
+    collectedData.dreno ? `Dreno: ${collectedData.dreno}` : null,
     typeof collectedData.alcapao === "boolean"
       ? `Alçapão de inspeção: ${collectedData.alcapao ? "deve ser incluído na instalação" : "não será incluído"}`
       : null,
@@ -309,7 +328,15 @@ export async function POST(request: NextRequest) {
     nome: collectedData.modelo,
   });
   const regrasInstalacao = equipmentSpecs.regra;
-  const technicalGuidance = comDiretrizNbr(collectedData.tipo_equipamento, equipmentGuidance(collectedData.tipo_equipamento), equipmentSpecs);
+  // Raio-x padronizado vai junto da diretriz que o prompt do n8n já consome,
+  // e também em campo próprio (`estilo_infra`) para quem quiser usá-lo à parte.
+  const raioX = diretrizRaioX(String(collectedData.tipo_equipamento ?? ""), typeof collectedData.tubulacao === "string" ? collectedData.tubulacao : null);
+  const technicalGuidance = [
+    comDiretrizNbr(collectedData.tipo_equipamento, equipmentGuidance(collectedData.tipo_equipamento), equipmentSpecs),
+    raioX,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const revisionInstruction = revisionPrompt?.trim()
     ? `AJUSTE SOLICITADO PELO USUÁRIO: ${revisionPrompt.trim()}`
     : null;
@@ -341,7 +368,7 @@ export async function POST(request: NextRequest) {
   // fazer isso em nós separados: menos superfície de fluxo pra desaparecer
   // quando alguém salva o editor do n8n com uma aba antiga aberta (já
   // aconteceu — o ramo de ajuste inteiro sumiu assim).
-  const referenceImageBase64 = referenceImageUrl ? await fetchImagemBase64(referenceImageUrl, 1536) : null;
+  const referenceImageBase64 = referenciaAjuste ? await fetchImagemBase64(referenciaAjuste, 1536) : null;
 
   const productLookup = [collectedData.marca, collectedData.modelo].filter(Boolean).join(" ");
   // Sem try/catch, uma falha aqui (Supabase fora do ar, timeout) derrubava a
@@ -361,6 +388,18 @@ export async function POST(request: NextRequest) {
   }
 
   const productImageBase64 = await fetchProductImageBase64(productImageUrl);
+
+  // Cena da condensadora em paralelo com a principal: o tempo total fica o da
+  // mais lenta, não a soma. Num ajuste, reaproveita a que já existe (custo).
+  const tipoLocal = chaveDoLocal(answers?.local_condensadora);
+  const condensadoraPromise: Promise<string | null> = condensadoraUrl
+    ? Promise.resolve(condensadoraUrl)
+    : tipoLocal && N8N_CONDENSADORA_WEBHOOK
+      ? gerarCenaCondensadora({ leadId: `${leadId}-cond`, tipoLocal, productImageBase64 }).catch((err) => {
+          console.error("[generate-image] cena da condensadora falhou:", err instanceof Error ? err.message : err);
+          return null;
+        })
+      : Promise.resolve(null);
   const familia = familiaDoTipo(collectedData.tipo_equipamento);
   const referenciaBase64 = await referenciaDaFamilia(supabase, familia);
 
@@ -373,7 +412,11 @@ export async function POST(request: NextRequest) {
   // não é garantia com IA de imagem. Em vez de só avisar depois de entregar,
   // tenta gerar de novo (até 2 vezes) ANTES de compor e subir qualquer coisa.
   // Sem marcação (ou sem guia) não há o que vazar, então roda uma vez só.
-  const MAX_TENTATIVAS_GERACAO = marcacao && guideImageBase64 ? 3 : 1;
+  // Teto de custo: no máximo uma regeneração, seja por vazamento da guia, seja
+  // por reprovação do inspetor.
+  const MAX_TENTATIVAS_GERACAO = 2;
+  let cenaBuffer: Buffer | null = null;
+  let inspecao: ResultadoInspecao | null = null;
   let generatedImageUrl: string | null = null;
   let vazamentoPersistente = false;
 
@@ -418,7 +461,7 @@ export async function POST(request: NextRequest) {
           image_description: imageDescription,
           product_image_url: productImageUrl,
           product_image_base64: productImageBase64,
-          reference_image_url: referenceImageUrl ?? null,
+          reference_image_url: referenciaAjuste,
           reference_image_base64: referenceImageBase64,
           guide_image_base64: guideImageBase64,
           marcacao_descricao: marcacao ? descreverMarcacao(marcacao) : null,
@@ -432,8 +475,9 @@ export async function POST(request: NextRequest) {
           desenhar_inset_condensadora: desenharInsetCondensadora,
           lado_inset_condensadora: ladoInsetCondensadora,
           revision_prompt: revisionPrompt?.trim() ?? null,
-          generation_mode: referenceImageUrl ? "revision" : "initial",
+          generation_mode: referenciaAjuste ? "revision" : "initial",
           equipment_guidance: technicalGuidance,
+          estilo_infra: raioX || null,
           revision_instruction: revisionInstruction,
           regras_instalacao: regrasInstalacao,
           ancoragem_espacial: ancoragemEspacial || null,
@@ -501,20 +545,38 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
     }
 
-    if (marcacao && guideImageBase64) {
-      try {
-        const cenaRes = await fetch(urlDestaTentativa);
-        if (cenaRes.ok && (await detectarVazamentoDaGuia(Buffer.from(await cenaRes.arrayBuffer())))) {
-          console.error(`[generate-image] guia vazou na tentativa ${tentativa}/${MAX_TENTATIVAS_GERACAO}`);
-          if (tentativa < MAX_TENTATIVAS_GERACAO) continue; // tenta de novo
-          vazamentoPersistente = true;
-        }
-      } catch (err) {
-        console.error("[generate-image] não consegui reler a cena para checar vazamento:", err instanceof Error ? err.message : err);
-      }
+    let cenaDestaTentativa: Buffer | null = null;
+    try {
+      const cenaRes = await fetch(urlDestaTentativa);
+      if (cenaRes.ok) cenaDestaTentativa = Buffer.from(await cenaRes.arrayBuffer());
+    } catch (err) {
+      console.error("[generate-image] não consegui reler a cena:", err instanceof Error ? err.message : err);
+    }
+
+    const ultima = tentativa === MAX_TENTATIVAS_GERACAO;
+    if (cenaDestaTentativa && marcacao && guideImageBase64 && (await detectarVazamentoDaGuia(cenaDestaTentativa))) {
+      console.error(`[generate-image] guia vazou na tentativa ${tentativa}/${MAX_TENTATIVAS_GERACAO}`);
+      if (!ultima) continue;
+      vazamentoPersistente = true;
+    }
+
+    inspecao =
+      cenaDestaTentativa && fotoBuffer
+        ? await inspecionarCena({
+            foto: fotoBuffer,
+            cena: cenaDestaTentativa,
+            produto: productImageBase64 ? Buffer.from(productImageBase64, "base64") : null,
+            tipo: String(collectedData.tipo_equipamento ?? ""),
+            tubulacao: typeof collectedData.tubulacao === "string" ? collectedData.tubulacao : null,
+          })
+        : null;
+    if (inspecao && !ultima && !vazamentoPersistente && deveRegenerar(inspecao, String(collectedData.tipo_equipamento ?? ""))) {
+      console.error(`[generate-image] inspetor reprovou a tentativa ${tentativa}:`, inspecao.motivo);
+      continue;
     }
 
     generatedImageUrl = urlDestaTentativa;
+    cenaBuffer = cenaDestaTentativa;
     break;
   }
 
@@ -538,7 +600,10 @@ export async function POST(request: NextRequest) {
   // cena.
   const peDireitoFormatado = typeof collectedData.pe_direito === "string" ? formatarMetros(collectedData.pe_direito) : null;
   const qr = await destinoDoQr(supabase, typeof collectedData.marca === "string" ? collectedData.marca : null);
-  const finalImageUrl = await comporEEnviar(generatedImageUrl, leadId, {
+  const condensadoraFinalUrl = await condensadoraPromise;
+  const cenaCondensadoraBase64 = condensadoraFinalUrl ? await fetchImagemBase64(condensadoraFinalUrl, 1024) : null;
+
+  const finalImageUrl = await comporEEnviar(generatedImageUrl, cenaBuffer, fotoBuffer, leadId, {
     produto: String(collectedData.modelo ?? "Ar-condicionado"),
     marca: typeof collectedData.marca === "string" ? collectedData.marca : null,
     sku: typeof collectedData.sku === "string" ? collectedData.sku : null,
@@ -557,6 +622,11 @@ export async function POST(request: NextRequest) {
     recomendacoesGarantia: regrasInstalacao.recomendacoes_garantia,
     unidadeExterna: typeof collectedData.unidade_externa === "string" && collectedData.unidade_externa.trim() ? collectedData.unidade_externa.trim() : null,
     nivelCondensadora: typeof collectedData.nivel_condensadora === "string" ? collectedData.nivel_condensadora : null,
+    distanciaCondensadora: typeof collectedData.distancia_condensadora === "string" ? collectedData.distancia_condensadora : null,
+    cenaCondensadoraBase64: cenaCondensadoraBase64 ? `data:image/jpeg;base64,${cenaCondensadoraBase64}` : null,
+    alertas: alertasInstalacao(answers ?? {}),
+    dreno: typeof collectedData.dreno === "string" ? collectedData.dreno : null,
+    tensao: typeof collectedData.tensao === "string" ? collectedData.tensao : null,
     capacidade: equipmentSpecs.btu ? `${equipmentSpecs.btu.toLocaleString("pt-BR")} BTU/h` : null,
     // Presente => camada ancorada (callouts presos ao aparelho); ausente =>
     // camada de cards, que não depende de saber onde o aparelho está na cena.
@@ -587,10 +657,14 @@ export async function POST(request: NextRequest) {
     posicionamento = { ok: false, mensagem: posicionamento && !posicionamento.ok ? `${posicionamento.mensagem} ${aviso}` : aviso };
   }
 
+  const avisoInspecao = inspecao ? motivoDaInspecao(inspecao, String(collectedData.tipo_equipamento ?? "")) : null;
+  if (avisoInspecao) {
+    posicionamento = { ok: false, mensagem: posicionamento && !posicionamento.ok ? `${posicionamento.mensagem} ${avisoInspecao}` : avisoInspecao };
+  }
+
   const { installationNotes, notesSource } = await getInstallationNotes(
     supabase,
-    String([collectedData.marca, collectedData.modelo, collectedData.tipo_equipamento].filter(Boolean).join(" ")),
-    typeof collectedData.marca === "string" ? collectedData.marca : null
+    String([collectedData.marca, collectedData.modelo, collectedData.tipo_equipamento].filter(Boolean).join(" "))
   );
 
   const { data: profile } = await supabase.from("user_profiles").select("full_name").eq("id", user.id).single();
@@ -608,7 +682,15 @@ export async function POST(request: NextRequest) {
     installation_notes_source: notesSource,
   });
 
-  return Response.json({ imageUrl: finalImageUrl, installationNotes, installationNotesSource: notesSource, posicionamento });
+  return Response.json({
+    imageUrl: finalImageUrl,
+    // Cena crua e condensadora voltam para a tela: um ajuste reaproveita as duas.
+    cenaUrl: generatedImageUrl,
+    condensadoraUrl: condensadoraFinalUrl,
+    installationNotes,
+    installationNotesSource: notesSource,
+    posicionamento,
+  });
 }
 
 type Posicionamento = { ok: boolean; mensagem: string };
@@ -821,32 +903,25 @@ function metragemLegivel(valor: string): string | null {
 }
 
 /**
- * Compõe a camada de título/cards sobre a cena e o selo d'água, e sobe o
- * resultado no mesmo lugar onde a marca d'água já subia. Se qualquer etapa
- * falhar, cai no caminho antigo (só a marca d'água) — a prévia sem moldura
- * ainda vende, um erro não.
+ * Devolve a foto original fora da zona da instalação, compõe a prancha Arcil
+ * (que já carrega logo e a assinatura "Imagem gerada pela IA da Arcil") e sobe
+ * o resultado. Se qualquer etapa falhar, cai no caminho antigo (só a marca
+ * d'água) — a prévia sem moldura ainda vende, um erro não.
  *
- * Um único `.jpeg()` no final: `comporPrevia` devolve PNG (cena + camada de
- * título/cards, sem perda), e o selo d'água entra no MESMO `.composite()` que
- * faz o encode. Antes disso passava por três gerações de JPEG (corte técnico
- * -> installation-overlay -> selo), cada uma reencodando o que a anterior já
- * tinha comprimido — a origem da reclamação de qualidade baixa na imagem
- * baixada.
+ * Um único `.jpeg()` no final: `comporPrevia` devolve PNG, e cada reencode JPEG
+ * intermediário perdia qualidade — a origem da reclamação de imagem baixada
+ * com qualidade baixa.
  */
-async function comporEEnviar(imageUrl: string, leadId: string, dados: DadosOverlay): Promise<string> {
+async function comporEEnviar(imageUrl: string, cena: Buffer | null, foto: Buffer | null, leadId: string, dados: DadosOverlay): Promise<string> {
   try {
-    const res = await fetch(imageUrl);
-    if (!res.ok) throw new Error(`fetch cena -> HTTP ${res.status}`);
-    const cenaBuffer = Buffer.from(await res.arrayBuffer());
-
-    // Uma marca d'água só: a logo Grupo Arcil que `comporPrevia` já desenha
-    // (canto inferior esquerdo, referência aprovada). O selo pequeno "Design
-    // created by ARCIL AI" que ia aqui em cima foi removido — duas marcas na
-    // mesma prévia era ruído, e o aviso "Prévia para visualização..." no
-    // rodapé já cobre a transparência de que é gerado. `seloReduzido` continua
-    // existindo só para o fallback (`watermarkImage`), quando a composição
-    // completa falha e não há logo nenhuma na imagem.
-    const composta = await comporPrevia(cenaBuffer, dados);
+    let cenaBuffer = cena;
+    if (!cenaBuffer) {
+      const res = await fetch(imageUrl);
+      if (!res.ok) throw new Error(`fetch cena -> HTTP ${res.status}`);
+      cenaBuffer = Buffer.from(await res.arrayBuffer());
+    }
+    const preservada = foto ? (await preservarFoto(foto, cenaBuffer, dados.marcacao)).imagem : cenaBuffer;
+    const composta = await comporPrevia(preservada, dados);
     const comSelo = await sharp(composta).jpeg({ quality: 94 }).toBuffer();
 
     const admin = createAdminClient();
@@ -1071,49 +1146,15 @@ type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 async function getInstallationNotes(
   supabase: SupabaseClient,
-  modelo: string,
-  marca: string | null
+  modelo: string
 ): Promise<{ installationNotes: string | null; notesSource: "manual" | "ia" | null }> {
   if (!modelo.trim()) return { installationNotes: null, notesSource: null };
 
+  // Texto de garantia só com responsável humano. As notas que a IA escrevia
+  // por marca ficam no banco, ignoradas: uma regra inventada num documento de
+  // garantia é pior que nenhuma.
   const { data: notes } = await supabase.from("brand_warranty_notes").select("brand,content,origem");
   const modeloLower = modelo.toLowerCase();
-  // Texto cadastrado por pessoa ganha do cache da IA, sempre — mesmo que o da
-  // IA seja mais recente.
-  const candidatos = (notes ?? []).filter((n) => modeloLower.includes(n.brand.toLowerCase()));
-  const match = candidatos.find((n) => n.origem === "manual") ?? candidatos[0];
-  if (match) return { installationNotes: match.content, notesSource: match.origem === "ia" ? "ia" : "manual" };
-
-  try {
-    const content = await openAI({
-      model: MODELO_TEXTO,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Você orienta instaladores de ar-condicionado sobre como instalar preservando a garantia de fábrica. " +
-            "Dado o modelo/marca informado, escreva um parágrafo curto (máx. 5 frases) com as boas práticas gerais " +
-            "de instalação que costumam ser exigidas pela maioria dos fabricantes para não perder garantia " +
-            "(ex: distância mínima de paredes/teto, tubulação isolada, dreno com caimento correto, ponto elétrico " +
-            "dedicado, teste de vácuo). NÃO invente números ou regras específicas dessa marca que você não tenha " +
-            "certeza — se não souber um detalhe exato da marca, fale em termos gerais e termine recomendando " +
-            "expressamente consultar o manual oficial do fabricante antes de instalar.",
-        },
-        { role: "user", content: `Modelo/marca: ${modelo}` },
-      ],
-      max_tokens: 300,
-    });
-    // Guarda para a próxima simulação da mesma marca. O texto não depende do
-    // ambiente nem do cliente, então reescrevê-lo a cada geração é gastar por
-    // um resultado que já existe. `origem: "ia"` preserva o aviso na tela.
-    if (marca?.trim()) {
-      const { error } = await createAdminClient()
-        .from("brand_warranty_notes")
-        .upsert({ brand: marca.trim(), content, origem: "ia" }, { onConflict: "brand" });
-      if (error) console.error("[generate-image] não consegui guardar a nota da marca:", error.message);
-    }
-    return { installationNotes: content, notesSource: "ia" };
-  } catch {
-    return { installationNotes: null, notesSource: null };
-  }
+  const match = (notes ?? []).find((n) => n.origem === "manual" && modeloLower.includes(n.brand.toLowerCase()));
+  return match ? { installationNotes: match.content, notesSource: "manual" } : { installationNotes: null, notesSource: null };
 }
