@@ -25,21 +25,21 @@ Conferir numa execução real:
    ${$json.body.estilo_infra ?? ''}
    ```
 
-## 2. Condensadora — dois locais novos
+## 2. Condensadora — feito em 2026-10-02
 
-Webhook de `N8N_CONDENSADORA_WEBHOOK`. O campo `tipo_local` agora pode ser também
-`parede_externa` e `chao`, além de `telhado`, `laje_tecnica` e `sacada_tecnica`.
+Workflow `ieGHO3BQTCSMfac0` ("GERAÇÃO CONDENSADORA - LOCAL", Gemini 3 Pro Image).
+Desde 2026-09-02 o nó **Monta Prompt** exigia `location_image_base64` (foto real do
+local) e recusava qualquer chamada sem ela — inclusive o botão "Local da
+condensadora" do CRM, que nunca mandou essa foto.
 
-Acrescentar os dois casos onde o nó escolhe a frase do cenário:
+O nó agora tem dois caminhos:
 
-| `tipo_local` | Frase da cena |
-|---|---|
-| `parede_externa` | outdoor condenser unit mounted on a metal wall bracket on an exterior masonry wall, level, 15 cm away from the wall, free airflow around it |
-| `chao` | outdoor condenser unit on a raised concrete base on the ground, level, anti-vibration pads, free airflow around it |
+- **sem `location_image_base64`** (o que o CRM manda): ilustração genérica do tipo de
+  local, com a condensadora real copiada da foto de catálogo (`product_image_base64`);
+- **com `location_image_base64`**: edita a foto real do local, como antes.
 
-Enquanto isso não for feito, a cena desses dois locais pode sair genérica ou falhar.
-Se falhar, a prancha mostra os afastamentos mínimos em texto no lugar da cena: a
-prévia continua saindo.
+`tipo_local` aceita `telhado`, `laje_tecnica`, `sacada_tecnica`, `parede_externa` e
+`chao`. Cópia do fluxo anterior: execução de backup diária no GitHub.
 
 ## 3. Calibrar a preservação da foto
 
