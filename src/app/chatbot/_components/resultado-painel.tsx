@@ -4,6 +4,8 @@ import { useCallback, useRef, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { ArrowLeftRight, Download, Loader2, RefreshCcw, ShieldAlert, Sparkles } from "lucide-react";
 import { ConsoleButton, ConsoleCard } from "@/components/console/console-shell";
+import { PRANCHA } from "@/constants/arcil-brand";
+import type { LocalCondensadora } from "@/lib/alertas-instalacao";
 
 export type Posicionamento = { ok: boolean; mensagem: string };
 export type Versao = {
@@ -12,14 +14,20 @@ export type Versao = {
   notesSource: "manual" | "ia" | null;
   posicionamento: Posicionamento | null;
   origem: "geracao" | "ajuste";
+  /** Cena crua (sem a faixa da prancha) e cena da condensadora — um ajuste
+   *  reaproveita as duas. Ausentes em gerações antigas, do histórico. */
+  cenaUrl?: string | null;
+  condensadoraUrl?: string | null;
 };
 
-const CUSTO_APROX_GERACAO = "R$ 0,80";
-const TIPOS_CONDENSADORA = [
+const CUSTO_APROX_GERACAO = "R$ 1,65";
+const TIPOS_CONDENSADORA: [LocalCondensadora, string][] = [
   ["telhado", "No telhado"],
   ["laje_tecnica", "Laje técnica"],
   ["sacada_tecnica", "Sacada técnica"],
-] as const;
+  ["parede_externa", "Parede externa"],
+  ["chao", "No chão"],
+];
 
 const CLASSE_ABA =
   "px-3 py-2 text-[11px] font-bold uppercase tracking-[0.06em] text-[var(--text-muted)] data-[state=active]:border-b-2 data-[state=active]:border-blue-500 data-[state=active]:text-[var(--text-primary)]";
@@ -54,11 +62,11 @@ export function ResultadoPainel({
   revisionPrompt: string;
   onChangeRevisionPrompt: (v: string) => void;
   onGerarAjuste: () => void;
-  condensadoraTipo: "telhado" | "laje_tecnica" | "sacada_tecnica" | null;
+  condensadoraTipo: LocalCondensadora | null;
   condensadoraLoading: boolean;
   condensadoraImageUrl: string | null;
   downloadingCondensadora: boolean;
-  onGerarCondensadora: (tipo: "telhado" | "laje_tecnica" | "sacada_tecnica") => void;
+  onGerarCondensadora: (tipo: LocalCondensadora) => void;
   onDownloadCondensadora: () => void;
 }) {
   const versaoAtual = versoes[versaoAtiva] ?? null;
@@ -66,6 +74,10 @@ export function ResultadoPainel({
   const compareRef = useRef<HTMLDivElement>(null);
   const [dividerPct, setDividerPct] = useState(50);
   const [dragging, setDragging] = useState(false);
+  // Proporção da imagem final e quanto dela é foto. A prancha tem a faixa
+  // Arcil à direita: a foto "antes" só pode ser sobreposta à parte que é foto.
+  const [proporcao, setProporcao] = useState<{ ar: number; fracFoto: number } | null>(null);
+  const ehPrancha = Boolean(versaoAtual?.cenaUrl);
 
   const moverDivisor = useCallback((clientX: number) => {
     const rect = compareRef.current?.getBoundingClientRect();
@@ -114,13 +126,30 @@ export function ResultadoPainel({
         onPointerMove={onPointerMoveFaixa}
         onPointerUp={onPointerUpFaixa}
         onPointerCancel={onPointerUpFaixa}
-        className="relative h-[420px] touch-none select-none overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)]"
+        style={{ aspectRatio: proporcao ? String(proporcao.ar) : "16 / 9" }}
+        className="relative w-full touch-none select-none overflow-hidden rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)]"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={wallImageUrl} alt="Antes" className="absolute inset-0 h-full w-full object-contain" />
-        <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 0 0 ${dividerPct}%)` }}>
+        <img
+          src={generatedImageUrl}
+          alt="Depois"
+          className="absolute inset-0 h-full w-full"
+          onLoad={(e) => {
+            const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+            if (!w || !h) return;
+            const faixa = ehPrancha ? (PRANCHA.larguraFaixa * h) / PRANCHA.altura : 0;
+            setProporcao({ ar: w / h, fracFoto: Math.min(1, Math.max(0.3, (w - faixa) / w)) });
+          }}
+        />
+        <div
+          className="absolute inset-y-0 left-0 overflow-hidden"
+          style={{
+            width: `${(proporcao?.fracFoto ?? 1) * 100}%`,
+            clipPath: `inset(0 ${Math.max(0, 100 - dividerPct / (proporcao?.fracFoto ?? 1))}% 0 0)`,
+          }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={generatedImageUrl} alt="Depois" className="h-full w-full object-contain" />
+          <img src={wallImageUrl} alt="Antes" className="h-full w-full object-fill" />
         </div>
         <div className="pointer-events-none absolute inset-y-0 z-10 flex w-0 items-center justify-center" style={{ left: `${dividerPct}%` }}>
           <div className="absolute inset-y-0 w-[2px] bg-blue-400/90" />
@@ -129,7 +158,7 @@ export function ResultadoPainel({
           </div>
         </div>
         <span className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[11px] font-bold text-white">Antes</span>
-        <span className="absolute right-4 top-4 rounded-full bg-black/40 px-3 py-1 text-[11px] font-bold text-white">Depois</span>
+        <span className="absolute top-4 rounded-full bg-black/40 px-3 py-1 text-[11px] font-bold text-white" style={{ right: `calc(${(1 - (proporcao?.fracFoto ?? 1)) * 100}% + 16px)` }}>Depois</span>
       </div>
 
       {versoes.length > 1 && (

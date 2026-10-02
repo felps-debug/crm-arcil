@@ -30,8 +30,9 @@ import type { TipoEquipamento } from "./_components/produto-picker";
 import { MarcadorInstalacao } from "./_components/marcador-instalacao";
 import { GroupForm } from "./_components/group-form";
 import { ResultadoPainel, InstallationNotesCard, type Versao, type Posicionamento } from "./_components/resultado-painel";
-import { buildSteps, buildStepGroups, grupoRespondido, type StepGroup } from "./_components/step-groups";
+import { buildStepGroups, grupoRespondido, type StepGroup } from "./_components/step-groups";
 import { parseMarcacao, type Marcacao } from "@/lib/marcacao";
+import { alertasInstalacao, type LocalCondensadora } from "@/lib/alertas-instalacao";
 import type { InventoryProduct } from "@/types/api";
 
 /**
@@ -108,7 +109,6 @@ async function downloadImage(url: string, filename: string): Promise<void> {
   URL.revokeObjectURL(objectUrl);
 }
 
-type ApiMessage = { role: "assistant" | "user"; content: string; imageUrl?: string };
 type Tab = "nova" | "historico";
 
 /** O que a tela precisa para reabrir — e retomar — uma geração antiga. */
@@ -151,7 +151,7 @@ function ChatbotPageInner() {
   const [versaoAtiva, setVersaoAtiva] = useState(0);
   const [productImageUrl, setProductImageUrl] = useState<string | null>(null);
   const [marcacao, setMarcacao] = useState<Marcacao | null>(null);
-  const [condensadoraTipo, setCondensadoraTipo] = useState<"telhado" | "laje_tecnica" | "sacada_tecnica" | null>(null);
+  const [condensadoraTipo, setCondensadoraTipo] = useState<LocalCondensadora | null>(null);
   const [condensadoraLoading, setCondensadoraLoading] = useState(false);
   const [condensadoraImageUrl, setCondensadoraImageUrl] = useState<string | null>(null);
   const [downloadingCondensadora, setDownloadingCondensadora] = useState(false);
@@ -202,36 +202,22 @@ function ChatbotPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grupoIndex]);
 
-  const buildAnswersForApi = useCallback(
-    (finalAnswers: Record<string, string>): ApiMessage[] => {
-      const messages: ApiMessage[] = [];
-      for (const s of buildSteps(finalAnswers.tipo_equipamento ?? null)) {
-        messages.push({ role: "assistant", content: s.question });
-        if (s.type === "file") {
-          messages.push({ role: "user", content: "Foto enviada.", imageUrl: wallImageUrl ?? undefined });
-        } else if (s.type === "marcacao") {
-          messages.push({ role: "user", content: finalAnswers.marcacao ?? "Marcacao pulada." });
-        } else {
-          messages.push({ role: "user", content: finalAnswers[s.key] ?? "" });
-        }
-      }
-      return messages;
-    },
-    [wallImageUrl]
-  );
-
   const requestGeneration = useCallback(
-    async (finalAnswers: Record<string, string>, revision?: { referenceImageUrl?: string; revisionPrompt?: string }) => {
+    async (
+      finalAnswers: Record<string, string>,
+      revision?: { referenceImageUrl?: string; cenaUrl?: string | null; condensadoraUrl?: string | null; revisionPrompt?: string }
+    ) => {
       setGenerating(true);
       try {
         const res = await fetch("/api/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            messages: buildAnswersForApi(finalAnswers),
             imageUrl: wallImageUrl,
             answers: finalAnswers,
             referenceImageUrl: revision?.referenceImageUrl,
+            cenaUrl: revision?.cenaUrl ?? undefined,
+            condensadoraUrl: revision?.condensadoraUrl ?? undefined,
             revisionPrompt: revision?.revisionPrompt,
             marcacao,
           }),
@@ -250,6 +236,8 @@ function ChatbotPageInner() {
               notesSource: (data.installationNotesSource as "manual" | "ia" | null) ?? null,
               posicionamento: (data.posicionamento as Posicionamento | null) ?? null,
               origem: revision?.revisionPrompt ? ("ajuste" as const) : ("geracao" as const),
+              cenaUrl: (data.cenaUrl as string | null) ?? null,
+              condensadoraUrl: (data.condensadoraUrl as string | null) ?? null,
             },
           ];
           setVersaoAtiva(proximas.length - 1);
@@ -263,7 +251,7 @@ function ChatbotPageInner() {
         setGenerating(false);
       }
     },
-    [buildAnswersForApi, wallImageUrl, marcacao, toast]
+    [wallImageUrl, marcacao, toast]
   );
 
   // Dispara a geração automaticamente assim que o último grupo é confirmado —
@@ -279,13 +267,18 @@ function ChatbotPageInner() {
   }, [questionarioConcluido]);
 
   const requestRevision = useCallback(() => {
-    const atual = versoes[versaoAtiva]?.imageUrl;
+    const atual = versoes[versaoAtiva];
     if (!atual || !revisionPrompt.trim() || generating) return;
-    void requestGeneration(answers, { referenceImageUrl: atual, revisionPrompt: revisionPrompt.trim() });
+    void requestGeneration(answers, {
+      referenceImageUrl: atual.imageUrl,
+      cenaUrl: atual.cenaUrl,
+      condensadoraUrl: atual.condensadoraUrl,
+      revisionPrompt: revisionPrompt.trim(),
+    });
   }, [answers, versoes, versaoAtiva, generating, requestGeneration, revisionPrompt]);
 
   const gerarCondensadora = useCallback(
-    async (tipo: "telhado" | "laje_tecnica" | "sacada_tecnica") => {
+    async (tipo: LocalCondensadora) => {
       setCondensadoraTipo(tipo);
       setCondensadoraLoading(true);
       setCondensadoraImageUrl(null);
@@ -293,7 +286,11 @@ function ChatbotPageInner() {
         const res = await fetch("/api/generate-image/condensadora-local", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tipoLocal: tipo, productImageUrl, distanciaTexto: answers.unidade_externa || null }),
+          body: JSON.stringify({
+            tipoLocal: tipo,
+            productImageUrl,
+            distanciaTexto: answers.distancia_condensadora || answers.unidade_externa || null,
+          }),
         });
         const data = await res.json();
         if (!res.ok || data.error) {
@@ -307,7 +304,7 @@ function ChatbotPageInner() {
         setCondensadoraLoading(false);
       }
     },
-    [productImageUrl, answers.unidade_externa, toast]
+    [productImageUrl, answers.distancia_condensadora, answers.unidade_externa, toast]
   );
 
   const handleDownloadCondensadora = useCallback(async () => {
@@ -572,6 +569,7 @@ function ChatbotPageInner() {
                   answers={rascunho}
                   onChangeAnswer={(chave, valor) => setRascunho((r) => ({ ...r, [chave]: valor }))}
                   onConfirmProduto={handleRascunhoProduto}
+                  alertas={alertasInstalacao({ ...answers, ...rascunho })}
                   disabled={generating}
                 />
               )}

@@ -6,7 +6,7 @@ import { planoAnotacoes, legendaInfraNo, svgDasLinhas } from "./preview-annotati
 import { tubulacaoPeloModelo, type DadosOverlay } from "./previa-tipos";
 import { nomeComMarca, semPontoFinal } from "./texto-previa";
 import { CONDENSADORA_BULLETS } from "@/constants/hvac-standards";
-import { AZUL, CLARO, CINZA, RODAPE_LEGAL } from "@/constants/arcil-brand";
+import { AZUL, CLARO, CINZA, PRANCHA, RODAPE_LEGAL } from "@/constants/arcil-brand";
 
 export type { DadosOverlay } from "./previa-tipos";
 
@@ -22,8 +22,8 @@ export type { DadosOverlay } from "./previa-tipos";
  * O modelo de imagem desenha só a cena. Todo texto aqui é vetor (satori, fonte
  * local): modelo de imagem já escreveu "2,80m" onde o vendedor respondeu 2,70.
  */
-export const ALTURA_PRANCHA = 1600;
-export const LARGURA_FAIXA = 600;
+export const ALTURA_PRANCHA = PRANCHA.altura;
+export const LARGURA_FAIXA = PRANCHA.larguraFaixa;
 
 const FAIXA_FUNDO = "#0B1220";
 const CARTAO_FUNDO = "#121B2C";

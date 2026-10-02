@@ -83,3 +83,8 @@ export const SELO_APROVACAO = {
   titulo: "POSICIONAMENTO ILUSTRATIVO PARA APROVAÇÃO",
   corpo: "Instalação conforme orientação do fabricante.",
 } as const;
+
+/** Medidas da prancha (foto + faixa lateral). Ficam aqui, e não no compositor,
+ *  porque a tela também precisa delas: o comparador antes/depois sobrepõe a
+ *  foto original só na parte da prancha que é foto. */
+export const PRANCHA = { altura: 1600, larguraFaixa: 600 } as const;
