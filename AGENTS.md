@@ -56,7 +56,6 @@ src/
       admin/users/, admin/users/[id]/, admin/leads/[id]/, admin/activity/
       agents/summary/, agents/[id]/conversations/
       atendimento/inboxes/, atendimento/conversations/[id]/messages/
-      chat/                        → GPT-4o conversação do chatbot
       check-result/
       cobranca/disparo/            → valida telefones, chama o Python, confere gravação
       cobranca/financial-handoffs/
@@ -252,12 +251,14 @@ Abas de `/cobranca`: Disparar · Logs · Financeiro (board de handoff) · Follow
 
 ## Fluxo do Chatbot (Gerador de Imagem AC)
 
-1. Usuário envia foto da parede → upload direto para bucket `chatbot-images` via Supabase JS client
-2. GPT-4o (via `/api/chat`) conduz conversa e coleta: modelo, pé direito, ponto elétrico, unidade externa, tubulação
-3. Quando tudo coletado, `/api/chat` retorna `readyToGenerate: true` (sinalizado pelo `##READY##` no response)
-4. `/api/generate-image` extrai dados estruturados + analisa imagem com Vision + chama n8n webhook
-5. n8n monta o prompt (código, sem LLM), gera a imagem no Seedream, salva no bucket `PDF/{lead_id}`, responde via "Respond to Webhook"
-6. URL retornada é exibida no chat com opção de download
+1. Wizard em grupos (`_components/step-groups.ts`): ambiente + produto do ERP, foto (upload direto para `chatbot-images`), marcação, e perguntas técnicas **só de opção fixa ou medida** — texto livre já levou "NAO SEI DIZER" para a imagem do cliente. `lib/alertas-instalacao.ts` mostra avisos de garantia na hora (tensão × aparelho, dreno com bomba, obstáculo perto do aparelho, ponto a executar).
+2. `/api/generate-image` analisa a foto com visão, chama o n8n da cena principal **e** o da condensadora (`lib/server/cena-condensadora.ts`) em paralelo.
+3. O inspetor (`lib/server/inspetor-cena.ts`) confere a cena: ambiente preservado, infra por dentro (raio-x), aparelho igual ao produto, sem letra. Reprovou → gera de novo **uma vez só** (teto de custo, ~R$ 1,65 por prévia; pior caso ~R$ 2,45).
+4. `lib/server/preservar-foto.ts` devolve os pixels da foto original fora da zona da instalação (pula se a cena veio reenquadrada — `LIMIAR_DESALINHO`, ver log `[preservarFoto]`).
+5. `installation-overlay.ts` compõe a **prancha Arcil**: foto à esquerda (só legendas presas ao aparelho por cima) + faixa fixa de 600 px à direita (condensadora, modelo, cuidados de garantia, QR, "Imagem gerada pela IA da Arcil"), sempre 1600 px de altura.
+6. A resposta traz `cenaUrl` (cena crua) e `condensadoraUrl`: um ajuste manda as duas de volta, para o modelo não receber a faixa como referência e a condensadora não ser paga de novo.
+
+Nota de garantia por marca (`brand_warranty_notes`) só aparece com `origem = 'manual'`. As linhas `ia` antigas ficam no banco e são ignoradas.
 
 ### Marcação na foto
 
@@ -268,7 +269,7 @@ A marcação alimenta dois destinos com precisões diferentes:
 - **imagem-guia** (`lib/server/guide-mask.ts`): a foto com retângulo magenta / linha ciano / ponto amarelo desenhados por cima, mandada como uma imagem a mais pro Gemini. Modelo de imagem obedece máscara visual; não obedece coordenada escrita. As cores são impossíveis num ambiente residencial de propósito, e o prompt do n8n proíbe reproduzi-las na saída.
 - **âncora exata** da camada vetorial (`lib/server/preview-annotations.ts`): callouts com linha de chamada, cotas, rota colorida e fluxo de ar caem no lugar que o vendedor marcou.
 
-Pular a marcação é sempre permitido: sem ela a prévia usa o layout antigo (título + 4 cards), que não depende de saber onde o aparelho está na cena.
+Pular a marcação é sempre permitido: sem ela a prancha sai sem as legendas presas ao aparelho e sem a preservação da foto (não há zona da instalação conhecida).
 
 ### Divisão de responsabilidade (não quebrar)
 
