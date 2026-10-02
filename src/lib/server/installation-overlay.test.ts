@@ -79,6 +79,16 @@ describe("comporPrevia (prancha)", () => {
     expect(meta.width).toBe(900 + LARGURA_FAIXA);
   }, 30_000);
 
+  it("retrato com marcação de cassete (formato da prévia real de 2026-10-02)", async () => {
+    const meta = await render(
+      "prancha-retrato-cassete",
+      { ...COM_MARCACAO, tipoEquipamento: "Cassete", peDireito: "0,80 m", marcacao: { caixa: { x: 0.33, y: 0.12, w: 0.36, h: 0.1 }, rota: [{ x: 0.3, y: 0.15 }, { x: 0.0, y: 0.16 }] } },
+      730,
+      912
+    );
+    expect(meta.height).toBe(ALTURA_PRANCHA);
+  }, 30_000);
+
   it("com cena da condensadora", async () => {
     const cond = await sharp({ create: { width: 800, height: 600, channels: 3, background: "#7a8a99" } }).jpeg().toBuffer();
     const meta = await render(

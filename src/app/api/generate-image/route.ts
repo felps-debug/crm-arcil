@@ -329,15 +329,11 @@ export async function POST(request: NextRequest) {
     nome: collectedData.modelo,
   });
   const regrasInstalacao = equipmentSpecs.regra;
-  // Raio-x padronizado vai junto da diretriz que o prompt do n8n já consome,
-  // e também em campo próprio (`estilo_infra`) para quem quiser usá-lo à parte.
+  // Raio-x padronizado: o nó MONTA PROMPT SEEDREAM usa `estilo_infra` como a
+  // regra de infraestrutura (substitui as regras antigas de "volume fantasma" e
+  // "canaleta opaca", que contradiziam o pedido de mostrar a infra por dentro).
   const raioX = diretrizRaioX(String(collectedData.tipo_equipamento ?? ""), typeof collectedData.tubulacao === "string" ? collectedData.tubulacao : null);
-  const technicalGuidance = [
-    comDiretrizNbr(collectedData.tipo_equipamento, equipmentGuidance(collectedData.tipo_equipamento), equipmentSpecs),
-    raioX,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const technicalGuidance = comDiretrizNbr(collectedData.tipo_equipamento, equipmentGuidance(collectedData.tipo_equipamento), equipmentSpecs);
   const revisionInstruction = revisionPrompt?.trim()
     ? `AJUSTE SOLICITADO PELO USUÁRIO: ${revisionPrompt.trim()}`
     : null;

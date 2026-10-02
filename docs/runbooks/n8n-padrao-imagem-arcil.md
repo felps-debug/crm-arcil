@@ -6,24 +6,22 @@ n8n não for alterado, mas duas partes só ficam completas com os ajustes abaixo
 > **Antes de editar:** recarregue a aba do editor do n8n. Salvar de uma aba aberta
 > antes de uma alteração via API sobrescreve tudo (já sumiu um ramo inteiro assim).
 
-## 1. Cena principal — raio-x da infraestrutura
+## 1. Cena principal — feito em 2026-10-02
 
-Workflow `PVtyGZ6gQrBABe83`, grupo do `Webhook` de path `6fdf0bcb-…`.
+Workflow `PVtyGZ6gQrBABe83` ("GERAÇÃO DE IMAGEM VENDEDOR").
 
-O CRM agora acrescenta a instrução de raio-x padronizada (canaleta, parede ou forro
-translúcidos, mesma cor e transparência sempre, nenhuma letra) **no fim de
-`equipment_guidance`**, e manda a mesma frase sozinha em `estilo_infra`.
+- **Edit Fields2** repassa `estilo infra` (de `estilo_infra`, enviado pelo CRM).
+- **MONTA PROMPT SEEDREAM**: quando `estilo infra` vem, ele É a regra de
+  infraestrutura (raio-x padronizado do CRM, `lib/server/diretriz-raio-x.ts`). As
+  regras antigas ("volume fantasma" do forro, "canaleta opaca sem cobre visível")
+  ficam só como fallback — eram elas que faziam o cassete sair pendurado e a
+  canaleta esconder a tubulação.
+- Geometria do forro: só o painel aparece, rente ao forro; o corpo do cassete fica
+  escondido acima dele, nunca pendurado.
 
-Conferir numa execução real:
-
-1. Abrir a última execução e o nó **MONTA PROMPT SEEDREAM**.
-2. Procurar no prompt final a frase `X-ray style is always the same`.
-3. Se **não** estiver lá, o nó não usa `equipment_guidance`. Acrescentar ao fim da
-   string do prompt:
-
-   ```js
-   ${$json.body.estilo_infra ?? ''}
-   ```
+O nó do Seedream (`HTTP Request1`) tem timeout de 180 s, mas a BytePlus às vezes
+derruba a conexão por volta de 60 s (`ECONNRESET`). O CRM trata: se a nova tentativa
+falhar, entrega a anterior com aviso.
 
 ## 2. Condensadora — feito em 2026-10-02
 

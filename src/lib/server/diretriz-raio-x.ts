@@ -17,7 +17,9 @@ export function diretrizRaioX(tipo: string, tubulacao: string | null): string {
   const tub = (tubulacao ?? "").toLowerCase();
   let caso: string;
   if (t === "cassete" || t === "dutado" || tub.includes("forro")) {
-    caso = "Show the infrastructure running above the ceiling: the plaster/PVC ceiling becomes translucent over the route (x-ray).";
+    caso =
+      "Only the square grille panel of the indoor unit is visible, flush with the ceiling; the unit body stays hidden above the ceiling, never hanging below it. " +
+      "Show the infrastructure running above the ceiling: the plaster/PVC/wood ceiling becomes translucent only over the pipe route (x-ray cut-away).";
   } else if (tub.includes("sem canaleta")) {
     // Antes de "canaleta": "sem canaleta" também contém a palavra.
     caso = "Show the insulated pipes, drain and cable exposed on the wall, neatly bundled and fixed with white clamps, no duct.";

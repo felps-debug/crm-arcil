@@ -330,43 +330,49 @@ type Callout = {
   alvo: Ponto | null;
 };
 
-function calloutNo(c: Callout): No {
+function calloutNo(c: Callout, escala: number): No {
+  const alinhamento = c.align === "center" ? "center" : c.align === "right" ? "flex-end" : "flex-start";
+  const padX = 7 * escala;
   return el(
     "div",
-    {
-      position: "absolute",
-      left: c.left,
-      top: c.top,
-      width: c.width,
-      flexDirection: "column",
-      alignItems: c.align === "center" ? "center" : c.align === "right" ? "flex-end" : "flex-start",
-    },
+    { position: "absolute", left: c.left, top: c.top, width: c.width, flexDirection: "column", alignItems: alinhamento },
+    // Fundo escuro translúcido do tamanho do texto: sombra sozinha não segura
+    // contraste sobre janela, planta ou estante (prévia real de 2026-10-02).
     el(
       "div",
-      { fontSize: 13, fontWeight: 700, color: c.cor, letterSpacing: 0.7, textShadow: SOMBRA_TEXTO, textAlign: c.align, lineHeight: 1.25 },
-      c.titulo
-    ),
-    c.corpo
-      ? el(
-          "div",
-          {
-            fontSize: 12,
-            color: CLARO,
-            marginTop: 3,
-            lineHeight: 1.35,
-            textShadow: SOMBRA_TEXTO,
-            textAlign: c.align,
-            width: c.width,
-            // `textAlign` sozinho não alinha corpo de UMA linha: o nó é um
-            // container flex de largura fixa, e o satori posiciona o texto
-            // dentro dele por `justifyContent`, não por `textAlign` (que só
-            // atua quando o texto quebra em várias linhas). Sem isto, "2,70 m"
-            // saía grudado na esquerda embaixo de um título alinhado à direita.
-            justifyContent: c.align === "right" ? "flex-end" : c.align === "center" ? "center" : "flex-start",
-          },
-          c.corpo
-        )
-      : null
+      {
+        flexDirection: "column",
+        alignItems: alinhamento,
+        maxWidth: c.width,
+        background: "rgba(6,12,22,0.58)",
+        borderRadius: 6 * escala,
+        padding: `${4 * escala}px ${padX}px`,
+      },
+      el(
+        "div",
+        { fontSize: 13 * escala, fontWeight: 700, color: c.cor, letterSpacing: 0.7, textShadow: SOMBRA_TEXTO, textAlign: c.align, lineHeight: 1.25 },
+        c.titulo
+      ),
+      c.corpo
+        ? el(
+            "div",
+            {
+              fontSize: 12 * escala,
+              color: CLARO,
+              marginTop: 3 * escala,
+              lineHeight: 1.35,
+              textShadow: SOMBRA_TEXTO,
+              textAlign: c.align,
+              maxWidth: c.width - padX * 2,
+              // `textAlign` sozinho não alinha corpo de UMA linha: o satori
+              // posiciona o texto por `justifyContent`. Sem isto, "2,70 m" saía
+              // grudado na esquerda embaixo de um título alinhado à direita.
+              justifyContent: alinhamento,
+            },
+            c.corpo
+          )
+        : null
+    )
   );
 }
 
@@ -473,7 +479,9 @@ export function planoAnotacoes(
   if (legendasPeloModelo(d.modoInfra)) return { linhas: "", nos: [] };
 
   const familia = familiaDe(d.tipoEquipamento);
-  const escala = Math.min(W, H) / 1024;
+  // Na prancha a foto vai a 1600 px de altura e a imagem é vista no celular:
+  // a escala antiga deixava as legendas ilegíveis.
+  const escala = (Math.min(W, H) / 1024) * (opcoes.prancha ? 1.4 : 1);
 
   const caixa: Caixa = {
     cx: (m.caixa.x + m.caixa.w / 2) * W,
@@ -484,7 +492,8 @@ export function planoAnotacoes(
 
   const linhas: string[] = [];
   const margem = W * FAIXA.margemFrac;
-  const larguraCallout = W * 0.2;
+  // Mais largo na prancha: o texto cresceu junto com a escala.
+  const larguraCallout = W * (opcoes.prancha ? 0.27 : 0.2);
   const larguraCards = W * 0.21;
   const xCards = ladoTexto === 1 ? margem : W - margem - larguraCards;
   const xTexto = ladoTexto === 1 ? W - margem - larguraCallout : margem;
@@ -618,7 +627,7 @@ export function planoAnotacoes(
         `<line x1="${x.toFixed(1)}" y1="${(yCota - (acima ? -traco : traco)).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(yCota + (acima ? -traco : traco) * 0.4).toFixed(1)}" stroke="rgba(242,246,252,0.6)" stroke-width="1"/>`
       );
     }
-    const larguraRotulo = W * 0.075;
+    const larguraRotulo = W * 0.12;
     const leftRotulo = clamp(x2 + W * 0.008, margem, W - margem - larguraRotulo);
     callouts.push({
       left: leftRotulo,
@@ -751,7 +760,7 @@ export function planoAnotacoes(
     linhas.push(chamadaOrtogonal(saida, c.alvo));
   }
 
-  return { linhas: linhas.join(""), nos: callouts.map(calloutNo) };
+  return { linhas: linhas.join(""), nos: callouts.map((c) => calloutNo(c, escala)) };
 }
 
 /** Legenda de cores da infraestrutura, no formato da referência aprovada:
