@@ -38,9 +38,18 @@ export type DadosOverlay = {
   /** Bullets de garantia/instalação específicos do tipo de equipamento,
    *  vindos de `HVAC_STANDARDS[tipo].recomendacoes_garantia`. */
   recomendacoesGarantia: string[];
-  /** Resposta livre do vendedor pra "onde ficará a unidade externa e a que
-   *  distância aproximada" — alimenta o mini-esquema da condensadora. */
+  /** Rótulo do local escolhido ("Telhado", "Chão (base)") — ou o texto livre
+   *  antigo, em gerações anteriores ao local virar escolha. */
   unidadeExterna: string | null;
+  /** "8 m" — distância entre evaporadora e condensadora. */
+  distanciaCondensadora: string | null;
+  /** Cena ilustrativa da condensadora (JPEG em data URL). `null` = a moldura
+   *  mostra os afastamentos mínimos em texto. */
+  cenaCondensadoraBase64: string | null;
+  /** Alertas de `alertasInstalacao()` — entram no topo do card de garantia. */
+  alertas: string[];
+  dreno: string | null;
+  tensao: string | null;
   /** Uma das 3 opções fixas da pergunta "acima/abaixo/mesmo nível do
    *  ambiente" — decide a posição da condensadora no mini-esquema. */
   nivelCondensadora: string | null;
@@ -59,9 +68,6 @@ export type DadosOverlay = {
   qrEhManual?: boolean;
   /** Quem desenha o quê na prévia. Ver `ModoInfra`. */
   modoInfra?: ModoInfra;
-  /** Força o layout V2 nesta composição, independentemente da feature flag.
-   *  Existe para o comparativo lado a lado da mesma cena. */
-  forcarV2?: boolean;
 };
 
 /**

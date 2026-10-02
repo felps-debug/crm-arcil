@@ -457,7 +457,14 @@ function alturaCallout(titulo: string, corpo: string | null, largura: number, es
  * @param W,H tamanho em pixels da cena já gerada (o modelo de imagem devolve
  *   num tamanho que não escolhemos — por isso a marcação é fração, não pixel).
  */
-export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: number, ladoTexto: 1 | -1): PlanoAnotacoes {
+export function planoAnotacoes(
+  d: DadosOverlay,
+  m: Marcacao,
+  W: number,
+  H: number,
+  ladoTexto: 1 | -1,
+  opcoes: { prancha?: boolean } = {}
+): PlanoAnotacoes {
   // Em `gemini_3d` o Gemini já desenhou EVAPORADORA, cota, LIGAÇÃO ATÉ
   // CONDENSADORA, FORRO ATÉ LAJE e FLUXO DE AR direto na cena (prompt do
   // n8n) -- desenhar de novo aqui duplicaria o texto, desalinhado com o que
@@ -483,15 +490,19 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   const xTexto = ladoTexto === 1 ? W - margem - larguraCallout : margem;
 
   const aloc = new Alocador(W, H, margem);
-  // Coluna de cards e rodapé institucional: território de quem desenha depois.
-  aloc.reservar({ x: xCards - W * 0.015, y: 0, w: larguraCards + W * 0.03, h: H * 0.66 });
-  // A moldura institucional do rodapé não é uma faixa cheia: são três blocos
-  // com espaço livre entre eles. Reservar a faixa inteira custava três callouts
-  // por prévia — some informação que o vendedor marcou por causa de área que
-  // ninguém ocupa.
-  aloc.reservar({ x: 0, y: H * 0.77, w: W * 0.32, h: H * 0.17 });                    // selo de aprovação
-  aloc.reservar({ x: W * 0.7, y: H * 0.68, w: W * 0.3, h: H * 0.27 });               // card de lembretes
-  aloc.reservar({ x: 0, y: H * 0.93, w: W, h: H * 0.07 });                           // logo, QR e rodapé legal
+  // Na prancha a moldura mora numa faixa ao lado da foto — nada dela cai sobre
+  // a cena, então nenhuma área precisa ser reservada para ela.
+  if (!opcoes.prancha) {
+    // Coluna de cards e rodapé institucional: território de quem desenha depois.
+    aloc.reservar({ x: xCards - W * 0.015, y: 0, w: larguraCards + W * 0.03, h: H * 0.66 });
+    // A moldura institucional do rodapé não é uma faixa cheia: são três blocos
+    // com espaço livre entre eles. Reservar a faixa inteira custava três callouts
+    // por prévia — some informação que o vendedor marcou por causa de área que
+    // ninguém ocupa.
+    aloc.reservar({ x: 0, y: H * 0.77, w: W * 0.32, h: H * 0.17 });                    // selo de aprovação
+    aloc.reservar({ x: W * 0.7, y: H * 0.68, w: W * 0.3, h: H * 0.27 });               // card de lembretes
+    aloc.reservar({ x: 0, y: H * 0.93, w: W, h: H * 0.07 });                           // logo, QR e rodapé legal
+  }
   // O próprio equipamento, com folga: nenhum texto pode cair em cima dele.
   aloc.reservar({
     x: caixa.cx - caixa.w * 0.62,
@@ -551,7 +562,7 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   // atravessada pelas próprias linhas que ela explica é ilegível.
   const folgaCards = W * 0.022;
   const bordaCards = ladoTexto === 1 ? xCards + larguraCards + folgaCards : xCards - folgaCards;
-  const rotaVisivel = recortarNaColuna(rotaPx, bordaCards, ladoTexto === 1 ? 1 : -1);
+  const rotaVisivel = opcoes.prancha ? rotaPx : recortarNaColuna(rotaPx, bordaCards, ladoTexto === 1 ? 1 : -1);
   // Em `modelo_3d` o modelo já desenhou a tubulação em volume, com sombra, na
   // cena — desenhar o feixe por cima duplica a mesma informação em duas
   // linguagens (o erro que o layout do cassete comercial também evita). A

@@ -48,3 +48,12 @@ describe("planoAnotacoes por modo de infraestrutura", () => {
     expect(plano.nos).toHaveLength(0);
   });
 });
+
+describe("planoAnotacoes em modo prancha", () => {
+  it("não reserva coluna de cards: cabe pelo menos o mesmo número de callouts", () => {
+    const normal = planoAnotacoes({ ...DADOS, modoInfra: "modelo_3d" }, MARCACAO, W, H, -1);
+    const prancha = planoAnotacoes({ ...DADOS, modoInfra: "modelo_3d" }, MARCACAO, W, H, -1, { prancha: true });
+    expect(titulos(prancha.nos)).toContain("EVAPORADORA");
+    expect(prancha.nos.length).toBeGreaterThanOrEqual(normal.nos.length);
+  });
+});
