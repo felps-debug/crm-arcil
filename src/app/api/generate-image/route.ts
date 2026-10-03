@@ -7,6 +7,7 @@ import { SUPABASE_URL, OPENAI_API_KEY, N8N_CHATBOT_WEBHOOK, N8N_CONDENSADORA_WEB
 import { assertEnv } from "@/lib/server/env-guard";
 import { openAI, MODELO_TEXTO } from "@/lib/server/openai";
 import { preservarFoto } from "@/lib/server/preservar-foto";
+import { recortarBordasBrancas } from "@/lib/server/imagem-produto";
 import { detectarVazamentoDaGuia } from "@/lib/server/vazamento-guia";
 import { inspecionarCena, deveRegenerar, motivoDaInspecao, type ResultadoInspecao } from "@/lib/server/inspetor-cena";
 import { diretrizRaioX } from "@/lib/server/diretriz-raio-x";
@@ -625,6 +626,9 @@ export async function POST(request: NextRequest) {
   const peDireitoFormatado = typeof collectedData.pe_direito === "string" ? formatarMetros(collectedData.pe_direito) : null;
   const qr = await destinoDoQr(supabase, typeof collectedData.marca === "string" ? collectedData.marca : null);
   const condensadoraFinalUrl = await condensadoraPromise;
+  // Só o card MODELO recebe a foto recortada; o modelo de imagem e o inspetor
+  // já usaram a original.
+  const produtoCardBase64 = productImageBase64 ? await recortarBordasBrancas(productImageBase64) : null;
   const cenaCondensadoraBase64 = condensadoraFinalUrl ? await fetchImagemBase64(condensadoraFinalUrl, 1024) : null;
 
   const finalImageUrl = await comporEEnviar(generatedImageUrl, cenaBuffer, fotoBuffer, leadId, {
@@ -642,7 +646,7 @@ export async function POST(request: NextRequest) {
     alturaGabineteCm: equipmentSpecs.dimensoes.altura_cm,
     larguraGabineteCm: equipmentSpecs.dimensoes.largura_cm,
     origemDimensoes: equipmentSpecs.origemDimensoes,
-    produtoImagemBase64: productImageBase64 ? `data:image/jpeg;base64,${productImageBase64}` : null,
+    produtoImagemBase64: produtoCardBase64 ? `data:image/jpeg;base64,${produtoCardBase64}` : null,
     recomendacoesGarantia: regrasInstalacao.recomendacoes_garantia,
     unidadeExterna: typeof collectedData.unidade_externa === "string" && collectedData.unidade_externa.trim() ? collectedData.unidade_externa.trim() : null,
     nivelCondensadora: typeof collectedData.nivel_condensadora === "string" ? collectedData.nivel_condensadora : null,

@@ -65,6 +65,20 @@ function cartao(...filhos: (No | null)[]): No {
   );
 }
 
+/** Itens que o card de garantia vai mostrar: alertas primeiro, no máximo 7 no
+ *  total. Mesma conta usada para encolher as fotos quando a lista é longa. */
+function itensGarantia(d: DadosOverlay): { alertas: string[]; recomendacoes: string[] } {
+  const alertas = d.alertas.slice(0, 4);
+  return { alertas, recomendacoes: d.recomendacoesGarantia.slice(0, Math.max(0, 7 - alertas.length)) };
+}
+
+/** Altura fixa da faixa: com muitos itens de garantia, as duas fotos encolhem
+ *  para o rodapé (QR e assinatura da IA) nunca sair cortado. */
+function faixaApertada(d: DadosOverlay): boolean {
+  const { alertas, recomendacoes } = itensGarantia(d);
+  return alertas.length + recomendacoes.length > 5;
+}
+
 /** Janela é peça única: não tem condensadora separada. */
 function cartaoCondensadora(d: DadosOverlay): No | null {
   if (d.tipoEquipamento.trim().toLowerCase() === "janela") return null;
@@ -82,7 +96,12 @@ function cartaoCondensadora(d: DadosOverlay): No | null {
       ? el(
           "div",
           { flexDirection: "column" },
-          img(d.cenaCondensadoraBase64, { width: MIOLO_CARTAO, height: Math.round(MIOLO_CARTAO * 0.62), objectFit: "cover", borderRadius: 8 }),
+          img(d.cenaCondensadoraBase64, {
+            width: MIOLO_CARTAO,
+            height: Math.round(MIOLO_CARTAO * (faixaApertada(d) ? 0.46 : 0.62)),
+            objectFit: "cover",
+            borderRadius: 8,
+          }),
           el("div", { fontSize: 15, fontStyle: "italic", color: CINZA, marginTop: 8 }, "Ilustração: forma correta de instalação")
         )
       : // Sem cena (n8n falhou ou não conhece o local): os afastamentos mínimos
@@ -99,7 +118,9 @@ function cartaoCondensadora(d: DadosOverlay): No | null {
 
 /** O nome é exatamente o do catálogo do ERP — nunca reescrito por IA. */
 function cartaoModelo(d: DadosOverlay): No {
-  const alturaFoto = Math.round(MIOLO_CARTAO * 0.42);
+  // Alto o bastante para o kit (evaporadora + condensadora + controle), que é
+  // mais alto que largo depois do recorte das bordas brancas.
+  const alturaFoto = Math.round(MIOLO_CARTAO * (faixaApertada(d) ? 0.38 : 0.6));
   return cartao(
     titulo("MODELO"),
     d.produtoImagemBase64
@@ -128,8 +149,7 @@ function itemIcone(icone: string, texto: string, cor: string): No {
 function cartaoGarantia(d: DadosOverlay): No | null {
   // Alertas primeiro: são o que muda de uma instalação para outra. No máximo 7
   // linhas no total, para a faixa nunca estourar a altura fixa.
-  const alertas = d.alertas.slice(0, 4);
-  const recomendacoes = d.recomendacoesGarantia.slice(0, Math.max(0, 7 - alertas.length));
+  const { alertas, recomendacoes } = itensGarantia(d);
   if (alertas.length === 0 && recomendacoes.length === 0) return null;
   return cartao(
     titulo("CUIDADOS PARA A GARANTIA"),

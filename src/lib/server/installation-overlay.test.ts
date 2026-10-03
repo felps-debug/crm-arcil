@@ -100,6 +100,29 @@ describe("comporPrevia (prancha)", () => {
     expect(meta.height).toBe(ALTURA_PRANCHA);
   }, 30_000);
 
+  it("pior caso da faixa: condensadora, foto do produto, 4 alertas e recomendações", async () => {
+    const jpeg = (w: number, h: number, cor: string) =>
+      sharp({ create: { width: w, height: h, channels: 3, background: cor } }).jpeg().toBuffer();
+    const meta = await render(
+      "prancha-pior-caso",
+      {
+        ...COM_MARCACAO,
+        cenaCondensadoraBase64: `data:image/jpeg;base64,${(await jpeg(800, 600, "#7a8a99")).toString("base64")}`,
+        produtoImagemBase64: `data:image/jpeg;base64,${(await jpeg(400, 300, "#d0d4d8")).toString("base64")}`,
+        alertas: [
+          "Tensão do ponto (127 V) diferente da do aparelho (220 V): adequar antes de instalar.",
+          "Manter afastamento mínimo do aparelho: teto mín. 15 cm, laterais mín. 15 cm a 30 cm.",
+          "Instalar bomba de dreno compatível com o aparelho.",
+          "Executar ponto elétrico exclusivo, com disjuntor dedicado e aterramento.",
+        ],
+        recomendacoesGarantia: ["Tubulação frigorígena de cobre 100% isolada individualmente", "Teste de vácuo abaixo de 500 microns obrigatório", "Disjuntor exclusivo e aterramento elétrico obrigatório"],
+      },
+      1536,
+      864
+    );
+    expect(meta.height).toBe(ALTURA_PRANCHA);
+  }, 30_000);
+
   it("cassete com vários alertas não estoura a faixa", async () => {
     const meta = await render(
       "prancha-cassete",

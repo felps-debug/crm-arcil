@@ -713,7 +713,9 @@ export function planoAnotacoes(
       linhas.push(setaDuplaVertical(xPe, yTopo, yBase, CLARO));
       aloc.reservar({ x: xPe - W * 0.012, y: yTopo, w: W * 0.024, h: yBase - yTopo });
     }
-    empurrar(familia === "forro" ? "ALTURA LAJE-FORRO" : "PÉ-DIREITO APROX.", d.peDireito, CLARO, null, [{ x: xTexto, y: H * 0.29 }]);
+    // No forro a medida vai dentro de "FORRO ATÉ LAJE", lá embaixo: duas
+    // legendas para a mesma altura só disputavam espaço na foto.
+    if (familia !== "forro") empurrar("PÉ-DIREITO APROX.", d.peDireito, CLARO, null, [{ x: xTexto, y: H * 0.29 }]);
   }
 
   // --- Ligação até a condensadora -------------------------------------------
@@ -742,7 +744,11 @@ export function planoAnotacoes(
     // até o meio do aparelho, cruzando a cota de largura, e parecia medir algo.
     empurrar(
       familia === "forro" ? "FORRO ATÉ LAJE" : "DISTÂNCIA DO TETO",
-      familia === "forro" ? "Espaço técnico para unidade e infraestrutura." : `Afastamento mínimo até o teto: ${semPontoFinal(d.distanciaTeto.replace(/^m[ií]n\.?\s*/i, ""))}.`,
+      familia === "forro"
+        ? d.peDireito
+          ? `${d.peDireito} de espaço técnico para unidade e infraestrutura.`
+          : "Espaço técnico para unidade e infraestrutura."
+        : `Afastamento mínimo até o teto: ${semPontoFinal(d.distanciaTeto.replace(/^m[ií]n\.?\s*/i, ""))}.`,
       CLARO,
       null,
       [{ x: xTexto, y: H * 0.17 }]
