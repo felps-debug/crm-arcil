@@ -20,7 +20,7 @@ export type Versao = {
   condensadoraUrl?: string | null;
 };
 
-const CUSTO_APROX_GERACAO = "R$ 1,65";
+const CUSTO_APROX_GERACAO = "R$ 0,85 a R$ 1,65";
 const TIPOS_CONDENSADORA: [LocalCondensadora, string][] = [
   ["telhado", "No telhado"],
   ["laje_tecnica", "Laje técnica"],
@@ -191,7 +191,7 @@ export function ResultadoPainel({
             Gerar outra versao
           </ConsoleButton>
           <span className="text-[10px] text-[var(--text-muted)]">
-            {versoes.length} {versoes.length === 1 ? "geracao" : "geracoes"} nesta simulacao · ~{CUSTO_APROX_GERACAO} cada
+            {versoes.length} {versoes.length === 1 ? "geração" : "gerações"} nesta simulação · {CUSTO_APROX_GERACAO} cada
           </span>
         </div>
         <ConsoleButton icon={downloading ? Loader2 : Download} active onClick={onDownload} disabled={downloading}>

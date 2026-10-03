@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deveRegenerar, lerInspecao, motivoDaInspecao } from "./inspetor-cena";
+import { lerInspecao, motivoDaInspecao } from "./inspetor-cena";
 
 const OK = {
   ambiente_preservado: true,
@@ -19,19 +19,6 @@ describe("lerInspecao", () => {
   it("recusa campo faltando ou de tipo errado", () => {
     expect(lerInspecao(JSON.stringify({ ...OK, sem_texto: "sim" }))).toBeNull();
     expect(lerInspecao("não é json")).toBeNull();
-  });
-});
-
-describe("deveRegenerar", () => {
-  it("regenera por ambiente, infra, aparelho ou texto", () => {
-    expect(deveRegenerar(OK, "Split Hi-Wall")).toBe(false);
-    expect(deveRegenerar({ ...OK, sem_texto: false }, "Split Hi-Wall")).toBe(true);
-    expect(deveRegenerar({ ...OK, infra_por_dentro: false }, "Split Hi-Wall")).toBe(true);
-    expect(deveRegenerar({ ...OK, instalacao_correta: false }, "Cassete")).toBe(true);
-  });
-  it("posição errada só avisa; infra é ignorada na Janela", () => {
-    expect(deveRegenerar({ ...OK, posicao_confere: false }, "Split Hi-Wall")).toBe(false);
-    expect(deveRegenerar({ ...OK, infra_por_dentro: false }, "Janela")).toBe(false);
   });
 });
 

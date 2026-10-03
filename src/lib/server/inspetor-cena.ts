@@ -7,7 +7,8 @@ import { openAI, MODELO_TEXTO } from "./openai";
  * fora em vez de mostrada por dentro, aparelho genérico e letra escrita pelo
  * modelo ("EVAPORADora").
  *
- * Nunca bloqueia: falha da OpenAI devolve `null` e a geração segue.
+ * Só avisa o vendedor — nunca gera de novo sozinho (custo). Falha da OpenAI
+ * devolve `null` e a geração segue.
  */
 
 export type ResultadoInspecao = {
@@ -44,14 +45,6 @@ export function lerInspecao(bruto: string): ResultadoInspecao | null {
 }
 
 const ehJanela = (tipo: string) => tipo.trim().toLowerCase() === "janela";
-
-/** Posição fora do lugar só avisa: regenerar não garante acertar, e o
- *  vendedor pode preferir a cena mesmo assim. */
-export function deveRegenerar(r: ResultadoInspecao, tipo: string): boolean {
-  return (
-    !r.ambiente_preservado || !r.aparelho_confere || !r.sem_texto || !r.instalacao_correta || (!ehJanela(tipo) && !r.infra_por_dentro)
-  );
-}
 
 export function motivoDaInspecao(r: ResultadoInspecao, tipo: string): string | null {
   const falhas: string[] = [];

@@ -9,9 +9,9 @@ import { openAI, MODELO_TEXTO } from "@/lib/server/openai";
 import { preservarFoto } from "@/lib/server/preservar-foto";
 import { recortarBordasBrancas } from "@/lib/server/imagem-produto";
 import { detectarVazamentoDaGuia } from "@/lib/server/vazamento-guia";
-import { inspecionarCena, deveRegenerar, motivoDaInspecao, type ResultadoInspecao } from "@/lib/server/inspetor-cena";
+import { inspecionarCena, motivoDaInspecao, type ResultadoInspecao } from "@/lib/server/inspetor-cena";
 import { diretrizRaioX } from "@/lib/server/diretriz-raio-x";
-import { gerarCenaCondensadora } from "@/lib/server/cena-condensadora";
+import { cenaCondensadoraComCache } from "@/lib/server/cena-condensadora";
 import { alertasInstalacao, chaveDoLocal } from "@/lib/alertas-instalacao";
 import { ARCIL_WATERMARK_BADGE_BASE64, ARCIL_WATERMARK_BADGE_WIDTH, ARCIL_WATERMARK_BADGE_HEIGHT } from "@/lib/watermark-badge";
 import { comporPrevia } from "@/lib/server/installation-overlay";
@@ -388,12 +388,18 @@ export async function POST(request: NextRequest) {
   const productImageBase64 = await fetchProductImageBase64(productImageUrl);
 
   // Cena da condensadora em paralelo com a principal: o tempo total fica o da
-  // mais lenta, não a soma. Num ajuste, reaproveita a que já existe (custo).
+  // mais lenta, não a soma. Num ajuste, reaproveita a da versão anterior; fora
+  // dele, a do cache por produto + local (custo).
   const tipoLocal = chaveDoLocal(answers?.local_condensadora);
   const condensadoraPromise: Promise<string | null> = condensadoraUrl
     ? Promise.resolve(condensadoraUrl)
     : tipoLocal && N8N_CONDENSADORA_WEBHOOK
-      ? gerarCenaCondensadora({ leadId: `${leadId}-cond`, tipoLocal, productImageBase64 }).catch((err) => {
+      ? cenaCondensadoraComCache({
+          codigoErp: typeof collectedData.codigo_erp === "string" ? collectedData.codigo_erp : null,
+          tipoLocal,
+          productImageBase64,
+          leadIdSemCache: `${leadId}-cond`,
+        }).catch((err) => {
           console.error("[generate-image] cena da condensadora falhou:", err instanceof Error ? err.message : err);
           return null;
         })
@@ -405,21 +411,11 @@ export async function POST(request: NextRequest) {
   const primeiraString = (...valores: unknown[]): string | null =>
     valores.find((v): v is string => typeof v === "string" && v.length > 0) ?? null;
 
-  // Vazamento da guia (o retângulo magenta reproduzido na cena) é falha visível
-  // e indefensável perante o cliente — o prompt do n8n já proíbe, mas proibição
-  // não é garantia com IA de imagem. Em vez de só avisar depois de entregar,
-  // tenta gerar de novo (até 2 vezes) ANTES de compor e subir qualquer coisa.
-  // Sem marcação (ou sem guia) não há o que vazar, então roda uma vez só.
-  // Teto de custo: no máximo uma regeneração, seja por vazamento da guia, seja
-  // por reprovação do inspetor.
-  const MAX_TENTATIVAS_GERACAO = 2;
-  // Orçamento das gerações: a função tem 300 s (`maxDuration`), e antes e depois
-  // do laço ainda vêm a análise da foto e a composição da prancha. Uma geração
-  // leva ~55-75 s; uma segunda só começa se ainda couber inteira.
-  const inicioDasGeracoes = Date.now();
-  const ORCAMENTO_GERACOES_MS = 240_000;
-  const tempoRestante = () => ORCAMENTO_GERACOES_MS - (Date.now() - inicioDasGeracoes);
-  const cabeOutraTentativa = () => tempoRestante() > 90_000;
+  // UMA geração da cena principal por prévia, nunca mais que isso: o custo é
+  // teto fixo (~R$ 0,80 da cena + ~R$ 0,80 da condensadora, quando ela não
+  // está em cache). Vazamento da guia e reprovação do inspetor viram aviso
+  // para o vendedor; queda do Seedream vira erro com "Tentar novamente".
+  // Repetir é decisão dele, não da rota — já chegou a R$ 2,45 numa prévia.
   let cenaBuffer: Buffer | null = null;
   let inspecao: ResultadoInspecao | null = null;
   let generatedImageUrl: string | null = null;
@@ -554,73 +550,33 @@ export async function POST(request: NextRequest) {
     return { url: urlDestaTentativa };
   };
 
-  // Cena de uma tentativa anterior, guardada quando pedimos outra. Se a nova
-  // chamada falhar no n8n, entregamos esta — ela já foi paga, e uma prévia
-  // com aviso é melhor que nenhuma.
-  let reserva: { url: string; cena: Buffer | null; motivo: "vazamento" | "inspecao" } | null = null;
-  let regeneracaoFalhou = false;
+  const chamada = await chamarN8n(1, 240_000);
+  if ("erro" in chamada) return chamada.erro;
+  generatedImageUrl = chamada.url;
 
-  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_GERACAO; tentativa++) {
-    const chamada = await chamarN8n(tentativa, Math.min(240_000, Math.max(30_000, tempoRestante())));
-    if ("erro" in chamada) {
-      if (!reserva) {
-        // A BytePlus derruba a conexão (ECONNRESET) por volta de 50-60 s em
-        // parte das chamadas — 2 de 5 em 2026-10-02/03. Sem cena anterior para
-        // entregar, vale tentar de novo enquanto couber no tempo.
-        if (tentativa < MAX_TENTATIVAS_GERACAO && cabeOutraTentativa()) {
-          console.error(`[generate-image] tentativa ${tentativa} falhou no n8n; tentando de novo`);
-          continue;
-        }
-        return chamada.erro;
-      }
-      console.error(`[generate-image] tentativa ${tentativa} falhou no n8n; entregando a cena anterior`);
-      generatedImageUrl = reserva.url;
-      cenaBuffer = reserva.cena;
-      if (reserva.motivo === "vazamento") vazamentoPersistente = true;
-      regeneracaoFalhou = true;
-      break;
-    }
-    const urlDestaTentativa = chamada.url;
-
-    let cenaDestaTentativa: Buffer | null = null;
-    try {
-      const cenaRes = await fetch(urlDestaTentativa);
-      if (cenaRes.ok) cenaDestaTentativa = Buffer.from(await cenaRes.arrayBuffer());
-    } catch (err) {
-      console.error("[generate-image] não consegui reler a cena:", err instanceof Error ? err.message : err);
-    }
-
-    // Também é a última quando outra geração não caberia no tempo da função.
-    const ultima = tentativa === MAX_TENTATIVAS_GERACAO || !cabeOutraTentativa();
-    if (cenaDestaTentativa && marcacao && guideImageBase64 && (await detectarVazamentoDaGuia(cenaDestaTentativa, fotoBuffer))) {
-      console.error(`[generate-image] guia vazou na tentativa ${tentativa}/${MAX_TENTATIVAS_GERACAO}`);
-      if (!ultima) {
-        reserva = { url: urlDestaTentativa, cena: cenaDestaTentativa, motivo: "vazamento" };
-        continue;
-      }
-      vazamentoPersistente = true;
-    }
-
-    inspecao =
-      cenaDestaTentativa && fotoBuffer
-        ? await inspecionarCena({
-            foto: fotoBuffer,
-            cena: cenaDestaTentativa,
-            produto: productImageBase64 ? Buffer.from(productImageBase64, "base64") : null,
-            tipo: String(collectedData.tipo_equipamento ?? ""),
-            tubulacao: typeof collectedData.tubulacao === "string" ? collectedData.tubulacao : null,
-          })
-        : null;
-    if (inspecao && !ultima && !vazamentoPersistente && deveRegenerar(inspecao, String(collectedData.tipo_equipamento ?? ""))) {
-      console.error(`[generate-image] inspetor reprovou a tentativa ${tentativa}:`, inspecao.motivo);
-      reserva = { url: urlDestaTentativa, cena: cenaDestaTentativa, motivo: "inspecao" };
-      continue;
-    }
-
-    generatedImageUrl = urlDestaTentativa;
-    cenaBuffer = cenaDestaTentativa;
-    break;
+  try {
+    const cenaRes = await fetch(generatedImageUrl);
+    if (cenaRes.ok) cenaBuffer = Buffer.from(await cenaRes.arrayBuffer());
+  } catch (err) {
+    console.error("[generate-image] não consegui reler a cena:", err instanceof Error ? err.message : err);
   }
+
+  if (cenaBuffer && marcacao && guideImageBase64 && (await detectarVazamentoDaGuia(cenaBuffer, fotoBuffer))) {
+    console.error("[generate-image] guia vazou na cena");
+    vazamentoPersistente = true;
+  }
+
+  // Só avisa: regenerar sozinho dobrava o custo da prévia.
+  inspecao =
+    cenaBuffer && fotoBuffer
+      ? await inspecionarCena({
+          foto: fotoBuffer,
+          cena: cenaBuffer,
+          produto: productImageBase64 ? Buffer.from(productImageBase64, "base64") : null,
+          tipo: String(collectedData.tipo_equipamento ?? ""),
+          tubulacao: typeof collectedData.tubulacao === "string" ? collectedData.tubulacao : null,
+        })
+      : null;
 
   if (!generatedImageUrl) {
     return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
@@ -692,7 +648,7 @@ export async function POST(request: NextRequest) {
   if (vazamentoPersistente) {
     posicionamento = {
       ok: false,
-      mensagem: "A marcação da foto foi desenhada na imagem gerada mesmo após tentar novamente. Gere outra versão antes de enviar ao cliente.",
+      mensagem: "A marcação da foto foi desenhada na imagem gerada. Gere outra versão antes de enviar ao cliente.",
     };
   }
   // `null` com marcação = a conferência de posição também dependia da OpenAI.
@@ -702,10 +658,6 @@ export async function POST(request: NextRequest) {
     posicionamento = { ok: false, mensagem: posicionamento && !posicionamento.ok ? `${posicionamento.mensagem} ${aviso}` : aviso };
   }
 
-  if (regeneracaoFalhou) {
-    const aviso = "A segunda tentativa de geração falhou no n8n; esta é a primeira versão gerada.";
-    posicionamento = { ok: false, mensagem: posicionamento && !posicionamento.ok ? `${posicionamento.mensagem} ${aviso}` : aviso };
-  }
   const avisoInspecao = inspecao ? motivoDaInspecao(inspecao, String(collectedData.tipo_equipamento ?? "")) : null;
   if (avisoInspecao) {
     posicionamento = { ok: false, mensagem: posicionamento && !posicionamento.ok ? `${posicionamento.mensagem} ${avisoInspecao}` : avisoInspecao };
