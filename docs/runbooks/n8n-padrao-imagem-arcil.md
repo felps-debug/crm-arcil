@@ -19,9 +19,19 @@ Workflow `PVtyGZ6gQrBABe83` ("GERAÇÃO DE IMAGEM VENDEDOR").
 - Geometria do forro: só o painel aparece, rente ao forro; o corpo do cassete fica
   escondido acima dele, nunca pendurado.
 
-O nó do Seedream (`HTTP Request1`) tem timeout de 180 s, mas a BytePlus às vezes
-derruba a conexão por volta de 60 s (`ECONNRESET`). O CRM trata: se a nova tentativa
-falhar, entrega a anterior com aviso.
+**Queda do Seedream (`ECONNRESET`, mensagem `aborted`) — causa e correção, 2026-10-03.**
+`aborted` no Node só acontece quando o servidor já começou a responder e a conexão cai
+no meio do corpo (sem resposta nenhuma seria `socket hang up`). Nas 6 gerações do
+histórico, as 2 quedas aconteceram aos 53 s e 60 s — exatamente quando a imagem fica
+pronta — enquanto houve sucesso aos 72 s: não é tempo-limite fixo, é a transferência da
+imagem embutida (`b64_json`, ~0,9 MB de Singapura) que se partia. A imagem já tinha sido
+gerada e cobrada.
+
+Correção: `HTTP Request1` pede `response_format: "url"` (resposta de poucos bytes) e o
+nó novo **BAIXA IMAGEM SEEDREAM** baixa a imagem do link (vale 24 h) com até 4 tentativas
+— repetir o download não gera nem cobra de novo. Os nós `Edit Fields3` e
+`Convert to File2` saíram. Testado com uma geração real (execução 257273): link em
+137,7 s (carga da BytePlus), download em 4 s.
 
 ## 2. Condensadora — feito em 2026-10-02
 

@@ -283,11 +283,12 @@ O modelo de imagem desenha SÓ a cena física: sala, aparelho e — no modo padr
 
 ```
 Webhook → Edit Fields2 → MONTA PROMPT SEEDREAM (Code) → HTTP Request1 (Seedream 5.0 Pro)
-  → Edit Fields3 → Convert to File2 → COLOCA NO STORAGE3 → link da imagem2 → Respond to Webhook
+  → BAIXA IMAGEM SEEDREAM → COLOCA NO STORAGE3 → link da imagem2 → Respond to Webhook
 ```
 
 - **MONTA PROMPT SEEDREAM**: prompt montado por código a partir das respostas do vendedor (antes um GPT-5.1 fazia isso — a conta ficou sem crédito em 2026-09-24 e o gerador parou). Mesmas regras do roteiro antigo; imagens na ordem base → produto → referência da família → guia.
-- **HTTP Request1**: `POST https://ark.ap-southeast.bytepluses.com/api/v3/images/generations`, modelo `dola-seedream-5-0-pro-260628` (o flash é `dola-seedream-5-0-flash-260915`), credencial n8n **"Seedream (BytePlus ModelArk)"**, `size` no mesmo formato da foto base (o CRM desenha por cima em frações). Não aceita `sequential_image_generation`. ~55 s por imagem; o CRM espera até 240 s.
+- **HTTP Request1**: `POST https://ark.ap-southeast.bytepluses.com/api/v3/images/generations`, modelo `dola-seedream-5-0-pro-260628` (o flash é `dola-seedream-5-0-flash-260915`), credencial n8n **"Seedream (BytePlus ModelArk)"**, `size` no mesmo formato da foto base (o CRM desenha por cima em frações). Não aceita `sequential_image_generation`. 55-140 s por imagem (varia com a carga da BytePlus); o nó corta em 180 s e o CRM espera até 240 s.
+- **`response_format: "url"`, nunca `b64_json`**: com a imagem embutida na resposta (~0,9 MB vindo de Singapura), a conexão caía no meio da transferência (`ECONNRESET` / `aborted`, 2 de 6 chamadas em 2026-10-02/03) e a imagem — já gerada e cobrada — se perdia. Com o link, **BAIXA IMAGEM SEEDREAM** baixa a imagem em separado, com até 4 tentativas, sem gerar de novo (o link vale 24 h).
 
 **Armadilha:** com o editor do n8n aberto numa aba, salvar de lá sobrescreve qualquer alteração feita via API depois que a aba foi aberta — o editor grava o estado inteiro que tem em memória. Um ramo inteiro (modo de ajuste) já sumiu assim. Recarregue a aba antes de editar manualmente.
 
