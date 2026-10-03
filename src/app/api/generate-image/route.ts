@@ -413,6 +413,13 @@ export async function POST(request: NextRequest) {
   // Teto de custo: no máximo uma regeneração, seja por vazamento da guia, seja
   // por reprovação do inspetor.
   const MAX_TENTATIVAS_GERACAO = 2;
+  // Orçamento das gerações: a função tem 300 s (`maxDuration`), e antes e depois
+  // do laço ainda vêm a análise da foto e a composição da prancha. Uma geração
+  // leva ~55-75 s; uma segunda só começa se ainda couber inteira.
+  const inicioDasGeracoes = Date.now();
+  const ORCAMENTO_GERACOES_MS = 240_000;
+  const tempoRestante = () => ORCAMENTO_GERACOES_MS - (Date.now() - inicioDasGeracoes);
+  const cabeOutraTentativa = () => tempoRestante() > 90_000;
   let cenaBuffer: Buffer | null = null;
   let inspecao: ResultadoInspecao | null = null;
   let generatedImageUrl: string | null = null;
@@ -437,7 +444,7 @@ export async function POST(request: NextRequest) {
 
   // Uma chamada ao n8n da cena principal. Devolve a URL ou a resposta de erro
   // já pronta — quem decide se o erro derruba a geração é o laço abaixo.
-  const chamarN8n = async (tentativa: number): Promise<{ url: string } | { erro: Response }> => {
+  const chamarN8n = async (tentativa: number, timeoutMs: number): Promise<{ url: string } | { erro: Response }> => {
     // POST to n8n and wait for the response — n8n uses "Respond to Webhook" node.
     // O fetch fica dentro de try/catch porque, sem ele, uma falha de rede virava um
     // 500 sem corpo: o cliente tentava `res.json()`, estourava e mostrava "Erro de
@@ -448,7 +455,7 @@ export async function POST(request: NextRequest) {
       n8nRes = await fetch(N8N_CHATBOT_WEBHOOK, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(240_000),
+        signal: AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({
           // Repetir com o MESMO lead_id faz o node "COLOCA NO STORAGE3" do n8n
           // tentar gravar de novo em `PDF/{lead_id}` — chave que a primeira
@@ -554,9 +561,18 @@ export async function POST(request: NextRequest) {
   let regeneracaoFalhou = false;
 
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS_GERACAO; tentativa++) {
-    const chamada = await chamarN8n(tentativa);
+    const chamada = await chamarN8n(tentativa, Math.min(240_000, Math.max(30_000, tempoRestante())));
     if ("erro" in chamada) {
-      if (!reserva) return chamada.erro;
+      if (!reserva) {
+        // A BytePlus derruba a conexão (ECONNRESET) por volta de 50-60 s em
+        // parte das chamadas — 2 de 5 em 2026-10-02/03. Sem cena anterior para
+        // entregar, vale tentar de novo enquanto couber no tempo.
+        if (tentativa < MAX_TENTATIVAS_GERACAO && cabeOutraTentativa()) {
+          console.error(`[generate-image] tentativa ${tentativa} falhou no n8n; tentando de novo`);
+          continue;
+        }
+        return chamada.erro;
+      }
       console.error(`[generate-image] tentativa ${tentativa} falhou no n8n; entregando a cena anterior`);
       generatedImageUrl = reserva.url;
       cenaBuffer = reserva.cena;
@@ -574,7 +590,8 @@ export async function POST(request: NextRequest) {
       console.error("[generate-image] não consegui reler a cena:", err instanceof Error ? err.message : err);
     }
 
-    const ultima = tentativa === MAX_TENTATIVAS_GERACAO;
+    // Também é a última quando outra geração não caberia no tempo da função.
+    const ultima = tentativa === MAX_TENTATIVAS_GERACAO || !cabeOutraTentativa();
     if (cenaDestaTentativa && marcacao && guideImageBase64 && (await detectarVazamentoDaGuia(cenaDestaTentativa, fotoBuffer))) {
       console.error(`[generate-image] guia vazou na tentativa ${tentativa}/${MAX_TENTATIVAS_GERACAO}`);
       if (!ultima) {
