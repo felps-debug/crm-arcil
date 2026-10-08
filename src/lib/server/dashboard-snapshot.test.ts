@@ -135,6 +135,82 @@ describe("buildDashboardSnapshot — carga", () => {
   });
 });
 
+describe("buildDashboardSnapshot — papel preso a um segmento (installer_manager)", () => {
+  const recent = new Date().toISOString();
+  const mixed = {
+    leads: [
+      { id: "i1", name: "Instalador Zé", segment: "INSTALLER", status: "ACTIVE", created_at: recent, updated_at: recent },
+      { id: "c1", name: "Consumidor Ana", segment: "CONSUMER", status: "ACTIVE", created_at: recent, updated_at: recent },
+      { id: "b1", name: "Devedor", segment: "COBRANCA", status: "ACTIVE", created_at: recent, updated_at: recent },
+    ],
+    followups: [
+      { id: 1, lead_id: "i1", followup_sent: true, respondeu: false, status: "PENDING", created_at: old, updated_at: old },
+      { id: 2, lead_id: "c1", followup_sent: true, respondeu: false, status: "PENDING", created_at: old, updated_at: old },
+    ],
+    conversations: [
+      { id: "v1", lead_id: "i1", vendor_id: "thiago", chatwoot_conv_id: "1" },
+      { id: "v2", lead_id: "c1", vendor_id: "ana", chatwoot_conv_id: "2" },
+    ],
+    vendors: [
+      { id: "thiago", name: "Thiago", segment: ["INSTALLER"], active: true },
+      { id: "ana", name: "Ana Paula", segment: ["CONSUMER"], active: true },
+    ],
+    cobrancas: [{ id: "x", valor: "R$ 1.000,00", pagamento_confirmado: false, vencimento: null, data_disparo: recent, nome: "Devedor" }],
+    quotes: [],
+    sales: [],
+  } as unknown as CoreData;
+
+  const run = (sections: ("summary" | "pending" | "agents" | "inventory" | "activity" | "urgentFollowups")[]) =>
+    buildDashboardSnapshot(ctx("installer_manager"), sections, loaders({ core: vi.fn(async () => mixed) }));
+
+  type Ok<T> = { status: "ok"; data: T };
+
+  it("o resumo conta só leads de instaladores, sem dinheiro de cobrança nem estoque", async () => {
+    const { sections } = await run(["summary"]);
+    const data = (sections.summary as Ok<{ metrics: { id: string; value: unknown }[]; breakdowns: { leadsBySegment: { label: string }[] } }>).data;
+    const ids = data.metrics.map((m) => m.id);
+    expect(data.metrics.find((m) => m.id === "total_leads")?.value).toBe(1);
+    expect(data.metrics.find((m) => m.id === "agent_conversations")?.value).toBe(1);
+    expect(ids).not.toContain("received_revenue");
+    expect(ids).not.toContain("open_collections");
+    expect(ids).not.toContain("produtos_disponiveis");
+    expect(data.breakdowns.leadsBySegment).toHaveLength(1);
+  });
+
+  it("agentes: só o do segmento", async () => {
+    const { sections } = await run(["agents"]);
+    const agents = (sections.agents as Ok<{ agents: { name: string }[] }>).data.agents;
+    expect(agents.map((a) => a.name)).toEqual(["Thiago"]);
+  });
+
+  it("pendências sem a fila de cobrança; follow-up atrasado só do segmento", async () => {
+    const { sections } = await run(["pending"]);
+    const items = (sections.pending as Ok<{ items: { id: string; count: number }[] }>).data.items;
+    expect(items.map((i) => i.id)).not.toContain("collections_due_today");
+    expect(items.find((i) => i.id === "late_followups")?.count).toBe(1);
+  });
+
+  it("atividade não mostra cobrança nem lead de outro segmento", async () => {
+    const { sections } = await run(["activity"]);
+    const labels = (sections.activity as Ok<{ label: string }[]>).data.map((a) => a.label);
+    expect(labels).toContain("Instalador Zé");
+    expect(labels).not.toContain("Consumidor Ana");
+    expect(labels).not.toContain("Devedor");
+  });
+
+  it("estoque continua proibido e nem carrega", async () => {
+    const l = loaders({ core: vi.fn(async () => mixed) });
+    const { sections } = await buildDashboardSnapshot(ctx("installer_manager"), ["inventory"], l);
+    expect(sections.inventory).toEqual({ status: "forbidden" });
+    expect(l.productMetrics).not.toHaveBeenCalled();
+  });
+
+  it("papel sem escopo continua vendo tudo", async () => {
+    const { sections } = await buildDashboardSnapshot(ctx("owner"), ["agents"], loaders({ core: vi.fn(async () => mixed) }));
+    expect((sections.agents as Ok<{ agents: unknown[] }>).data.agents).toHaveLength(2);
+  });
+});
+
 describe("pendências", () => {
   it("não inclui mais as planilhas de prospecção (sheet_sources, outro sistema)", async () => {
     const { sections } = await buildDashboardSnapshot(ctx("owner"), ["pending"], loaders());

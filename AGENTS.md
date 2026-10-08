@@ -173,8 +173,19 @@ Criada automaticamente via trigger `on_auth_user_created` quando um usuário é 
 | vendor      | view_leads                                                                                           |
 | employee    | view_leads                                                                                           |
 | client      | (nenhuma)                                                                                            |
+| installer_manager | view_leads — **e preso ao segmento `INSTALLER`** (ver abaixo)                                  |
 
 `permissions` (jsonb em `user_profiles`) sobrescreve/estende o default do role por usuário.
+
+### `installer_manager` — papel preso a um segmento
+
+Para quem cuida só dos instaladores (hoje: Thiago). Vê Dashboard, Leads e Agentes IA, **só do segmento `INSTALLER`**; sem conversas, cobrança, financeiro, estoque ou atendimento.
+
+- **Isolamento no banco:** as políticas `staff_read_*` listam os papéis por nome e este não está nelas, então ele não lê nada direto pelo Supabase com o token dele. Todo dado passa pelas rotas, que usam o admin client. Se criar tabela nova com política `staff_read_*`, **não** inclua este papel sem decidir isso de propósito.
+- **Escopo na API:** `segmentScope(role)` em `lib/server/roles.ts` → `lib/server/segment-scope.ts` (`scopeCore`, `scopeSummary`, `scopePending`, `scopeLeadDetail`). Rotas: `requireScopedUser` / `requireStaffScope` devolvem o `scope`; `requireUnscopedStaff` / `requireUnscopedUser` recusam o papel (conversas de lead, rotas `dashboard/summary` e `pending-center` legadas).
+- **Rota nova que lê lead/conversa/venda por admin client** tem que escolher: aplicar `scope` ou usar uma das `requireUnscoped*`. Esquecer = vazamento de outros segmentos.
+- **Dashboard:** sem realtime (RLS não entrega evento a ele), atualiza por polling de 60 s.
+- Os toggles de módulo do `/admin` continuam valendo: dar `manage_*` a ele abre o módulo inteiro, sem escopo.
 
 **Duas camadas, sempre as duas:**
 - `<AccessGuard perm="...">` (`components/layout/access-guard.tsx`) só esconde a UI.

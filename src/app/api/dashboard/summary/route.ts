@@ -1,9 +1,11 @@
-import { requireApiUser, handleApiError } from "@/lib/server/api-auth";
+import { requireUnscopedUser, handleApiError } from "@/lib/server/api-auth";
 import { getDashboardSummary } from "@/lib/server/crm-data";
 
+// Rota de compatibilidade, sem versão filtrada por segmento: quem está preso a
+// um segmento usa /api/dashboard/snapshot.
 export async function GET() {
   const startedAt = Date.now();
-  const { response } = await requireApiUser();
+  const { response } = await requireUnscopedUser();
   if (response) {
     console.info(`[dashboard/summary] auth ${Date.now() - startedAt}ms`);
     return response;

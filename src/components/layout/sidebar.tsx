@@ -38,14 +38,14 @@ const NAV = [
   { href: "/cobranca", label: "Cobranças", icon: CreditCard, perm: "manage_cobranca" },
   { href: "/chatbot", label: "Gerador de Imagem", icon: ImageIcon, perm: "manage_gerador_imagem" },
   { href: "/atendimento", label: "Atendimento", icon: Headset, perm: "manage_atendimento" },
-  { href: "/cerebro", label: "Cerebro Arcil", icon: Brain },
+  { href: "/cerebro", label: "Cerebro Arcil", icon: Brain, hideWhenScoped: true },
   { href: "/admin", label: "Admin", icon: ShieldCheck, superAdminOnly: true },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, isSuperAdmin, isOwnerOrAbove, can } = useCurrentUser();
+  const { profile, isSuperAdmin, isOwnerOrAbove, isScoped, can } = useCurrentUser();
   const { theme, toggle: toggleTheme } = useTheme();
   const { collapsed, toggle: toggleCollapsed } = useSidebar();
   const { count: urgentCount } = useUrgentFollowups();
@@ -71,6 +71,7 @@ export function Sidebar() {
   const role = profile?.role ?? "Admin Master";
 
   const visibleNav = NAV.filter((item) => {
+    if (item.hideWhenScoped && isScoped) return false;
     if (item.superAdminOnly) return isSuperAdmin;
     if (item.perm) return isOwnerOrAbove || can(item.perm);
     return true;

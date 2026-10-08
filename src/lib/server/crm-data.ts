@@ -5,6 +5,7 @@ import { allTimePeriod, countBy, defaultPeriod, isOlderThan, metric, percent } f
 import { isFollowupPendente } from "@/lib/followups";
 import { selectAllPages } from "@/lib/server/select-all-pages";
 import { fetchProductMetrics, type ProductMetrics } from "@/lib/server/product-metrics";
+import { scopeCore } from "@/lib/server/segment-scope";
 
 /**
  * Devedor nao e prospect.
@@ -1168,8 +1169,9 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
   };
 }
 
-export async function getAgentSummary(): Promise<AgentSummaryResponse> {
-  return buildAgents(await fetchCore());
+export async function getAgentSummary(scope: string | null = null): Promise<AgentSummaryResponse> {
+  const core = await fetchCore();
+  return buildAgents(scope ? scopeCore(core, scope) : core);
 }
 
 export function buildAgents(core: CoreData): AgentSummaryResponse {
@@ -1330,9 +1332,18 @@ export async function getLeadConversations(leadId: string): Promise<LeadConversa
   };
 }
 
-export async function getVendorConversations(vendorId: string): Promise<AgentConversationsResponse | null> {
+/**
+ * `scope`: segmento a que o chamador está preso. O agente tem que atender esse
+ * segmento (senão null → 404) e só entram conversas de leads dele — um agente
+ * pode atender mais de um segmento.
+ */
+export async function getVendorConversations(
+  vendorId: string,
+  scope: string | null = null
+): Promise<AgentConversationsResponse | null> {
   const supabase = createAdminClient();
-  const { vendors, leads } = await fetchCore();
+  const core = await fetchCore();
+  const { vendors, leads } = scope ? scopeCore(core, scope) : core;
   const vendor = vendors.find((v) => v.id === vendorId);
   if (!vendor) return null;
 
@@ -1343,7 +1354,10 @@ export async function getVendorConversations(vendorId: string): Promise<AgentCon
     .order("started_at", { ascending: false });
   if (conversationsError) throw conversationsError;
 
-  const conversationRows = conversationsData ?? [];
+  const leadMap = new Map(leads.map((l) => [l.id, l]));
+  const conversationRows = (conversationsData ?? []).filter(
+    (c) => !scope || (c.lead_id != null && leadMap.has(c.lead_id))
+  );
   const conversationIds = conversationRows.map((c) => c.id);
   const { data: messagesData, error: messagesError } = conversationIds.length
     ? await supabase
@@ -1353,8 +1367,6 @@ export async function getVendorConversations(vendorId: string): Promise<AgentCon
         .order("created_at", { ascending: true })
     : { data: [], error: null };
   if (messagesError) throw messagesError;
-
-  const leadMap = new Map(leads.map((l) => [l.id, l]));
 
   const conversations: AgentConversationsResponse["conversations"] = conversationRows.map((c) => {
     const lead = c.lead_id ? leadMap.get(c.lead_id) : null;

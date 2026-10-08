@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { timeStage } from "@/lib/perf/trace-context";
+import { segmentScope } from "@/lib/server/roles";
 
 /** O que as rotas usam do usuário autenticado — só id e e-mail. */
 export type ApiUser = { id: string; email: string | null };
@@ -144,6 +145,49 @@ export async function requireStaffUser(opts?: AuthOptions) {
   if (!isStaff({ role: String(profile?.role ?? "") })) return { user: null, response: forbidden() };
 
   return { user: user!, response: null };
+}
+
+/**
+ * Usuário autenticado + o segmento a que o papel dele está preso (null = vê
+ * tudo). Rotas que servem lead/agente/dashboard aplicam o escopo sobre o que
+ * devolvem; ver lib/server/segment-scope.ts.
+ */
+export async function requireScopedUser(opts?: AuthOptions) {
+  const { user, response } = await requireApiUser(opts);
+  if (response) return { user: null, role: "", scope: null as string | null, response };
+
+  const profile = await loadProfile(user!.id);
+  const role = String(profile?.role ?? "");
+  return { user: user!, role, scope: segmentScope(role), response: null };
+}
+
+/** requireStaffUser + o escopo do papel. */
+export async function requireStaffScope(opts?: AuthOptions) {
+  const result = await requireScopedUser(opts);
+  if (result.response) return result;
+  if (!isStaff({ role: result.role })) {
+    return { user: null, role: result.role, scope: null as string | null, response: forbidden() };
+  }
+  return result;
+}
+
+/**
+ * Staff sem escopo de segmento. Para o que não tem versão filtrada — ex.: a
+ * conversa inteira de um lead, que mistura o que cliente falou de qualquer assunto.
+ */
+export async function requireUnscopedStaff(opts?: AuthOptions) {
+  const result = await requireStaffScope(opts);
+  if (result.response) return result;
+  if (result.scope) return { user: null, role: result.role, scope: result.scope, response: forbidden() };
+  return result;
+}
+
+/** requireApiUser que recusa papel com escopo, para rotas ainda sem versão filtrada. */
+export async function requireUnscopedUser(opts?: AuthOptions) {
+  const result = await requireScopedUser(opts);
+  if (result.response) return result;
+  if (result.scope) return { user: null, role: result.role, scope: result.scope, response: forbidden() };
+  return result;
 }
 
 /**

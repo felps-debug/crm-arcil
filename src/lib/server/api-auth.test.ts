@@ -13,9 +13,18 @@ vi.mock("@/lib/supabase/admin", () => ({
   }),
 }));
 
-const { canManage, isStaff, isSuperAdmin, requireApiPermission, requireApiUser, resolveApiContext } = await import(
-  "./api-auth"
-);
+const {
+  canManage,
+  isStaff,
+  isSuperAdmin,
+  requireApiPermission,
+  requireApiUser,
+  requireScopedUser,
+  requireStaffScope,
+  requireUnscopedStaff,
+  requireUnscopedUser,
+  resolveApiContext,
+} = await import("./api-auth");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -82,5 +91,57 @@ describe("verificação de identidade", () => {
     auth.getClaims.mockResolvedValue({ data: { claims: { sub: "u1" } }, error: null });
     const { response } = await requireApiPermission("manage_estoque");
     expect(response?.status).toBe(403);
+  });
+});
+
+describe("papel com escopo de segmento (installer_manager)", () => {
+  const comPapel = (role: string) => {
+    auth.getClaims.mockResolvedValue({ data: { claims: { sub: "u1" } }, error: null });
+    profileQuery.single.mockResolvedValue({ data: { role, permissions: {} } });
+  };
+
+  it("é staff, mas não gerencia nenhum módulo", () => {
+    expect(isStaff({ role: "installer_manager" })).toBe(true);
+    expect(canManage({ role: "installer_manager", permissions: {} }, "manage_cobranca")).toBe(false);
+  });
+
+  it("requireScopedUser devolve o segmento do papel", async () => {
+    comPapel("installer_manager");
+    expect((await requireScopedUser()).scope).toBe("INSTALLER");
+    comPapel("vendor");
+    expect((await requireScopedUser()).scope).toBeNull();
+  });
+
+  it("requireScopedUser sem sessão devolve 401", async () => {
+    auth.getClaims.mockResolvedValue({ data: null, error: null });
+    expect((await requireScopedUser()).response?.status).toBe(401);
+  });
+
+  it("requireStaffScope barra client e devolve o escopo ao staff", async () => {
+    comPapel("client");
+    expect((await requireStaffScope()).response?.status).toBe(403);
+    comPapel("installer_manager");
+    expect((await requireStaffScope()).scope).toBe("INSTALLER");
+  });
+
+  it("requireUnscopedStaff barra o papel escopado (ex.: conversas de lead)", async () => {
+    comPapel("installer_manager");
+    expect((await requireUnscopedStaff()).response?.status).toBe(403);
+    comPapel("vendor");
+    expect((await requireUnscopedStaff()).response).toBeNull();
+  });
+
+  it("requireUnscopedUser barra o papel escopado e deixa os demais", async () => {
+    comPapel("installer_manager");
+    expect((await requireUnscopedUser()).response?.status).toBe(403);
+    comPapel("manager");
+    expect((await requireUnscopedUser()).response).toBeNull();
+  });
+
+  it("não ganha acesso a módulo de gestão pelas rotas de permissão", async () => {
+    comPapel("installer_manager");
+    for (const perm of ["manage_cobranca", "manage_estoque", "manage_gerador_imagem", "manage_atendimento", "view_all"]) {
+      expect((await requireApiPermission(perm)).response?.status).toBe(403);
+    }
   });
 });

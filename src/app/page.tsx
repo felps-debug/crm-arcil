@@ -28,6 +28,7 @@ import { cacheKey, getView, mutate } from "@/lib/api-cache";
 import { navigationPath, navigationTtfb, startJourney } from "@/lib/perf/trace-client";
 import { createSectionBatcher } from "@/lib/realtime-sections";
 import { createClient } from "@/lib/supabase/client";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { useUrgentFollowups } from "@/hooks/use-urgent-followups";
 import type {
   ApiMetric,
@@ -39,6 +40,12 @@ import type {
 import { TvMode } from "./_components/tv-mode";
 
 type Tone = "blue" | "green" | "amber" | "red" | "violet" | "slate";
+
+/** Intervalo de atualização de quem não recebe realtime (papel preso a um segmento). */
+const SCOPED_POLL_MS = 60_000;
+
+/** Domínios que o papel preso a um segmento não tem: a API já não manda o dado. */
+const AGENDA_FORA_DO_ESCOPO = new Set(["billing", "stock", "service"]);
 
 /** Cada linha da agenda responde "o que está acontecendo neste domínio e qual é
  *  o próximo passo" — o mesmo conteúdo do quadro anterior, agora na tabela
@@ -101,6 +108,7 @@ function timeOf(date: string | null) {
 export default function DashboardPage() {
   const [realtime, setRealtime] = useState<"connecting" | "live" | "paused">("connecting");
   const [tvMode, setTvMode] = useState(false);
+  const { loading: profileLoading, isScoped } = useCurrentUser();
 
   // Uma request para a tela inteira: /api/dashboard/snapshot verifica o usuário
   // uma vez e lê cada tabela uma vez. Antes eram quatro rotas, cada uma com a
@@ -122,6 +130,19 @@ export default function DashboardPage() {
   const { revalidate } = snapshot;
 
   useEffect(() => {
+    // Papel preso a um segmento não lê as tabelas direto (RLS), então o canal
+    // realtime nunca traria evento nenhum e o selo mentiria "Ao vivo". Esse
+    // papel atualiza o painel por polling.
+    if (profileLoading) return;
+    if (isScoped) {
+      const timer = setInterval(() => {
+        fetchJson<DashboardSnapshotResponse>(SNAPSHOT_URL)
+          .then((fresh) => mutate<DashboardSnapshotResponse>(SNAPSHOT_URL, () => fresh))
+          .catch(() => {});
+      }, SCOPED_POLL_MS);
+      return () => clearInterval(timer);
+    }
+
     const supabase = createClient();
     let lastApplied = 0;
     let flushSeq = 0;
@@ -166,7 +187,7 @@ export default function DashboardPage() {
     };
     // revalidate muda de identidade a cada render; o canal não pode ser refeito por isso.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [profileLoading, isScoped]);
 
   const refresh = revalidate;
   const sections = snapshot.data?.sections;
@@ -226,7 +247,7 @@ export default function DashboardPage() {
     const stockMetric = inventory.data?.metrics.find((metric) => metric.id === "total_products");
     const overdue = pendingItems.find((item) => item.id === "followups_overdue")?.count ?? 0;
     const enabledAgents = agents.data?.agents.filter((agent) => agent.enabled).length ?? 0;
-    return [
+    const rows: AgendaRow[] = [
       {
         id: "leads",
         domain: "Leads",
@@ -298,7 +319,11 @@ export default function DashboardPage() {
         tone: "blue",
       },
     ];
-  }, [activity, agents.data?.agents, inventory.data, inventory.forbidden, metrics, pendingItems, summary.data?.breakdowns.leadsByStatus, urgentFollowups]);
+    if (!isScoped) return rows;
+    return rows
+      .filter((row) => !AGENDA_FORA_DO_ESCOPO.has(row.id))
+      .map((row) => (row.href === "/cobranca" ? { ...row, href: "/leads" } : row));
+  }, [activity, agents.data?.agents, inventory.data, inventory.forbidden, isScoped, metrics, pendingItems, summary.data?.breakdowns.leadsByStatus, urgentFollowups]);
 
   // Skeleton só enquanto não existe nada para mostrar; uma atualização com
   // dados na tela não apaga a tela.
@@ -325,16 +350,22 @@ export default function DashboardPage() {
       actions={
         <>
           <ConsoleStaleBadge show={snapshot.isStale} onRetry={snapshot.revalidate} />
-          <ConsoleStatus tone={realtime === "live" ? "green" : realtime === "paused" ? "red" : "slate"}>
-            {realtime === "live" ? "Ao vivo" : realtime === "paused" ? "Pausado" : "Conectando"}
-          </ConsoleStatus>
+          {isScoped ? (
+            <ConsoleStatus tone="slate">Atualiza a cada minuto</ConsoleStatus>
+          ) : (
+            <ConsoleStatus tone={realtime === "live" ? "green" : realtime === "paused" ? "red" : "slate"}>
+              {realtime === "live" ? "Ao vivo" : realtime === "paused" ? "Pausado" : "Conectando"}
+            </ConsoleStatus>
+          )}
           <span className="font-data text-[12px] font-semibold text-[var(--text-muted)]">{clock}</span>
           <ConsoleButton icon={RefreshCw} onClick={refresh} aria-label="Atualizar painel">
             Atualizar
           </ConsoleButton>
-          <ConsoleButton icon={Tv} onClick={() => setTvMode(true)}>
-            Modo TV
-          </ConsoleButton>
+          {!isScoped && (
+            <ConsoleButton icon={Tv} onClick={() => setTvMode(true)}>
+              Modo TV
+            </ConsoleButton>
+          )}
         </>
       }
     >
@@ -368,7 +399,7 @@ export default function DashboardPage() {
                 <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">{attention.detail}</p>
               </div>
               <Link
-                href={urgentFollowups > 0 ? "/cobranca" : "/leads"}
+                href={urgentFollowups > 0 && !isScoped ? "/cobranca" : "/leads"}
                 className="ml-auto shrink-0 text-[11px] font-bold underline-offset-4 hover:underline"
                 style={{ color: attention.tone === "red" ? "var(--red)" : "var(--amber)" }}
               >
@@ -398,30 +429,34 @@ export default function DashboardPage() {
               icon={Activity}
               tone="green"
             />
-            <ConsoleMetric
-              label="Disponível para venda"
-              value={metricValue(metrics.get("produtos_disponiveis"), "0")}
-              helper="produtos com saldo"
-              icon={PackageCheck}
-              tone="violet"
-            />
-            {/* Recebido e Em aberto no lugar de "Receita potencial": ela sai de
-                `quotes`, que está vazia, então mostrava R$ 0,00 fixo. Estes dois
-                saem das baixas de boleto — é dinheiro que existe. */}
-            <ConsoleMetric
-              label="Recebido"
-              value={metricValue(metrics.get("received_revenue"), "R$ 0,00")}
-              helper="boletos baixados"
-              icon={DollarSign}
-              tone="green"
-            />
-            <ConsoleMetric
-              label="Em aberto"
-              value={metricValue(metrics.get("open_collections"), "R$ 0,00")}
-              helper="boletos não pagos"
-              icon={DollarSign}
-              tone="amber"
-            />
+            {!isScoped && (
+              <>
+                <ConsoleMetric
+                  label="Disponível para venda"
+                  value={metricValue(metrics.get("produtos_disponiveis"), "0")}
+                  helper="produtos com saldo"
+                  icon={PackageCheck}
+                  tone="violet"
+                />
+                {/* Recebido e Em aberto no lugar de "Receita potencial": ela sai de
+                    `quotes`, que está vazia, então mostrava R$ 0,00 fixo. Estes dois
+                    saem das baixas de boleto — é dinheiro que existe. */}
+                <ConsoleMetric
+                  label="Recebido"
+                  value={metricValue(metrics.get("received_revenue"), "R$ 0,00")}
+                  helper="boletos baixados"
+                  icon={DollarSign}
+                  tone="green"
+                />
+                <ConsoleMetric
+                  label="Em aberto"
+                  value={metricValue(metrics.get("open_collections"), "R$ 0,00")}
+                  helper="boletos não pagos"
+                  icon={DollarSign}
+                  tone="amber"
+                />
+              </>
+            )}
             {/* O total da fila já vive no painel "Filas abertas" ao lado, e é
                 dominado por produtos sem estoque. O número que pede ação hoje é
                 o de follow-ups urgentes — é ele que dispara o alerta acima. */}
