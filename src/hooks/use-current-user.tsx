@@ -4,8 +4,9 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { clearApiCache } from "@/lib/api-cache";
 import { shouldReloadProfile } from "@/hooks/profile-loader";
+import { segmentScope } from "@/lib/server/roles";
 
-export type UserRole = "superadmin" | "owner" | "manager" | "vendor" | "employee" | "client";
+export type UserRole = "superadmin" | "owner" | "manager" | "vendor" | "employee" | "client" | "installer_manager";
 
 export interface UserProfile {
   id: string;
@@ -89,6 +90,8 @@ export function useCurrentUser() {
     isSuperAdmin: profile?.role === "superadmin",
     isOwnerOrAbove: profile ? ["superadmin", "owner"].includes(profile.role) : false,
     isManagerOrAbove: profile ? ["superadmin", "owner", "manager"].includes(profile.role) : false,
+    /** Preso a um segmento de leads (installer_manager). A API é quem filtra de verdade; isto só esconde o que não faz sentido na tela. */
+    isScoped: profile ? segmentScope(profile.role) !== null : false,
     can: (permission: string) => profile?.permissions?.[permission] === true,
   };
 }

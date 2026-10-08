@@ -53,7 +53,7 @@ function setaDuplaVertical(x: number, y1: number, y2: number, cor: string): stri
 /**
  * Linha de chamada ortogonal: sai do texto na horizontal, dobra uma vez,
  * desce/sobe até o ponto. Substitui a diagonal pontilhada (`linhaChamada`) —
- * mesma técnica já validada em `cassette-commercial-layout.ts`
+ * mesma técnica validada no antigo layout comercial do cassete
  * (`chamadaOrtogonal`), generalizada pro layout ancorado padrão.
  */
 function chamadaOrtogonal(de: Ponto, para: Ponto): string {
@@ -330,43 +330,49 @@ type Callout = {
   alvo: Ponto | null;
 };
 
-function calloutNo(c: Callout): No {
+function calloutNo(c: Callout, escala: number): No {
+  const alinhamento = c.align === "center" ? "center" : c.align === "right" ? "flex-end" : "flex-start";
+  const padX = 7 * escala;
   return el(
     "div",
-    {
-      position: "absolute",
-      left: c.left,
-      top: c.top,
-      width: c.width,
-      flexDirection: "column",
-      alignItems: c.align === "center" ? "center" : c.align === "right" ? "flex-end" : "flex-start",
-    },
+    { position: "absolute", left: c.left, top: c.top, width: c.width, flexDirection: "column", alignItems: alinhamento },
+    // Fundo escuro translúcido do tamanho do texto: sombra sozinha não segura
+    // contraste sobre janela, planta ou estante (prévia real de 2026-10-02).
     el(
       "div",
-      { fontSize: 13, fontWeight: 700, color: c.cor, letterSpacing: 0.7, textShadow: SOMBRA_TEXTO, textAlign: c.align, lineHeight: 1.25 },
-      c.titulo
-    ),
-    c.corpo
-      ? el(
-          "div",
-          {
-            fontSize: 12,
-            color: CLARO,
-            marginTop: 3,
-            lineHeight: 1.35,
-            textShadow: SOMBRA_TEXTO,
-            textAlign: c.align,
-            width: c.width,
-            // `textAlign` sozinho não alinha corpo de UMA linha: o nó é um
-            // container flex de largura fixa, e o satori posiciona o texto
-            // dentro dele por `justifyContent`, não por `textAlign` (que só
-            // atua quando o texto quebra em várias linhas). Sem isto, "2,70 m"
-            // saía grudado na esquerda embaixo de um título alinhado à direita.
-            justifyContent: c.align === "right" ? "flex-end" : c.align === "center" ? "center" : "flex-start",
-          },
-          c.corpo
-        )
-      : null
+      {
+        flexDirection: "column",
+        alignItems: alinhamento,
+        maxWidth: c.width,
+        background: "rgba(6,12,22,0.58)",
+        borderRadius: 6 * escala,
+        padding: `${4 * escala}px ${padX}px`,
+      },
+      el(
+        "div",
+        { fontSize: 13 * escala, fontWeight: 700, color: c.cor, letterSpacing: 0.7, textShadow: SOMBRA_TEXTO, textAlign: c.align, lineHeight: 1.25 },
+        c.titulo
+      ),
+      c.corpo
+        ? el(
+            "div",
+            {
+              fontSize: 12 * escala,
+              color: CLARO,
+              marginTop: 3 * escala,
+              lineHeight: 1.35,
+              textShadow: SOMBRA_TEXTO,
+              textAlign: c.align,
+              maxWidth: c.width - padX * 2,
+              // `textAlign` sozinho não alinha corpo de UMA linha: o satori
+              // posiciona o texto por `justifyContent`. Sem isto, "2,70 m" saía
+              // grudado na esquerda embaixo de um título alinhado à direita.
+              justifyContent: alinhamento,
+            },
+            c.corpo
+          )
+        : null
+    )
   );
 }
 
@@ -457,7 +463,14 @@ function alturaCallout(titulo: string, corpo: string | null, largura: number, es
  * @param W,H tamanho em pixels da cena já gerada (o modelo de imagem devolve
  *   num tamanho que não escolhemos — por isso a marcação é fração, não pixel).
  */
-export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: number, ladoTexto: 1 | -1): PlanoAnotacoes {
+export function planoAnotacoes(
+  d: DadosOverlay,
+  m: Marcacao,
+  W: number,
+  H: number,
+  ladoTexto: 1 | -1,
+  opcoes: { prancha?: boolean } = {}
+): PlanoAnotacoes {
   // Em `gemini_3d` o Gemini já desenhou EVAPORADORA, cota, LIGAÇÃO ATÉ
   // CONDENSADORA, FORRO ATÉ LAJE e FLUXO DE AR direto na cena (prompt do
   // n8n) -- desenhar de novo aqui duplicaria o texto, desalinhado com o que
@@ -466,7 +479,9 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   if (legendasPeloModelo(d.modoInfra)) return { linhas: "", nos: [] };
 
   const familia = familiaDe(d.tipoEquipamento);
-  const escala = Math.min(W, H) / 1024;
+  // Na prancha a foto vai a 1600 px de altura e a imagem é vista no celular:
+  // a escala antiga deixava as legendas ilegíveis.
+  const escala = (Math.min(W, H) / 1024) * (opcoes.prancha ? 1.4 : 1);
 
   const caixa: Caixa = {
     cx: (m.caixa.x + m.caixa.w / 2) * W,
@@ -477,21 +492,26 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
 
   const linhas: string[] = [];
   const margem = W * FAIXA.margemFrac;
-  const larguraCallout = W * 0.2;
+  // Mais largo na prancha: o texto cresceu junto com a escala.
+  const larguraCallout = W * (opcoes.prancha ? 0.27 : 0.2);
   const larguraCards = W * 0.21;
   const xCards = ladoTexto === 1 ? margem : W - margem - larguraCards;
   const xTexto = ladoTexto === 1 ? W - margem - larguraCallout : margem;
 
   const aloc = new Alocador(W, H, margem);
-  // Coluna de cards e rodapé institucional: território de quem desenha depois.
-  aloc.reservar({ x: xCards - W * 0.015, y: 0, w: larguraCards + W * 0.03, h: H * 0.66 });
-  // A moldura institucional do rodapé não é uma faixa cheia: são três blocos
-  // com espaço livre entre eles. Reservar a faixa inteira custava três callouts
-  // por prévia — some informação que o vendedor marcou por causa de área que
-  // ninguém ocupa.
-  aloc.reservar({ x: 0, y: H * 0.77, w: W * 0.32, h: H * 0.17 });                    // selo de aprovação
-  aloc.reservar({ x: W * 0.7, y: H * 0.68, w: W * 0.3, h: H * 0.27 });               // card de lembretes
-  aloc.reservar({ x: 0, y: H * 0.93, w: W, h: H * 0.07 });                           // logo, QR e rodapé legal
+  // Na prancha a moldura mora numa faixa ao lado da foto — nada dela cai sobre
+  // a cena, então nenhuma área precisa ser reservada para ela.
+  if (!opcoes.prancha) {
+    // Coluna de cards e rodapé institucional: território de quem desenha depois.
+    aloc.reservar({ x: xCards - W * 0.015, y: 0, w: larguraCards + W * 0.03, h: H * 0.66 });
+    // A moldura institucional do rodapé não é uma faixa cheia: são três blocos
+    // com espaço livre entre eles. Reservar a faixa inteira custava três callouts
+    // por prévia — some informação que o vendedor marcou por causa de área que
+    // ninguém ocupa.
+    aloc.reservar({ x: 0, y: H * 0.77, w: W * 0.32, h: H * 0.17 });                    // selo de aprovação
+    aloc.reservar({ x: W * 0.7, y: H * 0.68, w: W * 0.3, h: H * 0.27 });               // card de lembretes
+    aloc.reservar({ x: 0, y: H * 0.93, w: W, h: H * 0.07 });                           // logo, QR e rodapé legal
+  }
   // O próprio equipamento, com folga: nenhum texto pode cair em cima dele.
   aloc.reservar({
     x: caixa.cx - caixa.w * 0.62,
@@ -551,7 +571,7 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
   // atravessada pelas próprias linhas que ela explica é ilegível.
   const folgaCards = W * 0.022;
   const bordaCards = ladoTexto === 1 ? xCards + larguraCards + folgaCards : xCards - folgaCards;
-  const rotaVisivel = recortarNaColuna(rotaPx, bordaCards, ladoTexto === 1 ? 1 : -1);
+  const rotaVisivel = opcoes.prancha ? rotaPx : recortarNaColuna(rotaPx, bordaCards, ladoTexto === 1 ? 1 : -1);
   // Em `modelo_3d` o modelo já desenhou a tubulação em volume, com sombra, na
   // cena — desenhar o feixe por cima duplica a mesma informação em duas
   // linguagens (o erro que o layout do cassete comercial também evita). A
@@ -607,7 +627,7 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
         `<line x1="${x.toFixed(1)}" y1="${(yCota - (acima ? -traco : traco)).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(yCota + (acima ? -traco : traco) * 0.4).toFixed(1)}" stroke="rgba(242,246,252,0.6)" stroke-width="1"/>`
       );
     }
-    const larguraRotulo = W * 0.075;
+    const larguraRotulo = W * 0.12;
     const leftRotulo = clamp(x2 + W * 0.008, margem, W - margem - larguraRotulo);
     callouts.push({
       left: leftRotulo,
@@ -693,7 +713,9 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
       linhas.push(setaDuplaVertical(xPe, yTopo, yBase, CLARO));
       aloc.reservar({ x: xPe - W * 0.012, y: yTopo, w: W * 0.024, h: yBase - yTopo });
     }
-    empurrar(familia === "forro" ? "ALTURA LAJE-FORRO" : "PÉ-DIREITO APROX.", d.peDireito, CLARO, null, [{ x: xTexto, y: H * 0.29 }]);
+    // No forro a medida vai dentro de "FORRO ATÉ LAJE", lá embaixo: duas
+    // legendas para a mesma altura só disputavam espaço na foto.
+    if (familia !== "forro") empurrar("PÉ-DIREITO APROX.", d.peDireito, CLARO, null, [{ x: xTexto, y: H * 0.29 }]);
   }
 
   // --- Ligação até a condensadora -------------------------------------------
@@ -722,7 +744,11 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
     // até o meio do aparelho, cruzando a cota de largura, e parecia medir algo.
     empurrar(
       familia === "forro" ? "FORRO ATÉ LAJE" : "DISTÂNCIA DO TETO",
-      familia === "forro" ? "Espaço técnico para unidade e infraestrutura." : `Afastamento mínimo até o teto: ${semPontoFinal(d.distanciaTeto.replace(/^m[ií]n\.?\s*/i, ""))}.`,
+      familia === "forro"
+        ? d.peDireito
+          ? `${d.peDireito} de espaço técnico para unidade e infraestrutura.`
+          : "Espaço técnico para unidade e infraestrutura."
+        : `Afastamento mínimo até o teto: ${semPontoFinal(d.distanciaTeto.replace(/^m[ií]n\.?\s*/i, ""))}.`,
       CLARO,
       null,
       [{ x: xTexto, y: H * 0.17 }]
@@ -740,7 +766,7 @@ export function planoAnotacoes(d: DadosOverlay, m: Marcacao, W: number, H: numbe
     linhas.push(chamadaOrtogonal(saida, c.alvo));
   }
 
-  return { linhas: linhas.join(""), nos: callouts.map(calloutNo) };
+  return { linhas: linhas.join(""), nos: callouts.map((c) => calloutNo(c, escala)) };
 }
 
 /** Legenda de cores da infraestrutura, no formato da referência aprovada:

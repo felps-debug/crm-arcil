@@ -48,3 +48,29 @@ describe("planoAnotacoes por modo de infraestrutura", () => {
     expect(plano.nos).toHaveLength(0);
   });
 });
+
+describe("planoAnotacoes em modo prancha", () => {
+  it("não reserva coluna de cards: cabe pelo menos o mesmo número de callouts", () => {
+    const normal = planoAnotacoes({ ...DADOS, modoInfra: "modelo_3d" }, MARCACAO, W, H, -1);
+    const prancha = planoAnotacoes({ ...DADOS, modoInfra: "modelo_3d" }, MARCACAO, W, H, -1, { prancha: true });
+    expect(titulos(prancha.nos)).toContain("EVAPORADORA");
+    expect(prancha.nos.length).toBeGreaterThanOrEqual(normal.nos.length);
+  });
+});
+
+describe("planoAnotacoes no forro", () => {
+  it("uma legenda só para a altura laje-forro, com a medida", () => {
+    const plano = planoAnotacoes(
+      { ...DADOS, tipoEquipamento: "Cassete", peDireito: "0,80 m", modoInfra: "modelo_3d" },
+      MARCACAO,
+      W,
+      H,
+      -1,
+      { prancha: true }
+    );
+    const texto = titulos(plano.nos);
+    expect(texto).not.toContain("ALTURA LAJE-FORRO");
+    expect(texto).toContain("FORRO ATÉ LAJE");
+    expect(texto).toContain("0,80 m de espaço técnico");
+  });
+});

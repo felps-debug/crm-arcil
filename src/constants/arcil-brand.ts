@@ -53,7 +53,7 @@ export const SOMBRA_TITULO = "0 2px 6px rgba(0,0,0,0.85)";
  * "Desenho Técnico" — linha de chamada ortogonal usada quando `modoInfra` é
  * `gemini_3d` e o próprio Gemini desenha os callouts na cena, ou pelo modo
  * `vetorial` de fallback. Branco/quase-branco só, sem cor de marca na linha —
- * mesma técnica já validada em `cassette-commercial-layout.ts`
+ * mesma técnica validada no antigo layout comercial do cassete
  * (`chamadaOrtogonal`), generalizada aqui.
  */
 export const TRACO_ORTOGONAL = "rgba(255,255,255,0.85)";
@@ -84,72 +84,7 @@ export const SELO_APROVACAO = {
   corpo: "Instalação conforme orientação do fabricante.",
 } as const;
 
-// ---------------------------------------------------------------------------
-// V2 — Commercial Technical
-//
-// Tokens do layout novo. Ficam ao lado dos antigos, não no lugar deles: a V1
-// continua servindo todo tipo de equipamento enquanto a V2 é validada só no
-// cassete. Quando as duas convergirem, a V1 sai.
-//
-// A direção visual da V2 é o oposto da V1 em um ponto específico: nada de card
-// escuro pesado e borda dura. O overlay é vidro translúcido sobre a fotografia,
-// e a cor só aparece em elemento técnico (as quatro linhas de infraestrutura).
-// ---------------------------------------------------------------------------
-
-/** Vidro claro sobre a cena. Substitui o `CARD_FUNDO` quase opaco da V1. */
-export const V2_VIDRO = "rgba(10,16,26,0.58)";
-export const V2_VIDRO_BORDA = "rgba(255,255,255,0.14)";
-export const V2_RAIO = 10;
-
-/** Texto sobre a fotografia. Branco puro só no que precisa de destaque. */
-export const V2_TEXTO = "#FFFFFF";
-export const V2_TEXTO_SUAVE = "rgba(255,255,255,0.82)";
-export const V2_TEXTO_FRACO = "rgba(255,255,255,0.60)";
-
-/** Traço de callout e de cota: fino, branco, discreto. */
-export const V2_TRACO = "rgba(255,255,255,0.55)";
-export const V2_TRACO_FORTE = "rgba(255,255,255,0.80)";
-
-/**
- * Escala tipográfica relativa ao lado menor do canvas.
- *
- * A V1 usava pixel fixo, o que fazia o texto encolher numa cena 2K e engordar
- * numa 1K. Aqui cada tamanho é uma fração, e o compositor multiplica pelo lado
- * menor — o mesmo layout serve landscape e portrait.
- */
-export const V2_TIPO = {
-  rotulo: 0.0155,      // LABEL uppercase semibold
-  texto: 0.0132,       // corpo
-  medida: 0.0150,      // cota
-  tituloCard: 0.0132,
-  textoCard: 0.0122,
-  micro: 0.0104,
-} as const;
-
-/**
- * Zonas do template landscape do cassete, em fração do quadro.
- *
- * A V2 não deixa o compositor escolher posição desde o início: cada elemento
- * tem sua zona preferencial e só cai no posicionamento dinâmico se ela estiver
- * ocupada. Foi assim que a referência aprovada foi desenhada, e é o que mantém
- * duas prévias diferentes com a mesma cara.
- */
-export const V2_ZONAS_CASSETE = {
-  evaporadora: { x: 0.028, y: 0.045, w: 0.155 },
-  forroLaje: { x: 0.200, y: 0.045, w: 0.130 },
-  // A legenda vive na faixa superior direita, longe do eixo do aparelho — que
-  // fica no centro e leva junto o raio-X e o leque de ar.
-  infraestrutura: { x: 0.665, y: 0.045, w: 0.235 },
-  areaExterna: { x: 0.835, y: 0.225, w: 0.155 },
-  modelo: { x: 0.028, y: 0.235, w: 0.215 },
-  fluxo: { x: 0.40, y: 0.585, w: 0.20 },
-  ligacao: { x: 0.60, y: 0.335, w: 0.19 },
-  checklist: { x: 0.695, y: 0.665, w: 0.285 },
-  aprovacao: { x: 0.028, y: 0.775, w: 0.245 },
-  logo: { x: 0.028, y: 0.875 },
-  qr: { x: 0.875, y: 0.875 },
-} as const;
-
-/** Comprimento máximo de linha de chamada, em fração da diagonal. Acima disso
- *  a linha atravessa o ambiente e passa a competir com a fotografia. */
-export const V2_CHAMADA_MAX_DIAGONAL = 0.24;
+/** Medidas da prancha (foto + faixa lateral). Ficam aqui, e não no compositor,
+ *  porque a tela também precisa delas: o comparador antes/depois sobrepõe a
+ *  foto original só na parte da prancha que é foto. */
+export const PRANCHA = { altura: 1600, larguraFaixa: 600 } as const;

@@ -37,17 +37,41 @@ describe("buildStepGroups", () => {
     }
   });
 
-  it("Janela não pergunta condensadora — grupo Infraestrutura só tem metragem", () => {
-    const infra = buildStepGroups("Janela").find((g) => g.titulo === "Infraestrutura")!;
-    expect(infra.steps.map((s) => s.key)).toEqual(["metragem_infra"]);
+  it("Ambiente vira escolha, sem texto livre", () => {
+    const ambiente = buildSteps(null).find((s) => s.key === "ambiente")!;
+    expect(ambiente.type).toBe("choice");
   });
 
-  it("Cassete separa Forro (4 campos) de Infraestrutura (4 campos, com tubulação)", () => {
-    const grupos = buildStepGroups("Cassete");
-    const forro = grupos.find((g) => g.titulo === "Forro")!;
-    const infra = grupos.find((g) => g.titulo === "Infraestrutura")!;
-    expect(forro.steps.map((s) => s.key)).toEqual(["tipo_forro", "pe_direito", "alcapao", "ponto_eletrico"]);
-    expect(infra.steps.map((s) => s.key)).toEqual(["unidade_externa", "nivel_condensadora", "tubulacao", "metragem_infra"]);
+  it("nenhum tipo pergunta unidade_externa nem metragem_infra", () => {
+    for (const tipo of TIPOS) {
+      const chaves = buildSteps(tipo).map((s) => s.key);
+      expect(chaves).not.toContain("unidade_externa");
+      expect(chaves).not.toContain("metragem_infra");
+    }
+  });
+
+  it("todo tipo com condensadora separada pergunta local, distância, dreno e tensão", () => {
+    for (const tipo of [null, "Split Hi-Wall", "Cassete", "Dutado", "Piso-teto"]) {
+      const chaves = buildSteps(tipo).map((s) => s.key);
+      for (const k of ["local_condensadora", "distancia_condensadora", "dreno", "tensao"]) expect(chaves).toContain(k);
+    }
+  });
+
+  it("Janela não pergunta condensadora nem dreno, mas pergunta tensão", () => {
+    const chaves = buildSteps("Janela").map((s) => s.key);
+    expect(chaves).not.toContain("local_condensadora");
+    expect(chaves).not.toContain("dreno");
+    expect(chaves).toContain("tensao");
+  });
+
+  it("só o Hi-Wall pergunta obstáculos", () => {
+    expect(buildSteps("Split Hi-Wall").map((s) => s.key)).toContain("obstaculos");
+    expect(buildSteps("Cassete").map((s) => s.key)).not.toContain("obstaculos");
+  });
+
+  it("Cassete: Forro, Elétrica e dreno, Condensadora e tubulação", () => {
+    const grupos = buildStepGroups("Cassete").slice(3);
+    expect(grupos.map((g) => g.titulo)).toEqual(["Forro", "Elétrica e dreno", "Condensadora e tubulação"]);
   });
 });
 

@@ -25,7 +25,6 @@ export const CHATWOOT_API_ACCESS_TOKEN = clean(process.env.CHATWOOT_API_ACCESS_T
  * layout antigo. Ligar por variável de ambiente permite comparar as duas na
  * mesma cena sem redeploy.
  */
-export const V2_CASSETTE_LAYOUT = clean(process.env.V2_CASSETTE_LAYOUT) === "1";
 
 /**
  * Quem desenha o quê na prévia (ver `ModoInfra` em lib/server/previa-tipos.ts).

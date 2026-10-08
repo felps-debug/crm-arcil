@@ -56,7 +56,6 @@ src/
       admin/users/, admin/users/[id]/, admin/leads/[id]/, admin/activity/
       agents/summary/, agents/[id]/conversations/
       atendimento/inboxes/, atendimento/conversations/[id]/messages/
-      chat/                        → GPT-4o conversação do chatbot
       check-result/
       cobranca/disparo/            → valida telefones, chama o Python, confere gravação
       cobranca/financial-handoffs/
@@ -112,7 +111,7 @@ src/
       crm-metrics.ts, crm-labels.ts, demanda.ts
       financial-handoff.ts → handoff financeiro → vendedor
       installation-overlay.ts / preview-annotations.ts / satori-nodes.ts /
-      guide-mask.ts / install-schematic.ts / previa-tipos.ts / layouts/
+      guide-mask.ts / preservar-foto.ts / inspetor-cena.ts / previa-tipos.ts
       env-guard.ts
   types/index.ts   → tipos das tabelas Supabase
   types/api.ts     → contratos das rotas /api
@@ -174,8 +173,20 @@ Criada automaticamente via trigger `on_auth_user_created` quando um usuário é 
 | vendor      | view_leads                                                                                           |
 | employee    | view_leads                                                                                           |
 | client      | (nenhuma)                                                                                            |
+| installer_manager | view_leads — **e preso ao segmento `INSTALLER`** (ver abaixo)                                  |
 
 `permissions` (jsonb em `user_profiles`) sobrescreve/estende o default do role por usuário.
+
+### `installer_manager` — papel preso a um segmento
+
+Para quem cuida só dos instaladores (hoje: Thiago). Vê Dashboard, Leads e Agentes IA, **só do segmento `INSTALLER`**; sem conversas, cobrança, financeiro, estoque ou atendimento.
+
+- **Isolamento no banco:** as políticas `staff_read_*` listam os papéis por nome e este não está nelas, então ele não lê nada direto pelo Supabase com o token dele. Todo dado passa pelas rotas, que usam o admin client. Se criar tabela nova com política `staff_read_*`, **não** inclua este papel sem decidir isso de propósito.
+- **Escopo na API:** `segmentScope(role)` em `lib/server/roles.ts` → `lib/server/segment-scope.ts` (`scopeCore`, `scopeSummary`, `scopePending`, `scopeLeadDetail`). Rotas: `requireScopedUser` / `requireStaffScope` devolvem o `scope`; `requireUnscopedStaff` / `requireUnscopedUser` recusam o papel (conversas de lead, rotas `dashboard/summary` e `pending-center` legadas).
+- **Rota nova que lê lead/conversa/venda por admin client** tem que escolher: aplicar `scope` ou usar uma das `requireUnscoped*`. Esquecer = vazamento de outros segmentos.
+- **Dashboard:** sem realtime (RLS não entrega evento a ele), atualiza por polling de 60 s.
+- Os toggles de módulo do `/admin` continuam valendo: dar `manage_*` a ele abre o módulo inteiro, sem escopo.
+- **Atendimento com vários números:** quem não é manager+ vê só os inboxes do Chatwoot vinculados em `user_profiles` — `chatwoot_inbox_id` (texto, vínculo antigo) **somado** a `chatwoot_inbox_ids` (`integer[]`). `requireAtendimentoScope` devolve `scopedInboxIds`; lista, detalhe, envio e a lista de inboxes aplicam `lib/server/inbox-scope.ts`. No `/admin` o vínculo é por checkbox (marcar grava a lista e zera o campo antigo). Hoje o Thiago vê os inboxes 15 (Thiago), 23 (Rodiney) e 22 (Karina — era "Alex - Instaladores", renomeado no Chatwoot em 2026-10-08).
 
 **Duas camadas, sempre as duas:**
 - `<AccessGuard perm="...">` (`components/layout/access-guard.tsx`) só esconde a UI.
@@ -227,7 +238,6 @@ NEXT_PUBLIC_TURNSTILE_SITE_KEY=...   ← sem isso o captcha do login some silenc
 NEXT_PUBLIC_SENTRY_DSN=...           ← client
 SENTRY_DSN=...                       ← server/edge
 SENTRY_ORG=, SENTRY_PROJECT=, SENTRY_AUTH_TOKEN=   ← upload de sourcemap no build
-V2_CASSETTE_LAYOUT=1                 ← liga o layout V2 pra família cassete
 INFRA_VISUAL=vetorial|gemini_3d     ← padrão modelo_3d (ver "Divisão de responsabilidade")
 PREVIA_DUMP=1                        ← dump de debug da prévia
 ```
@@ -253,12 +263,14 @@ Abas de `/cobranca`: Disparar · Logs · Financeiro (board de handoff) · Follow
 
 ## Fluxo do Chatbot (Gerador de Imagem AC)
 
-1. Usuário envia foto da parede → upload direto para bucket `chatbot-images` via Supabase JS client
-2. GPT-4o (via `/api/chat`) conduz conversa e coleta: modelo, pé direito, ponto elétrico, unidade externa, tubulação
-3. Quando tudo coletado, `/api/chat` retorna `readyToGenerate: true` (sinalizado pelo `##READY##` no response)
-4. `/api/generate-image` extrai dados estruturados + analisa imagem com Vision + chama n8n webhook
-5. n8n monta o prompt (código, sem LLM), gera a imagem no Seedream, salva no bucket `PDF/{lead_id}`, responde via "Respond to Webhook"
-6. URL retornada é exibida no chat com opção de download
+1. Wizard em grupos (`_components/step-groups.ts`): ambiente + produto do ERP, foto (upload direto para `chatbot-images`), marcação, e perguntas técnicas **só de opção fixa ou medida** — texto livre já levou "NAO SEI DIZER" para a imagem do cliente. `lib/alertas-instalacao.ts` mostra avisos de garantia na hora (tensão × aparelho, dreno com bomba, obstáculo perto do aparelho, ponto a executar).
+2. `/api/generate-image` analisa a foto com visão, chama o n8n da cena principal **e** o da condensadora (`lib/server/cena-condensadora.ts`) em paralelo.
+3. O inspetor (`lib/server/inspetor-cena.ts`) confere a cena: ambiente preservado, infra por dentro (raio-x), aparelho igual ao produto, montagem certa para o tipo, sem letra. **Só avisa — nunca gera de novo sozinho.** Teto fixo de custo: uma cena principal (~R$ 0,80) + uma condensadora (~R$ 0,80) por prévia; a condensadora fica em cache por produto + local (`PDF/condensadora-cache-{codigo_erp}-{local}`), então a partir da 2ª prévia da mesma combinação sai ~R$ 0,85. Vazamento da guia vira aviso; queda do Seedream (ECONNRESET ~60 s, frequente) vira erro com "Tentar novamente" — repetir é decisão do vendedor.
+4. `lib/server/preservar-foto.ts` devolve os pixels da foto original fora da zona da instalação (pula se a cena veio reenquadrada — `LIMIAR_DESALINHO`, ver log `[preservarFoto]`).
+5. `installation-overlay.ts` compõe a **prancha Arcil**: foto à esquerda (só legendas presas ao aparelho por cima) + faixa fixa de 600 px à direita (condensadora, modelo, cuidados de garantia, QR, "Imagem gerada pela IA da Arcil"), sempre 1600 px de altura.
+6. A resposta traz `cenaUrl` (cena crua) e `condensadoraUrl`: um ajuste manda as duas de volta, para o modelo não receber a faixa como referência e a condensadora não ser paga de novo.
+
+Nota de garantia por marca (`brand_warranty_notes`) só aparece com `origem = 'manual'`. As linhas `ia` antigas ficam no banco e são ignoradas.
 
 ### Marcação na foto
 
@@ -269,7 +281,7 @@ A marcação alimenta dois destinos com precisões diferentes:
 - **imagem-guia** (`lib/server/guide-mask.ts`): a foto com retângulo magenta / linha ciano / ponto amarelo desenhados por cima, mandada como uma imagem a mais pro Gemini. Modelo de imagem obedece máscara visual; não obedece coordenada escrita. As cores são impossíveis num ambiente residencial de propósito, e o prompt do n8n proíbe reproduzi-las na saída.
 - **âncora exata** da camada vetorial (`lib/server/preview-annotations.ts`): callouts com linha de chamada, cotas, rota colorida e fluxo de ar caem no lugar que o vendedor marcou.
 
-Pular a marcação é sempre permitido: sem ela a prévia usa o layout antigo (título + 4 cards), que não depende de saber onde o aparelho está na cena.
+Pular a marcação é sempre permitido: sem ela a prancha sai sem as legendas presas ao aparelho e sem a preservação da foto (não há zona da instalação conhecida).
 
 ### Divisão de responsabilidade (não quebrar)
 
@@ -283,11 +295,12 @@ O modelo de imagem desenha SÓ a cena física: sala, aparelho e — no modo padr
 
 ```
 Webhook → Edit Fields2 → MONTA PROMPT SEEDREAM (Code) → HTTP Request1 (Seedream 5.0 Pro)
-  → Edit Fields3 → Convert to File2 → COLOCA NO STORAGE3 → link da imagem2 → Respond to Webhook
+  → BAIXA IMAGEM SEEDREAM → COLOCA NO STORAGE3 → link da imagem2 → Respond to Webhook
 ```
 
 - **MONTA PROMPT SEEDREAM**: prompt montado por código a partir das respostas do vendedor (antes um GPT-5.1 fazia isso — a conta ficou sem crédito em 2026-09-24 e o gerador parou). Mesmas regras do roteiro antigo; imagens na ordem base → produto → referência da família → guia.
-- **HTTP Request1**: `POST https://ark.ap-southeast.bytepluses.com/api/v3/images/generations`, modelo `dola-seedream-5-0-pro-260628` (o flash é `dola-seedream-5-0-flash-260915`), credencial n8n **"Seedream (BytePlus ModelArk)"**, `size` no mesmo formato da foto base (o CRM desenha por cima em frações). Não aceita `sequential_image_generation`. ~55 s por imagem; o CRM espera até 240 s.
+- **HTTP Request1**: `POST https://ark.ap-southeast.bytepluses.com/api/v3/images/generations`, modelo `dola-seedream-5-0-pro-260628` (o flash é `dola-seedream-5-0-flash-260915`), credencial n8n **"Seedream (BytePlus ModelArk)"**, `size` no mesmo formato da foto base (o CRM desenha por cima em frações). Não aceita `sequential_image_generation`. 55-140 s por imagem (varia com a carga da BytePlus); o nó corta em 180 s e o CRM espera até 240 s.
+- **`response_format: "url"`, nunca `b64_json`**: com a imagem embutida na resposta (~0,9 MB vindo de Singapura), a conexão caía no meio da transferência (`ECONNRESET` / `aborted`, 2 de 6 chamadas em 2026-10-02/03) e a imagem — já gerada e cobrada — se perdia. Com o link, **BAIXA IMAGEM SEEDREAM** baixa a imagem em separado, com até 4 tentativas, sem gerar de novo (o link vale 24 h).
 
 **Armadilha:** com o editor do n8n aberto numa aba, salvar de lá sobrescreve qualquer alteração feita via API depois que a aba foi aberta — o editor grava o estado inteiro que tem em memória. Um ramo inteiro (modo de ajuste) já sumiu assim. Recarregue a aba antes de editar manualmente.
 

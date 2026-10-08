@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { timeStage } from "@/lib/perf/trace-context";
+import { segmentScope } from "@/lib/server/roles";
+import { parseInboxIds } from "@/lib/server/inbox-scope";
 
 /** O que as rotas usam do usuário autenticado — só id e e-mail. */
 export type ApiUser = { id: string; email: string | null };
@@ -50,7 +52,7 @@ async function verifiedUser(opts?: AuthOptions): Promise<ApiUser | null> {
 async function loadProfile(userId: string) {
   const { data } = await createAdminClient()
     .from("user_profiles")
-    .select("role,permissions,chatwoot_inbox_id")
+    .select("role,permissions,chatwoot_inbox_id,chatwoot_inbox_ids")
     .eq("id", userId)
     .single();
   return data;
@@ -147,6 +149,49 @@ export async function requireStaffUser(opts?: AuthOptions) {
 }
 
 /**
+ * Usuário autenticado + o segmento a que o papel dele está preso (null = vê
+ * tudo). Rotas que servem lead/agente/dashboard aplicam o escopo sobre o que
+ * devolvem; ver lib/server/segment-scope.ts.
+ */
+export async function requireScopedUser(opts?: AuthOptions) {
+  const { user, response } = await requireApiUser(opts);
+  if (response) return { user: null, role: "", scope: null as string | null, response };
+
+  const profile = await loadProfile(user!.id);
+  const role = String(profile?.role ?? "");
+  return { user: user!, role, scope: segmentScope(role), response: null };
+}
+
+/** requireStaffUser + o escopo do papel. */
+export async function requireStaffScope(opts?: AuthOptions) {
+  const result = await requireScopedUser(opts);
+  if (result.response) return result;
+  if (!isStaff({ role: result.role })) {
+    return { user: null, role: result.role, scope: null as string | null, response: forbidden() };
+  }
+  return result;
+}
+
+/**
+ * Staff sem escopo de segmento. Para o que não tem versão filtrada — ex.: a
+ * conversa inteira de um lead, que mistura o que cliente falou de qualquer assunto.
+ */
+export async function requireUnscopedStaff(opts?: AuthOptions) {
+  const result = await requireStaffScope(opts);
+  if (result.response) return result;
+  if (result.scope) return { user: null, role: result.role, scope: result.scope, response: forbidden() };
+  return result;
+}
+
+/** requireApiUser que recusa papel com escopo, para rotas ainda sem versão filtrada. */
+export async function requireUnscopedUser(opts?: AuthOptions) {
+  const result = await requireScopedUser(opts);
+  if (result.response) return result;
+  if (result.scope) return { user: null, role: result.role, scope: result.scope, response: forbidden() };
+  return result;
+}
+
+/**
  * Requires role === "superadmin". Used by the /api/admin/users routes.
  * Sempre strict: é a porta de gestão de usuários, e uma sessão revogada de
  * superadmin não pode continuar mexendo em papéis até o JWT expirar.
@@ -165,28 +210,28 @@ export async function requireSuperAdmin() {
 /**
  * Requires manage_atendimento, then resolves how far this caller's view of
  * Chatwoot should reach. superadmin/owner/manager see every inbox
- * (scopedInboxId: null). Everyone else (a vendor/employee an admin granted
- * the permission to) is locked to the single Chatwoot inbox an admin linked
- * on their profile (user_profiles.chatwoot_inbox_id) — if that's not set
+ * (scopedInboxIds: null). Everyone else (a vendor/employee an admin granted
+ * the permission to) is locked to the Chatwoot inboxes an admin linked on
+ * their profile (chatwoot_inbox_id + chatwoot_inbox_ids) — if none is linked
  * yet, they get a distinct error code so the UI can say "ask an admin to
  * link your number" instead of a generic failure.
  */
 export async function requireAtendimentoScope(opts?: AuthOptions) {
   const { user, response } = await requireApiPermission("manage_atendimento", opts);
-  if (response) return { user: null, scopedInboxId: null as number | null, response };
+  if (response) return { user: null, scopedInboxIds: null as number[] | null, response };
 
   const profile = await loadProfile(user!.id);
   const role = String(profile?.role ?? "");
 
   if (["superadmin", "owner", "manager"].includes(role)) {
-    return { user: user!, scopedInboxId: null as number | null, response: null };
+    return { user: user!, scopedInboxIds: null as number[] | null, response: null };
   }
 
-  const inboxId = profile?.chatwoot_inbox_id ? Number(profile.chatwoot_inbox_id) : null;
-  if (!inboxId) {
+  const inboxIds = parseInboxIds(profile);
+  if (!inboxIds.length) {
     return {
       user: null,
-      scopedInboxId: null as number | null,
+      scopedInboxIds: null as number[] | null,
       response: Response.json(
         { error: "Seu usuário ainda não está vinculado a um número do Chatwoot.", code: "chatwoot_inbox_not_linked" },
         { status: 403 }
@@ -194,7 +239,7 @@ export async function requireAtendimentoScope(opts?: AuthOptions) {
     };
   }
 
-  return { user: user!, scopedInboxId: inboxId, response: null };
+  return { user: user!, scopedInboxIds: inboxIds, response: null };
 }
 
 export function handleApiError(error: unknown) {

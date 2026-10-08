@@ -10,6 +10,8 @@ import {
   fetchHandoffDecisions,
 } from "@/lib/server/crm-data";
 import { fetchProductMetrics } from "@/lib/server/product-metrics";
+import { segmentScope } from "@/lib/server/roles";
+import { scopeCore, scopePending, scopeSummary } from "@/lib/server/segment-scope";
 import { timeStage } from "@/lib/perf/trace-context";
 import {
   DASHBOARD_SECTIONS,
@@ -135,21 +137,32 @@ export async function buildDashboardSnapshot(
 ): Promise<SnapshotResult> {
   const src = data ?? prefetchSnapshotData(sections.filter((s) => allowed(ctx, s)), loaders);
 
+  // Papel preso a um segmento (installer_manager): TODA seção que lê o núcleo
+  // passa por aqui, então nenhuma delas esquece de filtrar.
+  const scope = segmentScope(ctx.role);
+  const core = async () => {
+    const all = await src.core();
+    return scope ? scopeCore(all, scope) : all;
+  };
+
   const builders: { [K in DashboardSection]: () => Promise<unknown> } = {
     summary: async () => {
-      const [core, decisions, metrics] = await Promise.all([src.core(), src.handoffDecisions(), src.productMetrics()]);
-      return buildSummary(core, decisions, metrics);
+      const [coreData, decisions, metrics] = await Promise.all([core(), src.handoffDecisions(), src.productMetrics()]);
+      // Decisão de boleto é dinheiro de cobrança: fora do escopo.
+      const summary = buildSummary(coreData, scope ? [] : decisions, metrics);
+      return scope ? scopeSummary(summary) : summary;
     },
     pending: async () => {
-      return buildPending(await src.core());
+      const pending = buildPending(await core());
+      return scope ? scopePending(pending) : pending;
     },
-    agents: async () => buildAgents(await src.core()),
+    agents: async () => buildAgents(await core()),
     inventory: async () => {
       const { estoqueSincronizado, metrics } = buildInventoryCounts(await src.productMetrics());
       return { estoqueSincronizado, metrics };
     },
-    activity: async () => buildActivity(await src.core()),
-    urgentFollowups: async () => ({ count: countUrgentFollowups(await src.core()) }),
+    activity: async () => buildActivity(await core()),
+    urgentFollowups: async () => ({ count: countUrgentFollowups(await core()) }),
   };
 
   const results = await Promise.all(

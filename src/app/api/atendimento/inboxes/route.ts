@@ -1,15 +1,16 @@
-import { requireApiPermission, handleApiError } from "@/lib/server/api-auth";
+import { requireAtendimentoScope, handleApiError } from "@/lib/server/api-auth";
 import { listInboxes, ChatwootNotConfiguredError, ChatwootApiError } from "@/lib/chatwoot/client";
+import { canSeeInbox } from "@/lib/server/inbox-scope";
 
-// Names only (no message content) — safe for anyone who can reach
-// /atendimento, and for the admin panel's inbox picker (superadmin already
-// passes requireApiPermission regardless of the manage_atendimento flag).
+// Names only (no message content). Quem tem escopo vê só os próprios inboxes —
+// listar os de todo mundo entregaria o nome de cada número da empresa. O painel
+// admin (superadmin) passa sem escopo e recebe a lista inteira para o seletor.
 export async function GET() {
-  const { response } = await requireApiPermission("manage_atendimento");
+  const { scopedInboxIds, response } = await requireAtendimentoScope();
   if (response) return response;
 
   try {
-    const inboxes = await listInboxes();
+    const inboxes = (await listInboxes()).filter((inbox) => canSeeInbox(scopedInboxIds, inbox.id));
     return Response.json({ inboxes });
   } catch (error) {
     if (error instanceof ChatwootNotConfiguredError) {

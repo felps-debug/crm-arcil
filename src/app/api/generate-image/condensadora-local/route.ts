@@ -7,6 +7,8 @@ import { requireApiPermission } from "@/lib/server/api-auth";
 import { N8N_CONDENSADORA_WEBHOOK } from "@/lib/env";
 import { assertEnv } from "@/lib/server/env-guard";
 import { CONDENSADORA_BULLETS } from "@/constants/hvac-standards";
+import { LOCAIS_CONDENSADORA, type LocalCondensadora } from "@/lib/alertas-instalacao";
+import { gerarCenaCondensadora } from "@/lib/server/cena-condensadora";
 
 /**
  * Gera, sob demanda, uma imagem ilustrativa (cenário genérico, não o local
@@ -20,13 +22,15 @@ import { CONDENSADORA_BULLETS } from "@/constants/hvac-standards";
  * imagem — mesma razão de sempre neste projeto: modelo de imagem erra texto.
  */
 
-const TIPOS_LOCAL = ["telhado", "laje_tecnica", "sacada_tecnica"] as const;
-type TipoLocal = (typeof TIPOS_LOCAL)[number];
+const TIPOS_LOCAL: string[] = LOCAIS_CONDENSADORA.map((l) => l.chave);
+type TipoLocal = LocalCondensadora;
 
 const TITULOS: Record<TipoLocal, string> = {
   telhado: "NO TELHADO",
   laje_tecnica: "NA LAJE TÉCNICA / CASA DE MÁQUINAS",
   sacada_tecnica: "EM SACADA TÉCNICA",
+  parede_externa: "EM SUPORTE NA PAREDE EXTERNA",
+  chao: "EM BASE NO CHÃO",
 };
 
 // O que é próprio de cada local. Os afastamentos de garantia entram depois,
@@ -36,6 +40,8 @@ const BULLETS_BASE: Record<TipoLocal, string[]> = {
   telhado: ["Base nivelada e fixa, resistente a vento e chuva"],
   laje_tecnica: ["Local ventilado, com acesso livre para manutenção"],
   sacada_tecnica: ["Local exclusivo e ventilado, protegido de chuva direta"],
+  parede_externa: ["Suporte metálico nivelado, chumbado em parede estrutural"],
+  chao: ["Base elevada e nivelada, longe de poças e de terra"],
 };
 
 /**
@@ -134,46 +140,19 @@ export async function POST(request: NextRequest) {
     distanciaTexto,
   }: { leadId?: string; tipoLocal?: string; productImageUrl?: string | null; distanciaTexto?: string | null } = await request.json();
 
-  if (!TIPOS_LOCAL.includes(tipoLocal as TipoLocal)) {
+  if (!tipoLocal || !TIPOS_LOCAL.includes(tipoLocal)) {
     return Response.json({ error: `tipoLocal deve ser um de: ${TIPOS_LOCAL.join(", ")}` }, { status: 400 });
   }
   const tipo = tipoLocal as TipoLocal;
 
   const productImageBase64 = await fetchProductImageBase64(productImageUrl ?? null);
 
-  let n8nRes: Response;
+  let urlBruta: string;
   try {
-    n8nRes = await fetch(N8N_CONDENSADORA_WEBHOOK, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(120_000),
-      body: JSON.stringify({
-        lead_id: leadId ?? crypto.randomUUID(),
-        tipo_local: tipo,
-        product_image_base64: productImageBase64 ? `data:image/jpeg;base64,${productImageBase64}` : null,
-      }),
-    });
+    urlBruta = await gerarCenaCondensadora({ leadId: leadId ?? crypto.randomUUID(), tipoLocal: tipo, productImageBase64 });
   } catch (err) {
-    const motivo = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    return Response.json({ error: `Não consegui falar com a automação de imagem (${motivo}).` }, { status: 502 });
-  }
-
-  const bodyTexto = await n8nRes.text();
-  if (!n8nRes.ok || !bodyTexto.trim()) {
-    console.error(`[condensadora-local] n8n HTTP ${n8nRes.status}:`, bodyTexto.slice(0, 600) || "(corpo vazio)");
+    console.error("[condensadora-local]", err instanceof Error ? err.message : err);
     return Response.json({ error: "A automação de imagem não devolveu resultado. Verifique a execução no n8n." }, { status: 502 });
-  }
-
-  let n8nData: Record<string, unknown>;
-  try {
-    n8nData = JSON.parse(bodyTexto);
-  } catch {
-    return Response.json({ error: "A automação de imagem devolveu uma resposta inesperada." }, { status: 502 });
-  }
-
-  const urlBruta = n8nData.url_imagem_final;
-  if (typeof urlBruta !== "string" || !urlBruta) {
-    return Response.json({ error: "n8n não retornou a URL da imagem" }, { status: 500 });
   }
 
   try {

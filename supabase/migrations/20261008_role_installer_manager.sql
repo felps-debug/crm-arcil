@@ -1,0 +1,15 @@
+-- Papel preso a um segmento de leads: gestor dos instaladores.
+--
+-- As políticas `staff_read_*` (leads, conversations, messages, cobranca_log,
+-- followups, sales, quotes, vendors...) listam os papéis permitidos por nome:
+-- superadmin, owner, manager, vendor, employee. Este papel NÃO entra em nenhuma
+-- delas de propósito — com isso o banco recusa qualquer leitura direta feita
+-- com o token dele (PostgREST), e todo dado dele passa pelas rotas do CRM, que
+-- filtram pelo segmento INSTALLER (src/lib/server/segment-scope.ts).
+--
+-- Não mexe em política nenhuma. Se um dia for preciso dar leitura direta a este
+-- papel, é decisão explícita numa migração própria — não um efeito colateral.
+--
+-- ADD VALUE não roda dentro de transação junto com o uso do valor novo; aqui só
+-- se cria o valor, o uso vem depois (user_profiles.role = 'installer_manager').
+alter type public.user_role add value if not exists 'installer_manager';

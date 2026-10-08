@@ -2,9 +2,10 @@ import { NextRequest } from "next/server";
 import { requireAtendimentoScope, handleApiError } from "@/lib/server/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getConversation, sendMessage, ChatwootNotConfiguredError, ChatwootApiError } from "@/lib/chatwoot/client";
+import { canSeeInbox } from "@/lib/server/inbox-scope";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { user, scopedInboxId, response } = await requireAtendimentoScope({ strict: true });
+  const { user, scopedInboxIds, response } = await requireAtendimentoScope({ strict: true });
   if (response) return response;
 
   try {
@@ -17,9 +18,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Same ownership check as the detail route — a scoped vendor can't reply
     // into a conversation from a different inbox by guessing its id.
-    if (scopedInboxId != null) {
+    if (scopedInboxIds != null) {
       const conv = await getConversation(id);
-      if (conv.inboxId !== scopedInboxId) {
+      if (!canSeeInbox(scopedInboxIds, conv.inboxId)) {
         return Response.json({ error: "Você não tem acesso a esta conversa." }, { status: 403 });
       }
     }

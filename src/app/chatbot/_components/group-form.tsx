@@ -17,12 +17,15 @@ export function GroupForm({
   answers,
   onChangeAnswer,
   onConfirmProduto,
+  alertas,
   disabled,
 }: {
   grupo: StepGroup;
   answers: Record<string, string>;
   onChangeAnswer: (chave: string, valor: string) => void;
   onConfirmProduto: (produto: InventoryProduct, tipo: string) => void;
+  /** Avisos de garantia calculados das respostas (tensão, dreno, obstáculos). */
+  alertas?: string[];
   disabled?: boolean;
 }) {
   return (
@@ -34,6 +37,15 @@ export function GroupForm({
           <CampoStep step={step} valor={answers[step.key] ?? ""} onChange={(v) => onChangeAnswer(step.key, v)} onConfirmProduto={onConfirmProduto} disabled={disabled} />
         </div>
       ))}
+      {alertas && alertas.length > 0 && (
+        <div className="space-y-1.5 rounded-[8px] border border-amber-500/40 bg-amber-500/10 p-3">
+          {alertas.map((a) => (
+            <p key={a} className="text-[11px] leading-relaxed text-amber-200">
+              {a}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

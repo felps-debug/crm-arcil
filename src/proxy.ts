@@ -11,7 +11,6 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMITS: Record<string, number> = {
   "/api/check-result": 20,
-  "/api/chat": 30,
   "/api/generate-image": 10,
   "/api/cobranca/disparo": 5,
   "/api/cobranca/reenviar-nao-disparados": 5,
