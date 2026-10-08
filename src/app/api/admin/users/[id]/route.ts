@@ -14,7 +14,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (response) return response;
 
     const { id } = await params;
-    const { role, full_name, permissions, chatwoot_inbox_id } = await req.json();
+    const { role, full_name, permissions, chatwoot_inbox_id, chatwoot_inbox_ids } = await req.json();
 
     if (role !== undefined && !VALID_ROLES.includes(role)) {
       return Response.json({ error: `Role inválida. Use uma de: ${VALID_ROLES.join(", ")}` }, { status: 400 });
@@ -24,6 +24,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (chatwoot_inbox_id !== undefined && chatwoot_inbox_id !== null && typeof chatwoot_inbox_id !== "string") {
       return Response.json({ error: "chatwoot_inbox_id deve ser string ou null" }, { status: 400 });
+    }
+
+    if (
+      chatwoot_inbox_ids !== undefined &&
+      !(Array.isArray(chatwoot_inbox_ids) && chatwoot_inbox_ids.every((n) => Number.isInteger(n) && n > 0))
+    ) {
+      return Response.json({ error: "chatwoot_inbox_ids deve ser uma lista de números inteiros positivos" }, { status: 400 });
     }
 
     const admin = createAdminClient();
@@ -37,6 +44,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (role) updates.role = role;
     if (full_name !== undefined) updates.full_name = full_name;
     if (chatwoot_inbox_id !== undefined) updates.chatwoot_inbox_id = chatwoot_inbox_id;
+    if (chatwoot_inbox_ids !== undefined) {
+      updates.chatwoot_inbox_ids = [...new Set(chatwoot_inbox_ids as number[])];
+      // A lista passa a ser a única fonte: o vínculo antigo (um só) sairia somado a ela.
+      if (chatwoot_inbox_id === undefined) updates.chatwoot_inbox_id = null;
+    }
 
     const { error } = await admin.from("user_profiles").update(updates).eq("id", id);
     if (error) return handleApiError(error);

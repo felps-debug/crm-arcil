@@ -240,7 +240,9 @@ function AtendimentoPageInner() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          {list.data?.scoped === false && inboxes.length > 0 && (
+          {/* A rota já devolve só os números que o usuário pode ver: com um só,
+              não há o que filtrar; com vários (ex.: gestor dos instaladores), o filtro serve. */}
+          {inboxes.length > 1 && (
             <select
               value={inboxFilter}
               onChange={(e) => setInboxFilter(e.target.value)}

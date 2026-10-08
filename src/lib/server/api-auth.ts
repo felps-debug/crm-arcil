@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { timeStage } from "@/lib/perf/trace-context";
 import { segmentScope } from "@/lib/server/roles";
+import { parseInboxIds } from "@/lib/server/inbox-scope";
 
 /** O que as rotas usam do usuário autenticado — só id e e-mail. */
 export type ApiUser = { id: string; email: string | null };
@@ -51,7 +52,7 @@ async function verifiedUser(opts?: AuthOptions): Promise<ApiUser | null> {
 async function loadProfile(userId: string) {
   const { data } = await createAdminClient()
     .from("user_profiles")
-    .select("role,permissions,chatwoot_inbox_id")
+    .select("role,permissions,chatwoot_inbox_id,chatwoot_inbox_ids")
     .eq("id", userId)
     .single();
   return data;
@@ -209,28 +210,28 @@ export async function requireSuperAdmin() {
 /**
  * Requires manage_atendimento, then resolves how far this caller's view of
  * Chatwoot should reach. superadmin/owner/manager see every inbox
- * (scopedInboxId: null). Everyone else (a vendor/employee an admin granted
- * the permission to) is locked to the single Chatwoot inbox an admin linked
- * on their profile (user_profiles.chatwoot_inbox_id) — if that's not set
+ * (scopedInboxIds: null). Everyone else (a vendor/employee an admin granted
+ * the permission to) is locked to the Chatwoot inboxes an admin linked on
+ * their profile (chatwoot_inbox_id + chatwoot_inbox_ids) — if none is linked
  * yet, they get a distinct error code so the UI can say "ask an admin to
  * link your number" instead of a generic failure.
  */
 export async function requireAtendimentoScope(opts?: AuthOptions) {
   const { user, response } = await requireApiPermission("manage_atendimento", opts);
-  if (response) return { user: null, scopedInboxId: null as number | null, response };
+  if (response) return { user: null, scopedInboxIds: null as number[] | null, response };
 
   const profile = await loadProfile(user!.id);
   const role = String(profile?.role ?? "");
 
   if (["superadmin", "owner", "manager"].includes(role)) {
-    return { user: user!, scopedInboxId: null as number | null, response: null };
+    return { user: user!, scopedInboxIds: null as number[] | null, response: null };
   }
 
-  const inboxId = profile?.chatwoot_inbox_id ? Number(profile.chatwoot_inbox_id) : null;
-  if (!inboxId) {
+  const inboxIds = parseInboxIds(profile);
+  if (!inboxIds.length) {
     return {
       user: null,
-      scopedInboxId: null as number | null,
+      scopedInboxIds: null as number[] | null,
       response: Response.json(
         { error: "Seu usuário ainda não está vinculado a um número do Chatwoot.", code: "chatwoot_inbox_not_linked" },
         { status: 403 }
@@ -238,7 +239,7 @@ export async function requireAtendimentoScope(opts?: AuthOptions) {
     };
   }
 
-  return { user: user!, scopedInboxId: inboxId, response: null };
+  return { user: user!, scopedInboxIds: inboxIds, response: null };
 }
 
 export function handleApiError(error: unknown) {

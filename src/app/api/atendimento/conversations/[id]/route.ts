@@ -1,18 +1,19 @@
 import { NextRequest } from "next/server";
 import { requireAtendimentoScope, handleApiError } from "@/lib/server/api-auth";
 import { getConversation, ChatwootNotConfiguredError, ChatwootApiError } from "@/lib/chatwoot/client";
+import { canSeeInbox } from "@/lib/server/inbox-scope";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { scopedInboxId, response } = await requireAtendimentoScope();
+  const { scopedInboxIds, response } = await requireAtendimentoScope();
   if (response) return response;
 
   try {
     const { id } = await params;
     const conversation = await getConversation(id);
 
-    // A vendor scoped to one inbox can't fetch another inbox's conversation
-    // just by knowing/guessing its id.
-    if (scopedInboxId != null && conversation.inboxId !== scopedInboxId) {
+    // A scoped caller can't fetch another inbox's conversation just by
+    // knowing/guessing its id.
+    if (!canSeeInbox(scopedInboxIds, conversation.inboxId)) {
       return Response.json({ error: "Você não tem acesso a esta conversa." }, { status: 403 });
     }
 

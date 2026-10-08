@@ -19,6 +19,7 @@ const {
   isSuperAdmin,
   requireApiPermission,
   requireApiUser,
+  requireAtendimentoScope,
   requireScopedUser,
   requireStaffScope,
   requireUnscopedStaff,
@@ -136,6 +137,42 @@ describe("papel com escopo de segmento (installer_manager)", () => {
     expect((await requireUnscopedUser()).response?.status).toBe(403);
     comPapel("manager");
     expect((await requireUnscopedUser()).response).toBeNull();
+  });
+
+  it("Atendimento: vê só os inboxes vinculados (antigo + lista), sem repetir", async () => {
+    auth.getClaims.mockResolvedValue({ data: { claims: { sub: "u1" } }, error: null });
+    profileQuery.single.mockResolvedValue({
+      data: {
+        role: "installer_manager",
+        permissions: { manage_atendimento: true },
+        chatwoot_inbox_id: "15",
+        chatwoot_inbox_ids: [23, 22, 15],
+      },
+    });
+    const { scopedInboxIds, response } = await requireAtendimentoScope();
+    expect(response).toBeNull();
+    expect(scopedInboxIds).toEqual([15, 23, 22]);
+  });
+
+  it("Atendimento: sem nenhum inbox vinculado, 403 com código próprio", async () => {
+    auth.getClaims.mockResolvedValue({ data: { claims: { sub: "u1" } }, error: null });
+    profileQuery.single.mockResolvedValue({
+      data: { role: "installer_manager", permissions: { manage_atendimento: true }, chatwoot_inbox_ids: [] },
+    });
+    const { response } = await requireAtendimentoScope();
+    expect(response?.status).toBe(403);
+    expect(await response?.json()).toMatchObject({ code: "chatwoot_inbox_not_linked" });
+  });
+
+  it("Atendimento: sem a flag manage_atendimento nem chega ao escopo", async () => {
+    comPapel("installer_manager");
+    expect((await requireAtendimentoScope()).response?.status).toBe(403);
+  });
+
+  it("Atendimento: manager vê todos (sem escopo)", async () => {
+    auth.getClaims.mockResolvedValue({ data: { claims: { sub: "u1" } }, error: null });
+    profileQuery.single.mockResolvedValue({ data: { role: "manager", permissions: { manage_atendimento: true } } });
+    expect((await requireAtendimentoScope()).scopedInboxIds).toBeNull();
   });
 
   it("não ganha acesso a módulo de gestão pelas rotas de permissão", async () => {

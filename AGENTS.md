@@ -186,6 +186,7 @@ Para quem cuida só dos instaladores (hoje: Thiago). Vê Dashboard, Leads e Agen
 - **Rota nova que lê lead/conversa/venda por admin client** tem que escolher: aplicar `scope` ou usar uma das `requireUnscoped*`. Esquecer = vazamento de outros segmentos.
 - **Dashboard:** sem realtime (RLS não entrega evento a ele), atualiza por polling de 60 s.
 - Os toggles de módulo do `/admin` continuam valendo: dar `manage_*` a ele abre o módulo inteiro, sem escopo.
+- **Atendimento com vários números:** quem não é manager+ vê só os inboxes do Chatwoot vinculados em `user_profiles` — `chatwoot_inbox_id` (texto, vínculo antigo) **somado** a `chatwoot_inbox_ids` (`integer[]`). `requireAtendimentoScope` devolve `scopedInboxIds`; lista, detalhe, envio e a lista de inboxes aplicam `lib/server/inbox-scope.ts`. No `/admin` o vínculo é por checkbox (marcar grava a lista e zera o campo antigo). Hoje o Thiago vê os inboxes 15 (Thiago), 23 (Rodiney) e 22 (Karina — era "Alex - Instaladores", renomeado no Chatwoot em 2026-10-08).
 
 **Duas camadas, sempre as duas:**
 - `<AccessGuard perm="...">` (`components/layout/access-guard.tsx`) só esconde a UI.

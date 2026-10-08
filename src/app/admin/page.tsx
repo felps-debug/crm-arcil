@@ -17,6 +17,7 @@ import {
 import { AccessGuard } from "@/components/layout/access-guard";
 import { formatDateTime, useApi } from "@/lib/client-api";
 import { useToast } from "@/components/ui/toast";
+import { parseInboxIds } from "@/lib/server/inbox-scope";
 import type { ActivityLogResponse } from "@/types/api";
 
 type AdminUser = {
@@ -27,6 +28,7 @@ type AdminUser = {
   created_at?: string | null;
   permissions?: Record<string, boolean> | null;
   chatwoot_inbox_id?: string | null;
+  chatwoot_inbox_ids?: number[] | null;
 };
 
 type ChatwootInboxesResponse = { inboxes: { id: number; name: string }[] };
@@ -119,18 +121,20 @@ function AdminPageInner() {
     setReloadToken((t) => t + 1);
   }
 
-  async function handleSetChatwootInbox(userId: string, chatwootInboxId: string | null) {
-    const res = await fetch(`/api/admin/users/${userId}`, {
+  async function handleToggleChatwootInbox(user: AdminUser, inboxId: number, linked: boolean) {
+    const current = parseInboxIds(user);
+    const next = linked ? [...new Set([...current, inboxId])] : current.filter((id) => id !== inboxId);
+    const res = await fetch(`/api/admin/users/${user.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatwoot_inbox_id: chatwootInboxId }),
+      body: JSON.stringify({ chatwoot_inbox_ids: next }),
     });
     const body = await res.json();
     if (!res.ok || body.error) {
       toast(body.error ?? "Erro ao vincular número.", "error");
       return;
     }
-    toast(chatwootInboxId ? "Número vinculado." : "Vínculo removido.", "success");
+    toast(linked ? "Número vinculado." : "Vínculo removido.", "success");
     setReloadToken((t) => t + 1);
   }
 
@@ -241,20 +245,24 @@ function AdminPageInner() {
                             <>
                               <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
                               <DropdownMenu.Label className="px-2 pb-1 text-[10px] font-bold uppercase text-[var(--text-muted)]">
-                                Número Chatwoot (Atendimento)
+                                Números Chatwoot (Atendimento)
                               </DropdownMenu.Label>
-                              <div className="px-2 pb-1.5" onClick={(e) => e.stopPropagation()}>
-                                <select
-                                  value={user.chatwoot_inbox_id ?? ""}
-                                  onChange={(e) => handleSetChatwootInbox(user.id, e.target.value || null)}
-                                  className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1.5 text-[12px] text-[var(--text-primary)]"
+                              {inboxes.data.inboxes.map((ib) => (
+                                <DropdownMenu.CheckboxItem
+                                  key={ib.id}
+                                  checked={parseInboxIds(user).includes(ib.id)}
+                                  onCheckedChange={(value) => handleToggleChatwootInbox(user, ib.id, value)}
+                                  onSelect={(e) => e.preventDefault()}
+                                  className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-subtle)] focus:bg-[var(--bg-subtle)]"
                                 >
-                                  <option value="">Nenhum vínculo</option>
-                                  {inboxes.data.inboxes.map((ib) => (
-                                    <option key={ib.id} value={String(ib.id)}>{ib.name}</option>
-                                  ))}
-                                </select>
-                              </div>
+                                  <span className="grid h-3.5 w-3.5 place-items-center">
+                                    <DropdownMenu.ItemIndicator>
+                                      <Check size={12} />
+                                    </DropdownMenu.ItemIndicator>
+                                  </span>
+                                  {ib.name}
+                                </DropdownMenu.CheckboxItem>
+                              ))}
                             </>
                           )}
                           <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
