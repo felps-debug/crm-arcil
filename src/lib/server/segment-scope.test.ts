@@ -37,27 +37,51 @@ const core = {
   ],
 } as unknown as CoreData;
 
-describe("papel installer_manager", () => {
-  it("existe entre os papéis válidos e escopa ao segmento INSTALLER", () => {
+describe("papéis presos a segmentos", () => {
+  it("existem entre os papéis válidos e escopam aos segmentos certos", () => {
     expect(VALID_ROLES).toContain("installer_manager");
-    expect(segmentScope("installer_manager")).toBe("INSTALLER");
+    expect(VALID_ROLES).toContain("builder_manager");
+    expect(segmentScope("installer_manager")).toEqual(["INSTALLER"]);
+    expect(segmentScope("builder_manager")).toEqual(["BUILDER", "ARCHITECT"]);
   });
 
   it("nenhum outro papel tem escopo", () => {
-    for (const role of VALID_ROLES.filter((r) => r !== "installer_manager")) {
+    for (const role of VALID_ROLES.filter((r) => r !== "installer_manager" && r !== "builder_manager")) {
       expect(segmentScope(role)).toBeNull();
     }
     expect(segmentScope("")).toBeNull();
   });
 
-  it("não nasce com nenhum módulo de gestão", () => {
-    const perms = ROLE_PERMISSIONS.installer_manager;
-    expect(Object.keys(perms).filter((k) => k.startsWith("manage_") || k === "view_all")).toEqual([]);
+  it("não nascem com nenhum módulo de gestão", () => {
+    for (const role of ["installer_manager", "builder_manager"] as const) {
+      const perms = ROLE_PERMISSIONS[role];
+      expect(Object.keys(perms).filter((k) => k.startsWith("manage_") || k === "view_all")).toEqual([]);
+    }
+  });
+});
+
+describe("scopeCore com mais de um segmento", () => {
+  const multi = {
+    ...core,
+    leads: [
+      ...core.leads,
+      { id: "b2", segment: "BUILDER", wa_phone: "5543911110005" },
+      { id: "a1", segment: "ARCHITECT", wa_phone: "5543911110006" },
+    ],
+    vendors: [...core.vendors, { id: "claudio", name: "Claudio", segment: ["BUILDER", "ARCHITECT"] }],
+    conversations: [...core.conversations, { id: "v3", lead_id: "b2", vendor_id: "claudio" }],
+  } as unknown as CoreData;
+
+  it("junta leads de todos os segmentos do papel e nada além", () => {
+    const scoped = scopeCore(multi, ["BUILDER", "ARCHITECT"]);
+    expect(scoped.leads.map((l) => l.id)).toEqual(["b2", "a1"]);
+    expect(scoped.vendors.map((v) => v.id)).toEqual(["claudio"]);
+    expect(scoped.conversations.map((c) => c.id)).toEqual(["v3"]);
   });
 });
 
 describe("scopeCore", () => {
-  const scoped = scopeCore(core, "INSTALLER");
+  const scoped = scopeCore(core, ["INSTALLER"]);
 
   it("mantém só leads do segmento", () => {
     expect(scoped.leads.map((l) => l.id)).toEqual(["i1", "i2"]);
@@ -122,11 +146,16 @@ describe("scopeLeadDetail", () => {
     }) as unknown as LeadDetailResponse;
 
   it("lead de outro segmento some (null → 404)", () => {
-    expect(scopeLeadDetail(detail("CONSUMER"), "INSTALLER")).toBeNull();
+    expect(scopeLeadDetail(detail("CONSUMER"), ["INSTALLER"])).toBeNull();
+  });
+
+  it("com vários segmentos, qualquer um deles serve", () => {
+    expect(scopeLeadDetail(detail("ARCHITECT"), ["BUILDER", "ARCHITECT"])).not.toBeNull();
+    expect(scopeLeadDetail(detail("INSTALLER"), ["BUILDER", "ARCHITECT"])).toBeNull();
   });
 
   it("tira conversa, mensagem, cobrança e financeiro; zera os contadores correspondentes", () => {
-    const out = scopeLeadDetail(detail("INSTALLER"), "INSTALLER")!;
+    const out = scopeLeadDetail(detail("INSTALLER"), ["INSTALLER"])!;
     expect(out.timeline.map((t) => t.type)).toEqual(["lead", "followup", "image", "quote"]);
     expect(out.financialHandoff).toBeNull();
     expect(out.summary).toMatchObject({ conversations: 0, messages: 0, collections: 0, followups: 1, quotes: 1 });
