@@ -139,6 +139,8 @@ O workflow n8n "ERP — SALDO DE ESTOQUE" grava `estoque` e `estoque_transito` d
 
 Contagem de produto é por `codigo_erp` (a mesma geladeira tem uma linha por segmento) e sai de `public.product_metrics()`: dashboard, pendências e `/demanda-estoque` usam o mesmo número. O sinal de demanda vem de `out_of_stock_requests`, que o agente preenche quando não consegue atender um pedido.
 
+**Busca dos agentes de IA só devolve produto com saldo.** As RPCs `hybrid_search_{consumer,reseller,installer,builder,any}` (usadas pela edge function `hybrid-search`, que o sub-workflow `RAG 2 - Arcil` chama) filtram `estoque > 0` nos dois ramos da busca, antes do ranking (migração `20261008_busca_so_com_estoque`). Regra do negócio: **nunca oferecer produto sem estoque** — `estoque_transito` e saldo nulo também ficam de fora; pedido sem resultado vira linha em `out_of_stock_requests`. Antes, a Renata ofereceu 3 modelos zerados e deixou de fora os Philco 60.000 que tinham saldo (30/09/2026). Reversão em `docs/backups/rollback-busca-sem-filtro-estoque-20261008.sql` (pasta fora do Git; regenerável da migração).
+
 **O sync regrava todas as linhas mesmo sem mudança** (~2,4 mi de updates em `products_reseller`, que tem 1.509 linhas) — é o maior consumidor de CPU do banco. Correção descrita em `specs/001-otimizar-performance-crm/contracts/erp-sync-change.md` (`IS DISTINCT FROM` nos UPDATEs). `estoque_transito` (migração `20260824_add_estoque_transito.sql`) rastreia o que está a caminho, separado do vendável.
 
 ### Lista de bloqueio (`blocked_phones`)
