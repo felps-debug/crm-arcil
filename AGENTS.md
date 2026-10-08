@@ -174,12 +174,13 @@ Criada automaticamente via trigger `on_auth_user_created` quando um usuário é 
 | employee    | view_leads                                                                                           |
 | client      | (nenhuma)                                                                                            |
 | installer_manager | view_leads — **e preso ao segmento `INSTALLER`** (ver abaixo)                                  |
+| builder_manager   | view_leads — **e preso aos segmentos `BUILDER` + `ARCHITECT`** (ver abaixo)                    |
 
 `permissions` (jsonb em `user_profiles`) sobrescreve/estende o default do role por usuário.
 
-### `installer_manager` — papel preso a um segmento
+### `installer_manager` e `builder_manager` — papéis presos a segmentos
 
-Para quem cuida só dos instaladores (hoje: Thiago). Vê Dashboard, Leads e Agentes IA, **só do segmento `INSTALLER`**; sem conversas, cobrança, financeiro, estoque ou atendimento.
+Quem cuida só de uma área. `installer_manager` (Thiago): segmento `INSTALLER`. `builder_manager` (Claudio): `BUILDER` + `ARCHITECT` (engenheiros, construtoras, arquitetos). Veem Dashboard, Leads e Agentes IA **só desses segmentos**; sem conversas de lead, cobrança, financeiro nem estoque. Atendimento só se o admin der `manage_atendimento` + os inboxes (abaixo). O mapa papel → segmentos é `ROLE_SEGMENT_SCOPE` em `lib/server/roles.ts`; papel novo preso a segmento = valor novo no enum `user_role` (migração) + uma linha ali.
 
 - **Isolamento no banco:** as políticas `staff_read_*` listam os papéis por nome e este não está nelas, então ele não lê nada direto pelo Supabase com o token dele. Todo dado passa pelas rotas, que usam o admin client. Se criar tabela nova com política `staff_read_*`, **não** inclua este papel sem decidir isso de propósito.
 - **Escopo na API:** `segmentScope(role)` em `lib/server/roles.ts` → `lib/server/segment-scope.ts` (`scopeCore`, `scopeSummary`, `scopePending`, `scopeLeadDetail`). Rotas: `requireScopedUser` / `requireStaffScope` devolvem o `scope`; `requireUnscopedStaff` / `requireUnscopedUser` recusam o papel (conversas de lead, rotas `dashboard/summary` e `pending-center` legadas).

@@ -8,9 +8,11 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     return Response.json(await getLeads({
-      // Papel preso a um segmento: o parâmetro da URL não vale, senão bastava
-      // trocar `?segment=` para ver os outros.
-      segment: scope ?? url.searchParams.get("segment"),
+      // Papel preso a segmentos: `segments` é o teto e o parâmetro da URL só
+      // pode estreitar dentro dele; fora do teto não amplia nada (resultado
+      // vazio), então trocar `?segment=` não mostra os outros.
+      segment: url.searchParams.get("segment"),
+      segments: scope,
       status: url.searchParams.get("status"),
       city: url.searchParams.get("city"),
       origin: url.searchParams.get("origin"),

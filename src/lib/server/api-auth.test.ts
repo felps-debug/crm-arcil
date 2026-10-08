@@ -108,7 +108,9 @@ describe("papel com escopo de segmento (installer_manager)", () => {
 
   it("requireScopedUser devolve o segmento do papel", async () => {
     comPapel("installer_manager");
-    expect((await requireScopedUser()).scope).toBe("INSTALLER");
+    expect((await requireScopedUser()).scope).toEqual(["INSTALLER"]);
+    comPapel("builder_manager");
+    expect((await requireScopedUser()).scope).toEqual(["BUILDER", "ARCHITECT"]);
     comPapel("vendor");
     expect((await requireScopedUser()).scope).toBeNull();
   });
@@ -122,7 +124,7 @@ describe("papel com escopo de segmento (installer_manager)", () => {
     comPapel("client");
     expect((await requireStaffScope()).response?.status).toBe(403);
     comPapel("installer_manager");
-    expect((await requireStaffScope()).scope).toBe("INSTALLER");
+    expect((await requireStaffScope()).scope).toEqual(["INSTALLER"]);
   });
 
   it("requireUnscopedStaff barra o papel escopado (ex.: conversas de lead)", async () => {

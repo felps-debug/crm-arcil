@@ -44,7 +44,7 @@ type UsersResponse = {
   users: AdminUser[];
 };
 
-const ROLES = ["superadmin", "owner", "manager", "vendor", "employee", "client", "installer_manager"] as const;
+const ROLES = ["superadmin", "owner", "manager", "vendor", "employee", "client", "installer_manager", "builder_manager"] as const;
 
 const roleTone: Record<string, "blue" | "green" | "amber" | "red" | "violet" | "slate"> = {
   superadmin: "blue",
@@ -54,6 +54,7 @@ const roleTone: Record<string, "blue" | "green" | "amber" | "red" | "violet" | "
   employee: "amber",
   client: "slate",
   installer_manager: "green",
+  builder_manager: "green",
 };
 
 const permissions = [
@@ -62,6 +63,7 @@ const permissions = [
   ["Gerente", "Supervisão de equipes e relatórios operacionais.", "violet"],
   ["Vendedor", "Gestão de leads do funil de vendas atribuído.", "green"],
   ["Gestor de instaladores", "Dashboard, Leads e Agente IA, só do segmento instalador. Sem conversas, cobrança nem estoque.", "green"],
+  ["Gestor de construtores", "Dashboard, Leads e Agente IA, só de construtores, engenheiros e arquitetos. Sem conversas, cobrança nem estoque.", "green"],
   ["Financeiro", "Acesso exclusivo ao faturamento e cobranças.", "amber"],
   ["Estoque", "Controle de entrada e saida de materiais.", "slate"],
 ];

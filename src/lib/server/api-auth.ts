@@ -149,13 +149,13 @@ export async function requireStaffUser(opts?: AuthOptions) {
 }
 
 /**
- * Usuário autenticado + o segmento a que o papel dele está preso (null = vê
+ * Usuário autenticado + os segmentos a que o papel dele está preso (null = vê
  * tudo). Rotas que servem lead/agente/dashboard aplicam o escopo sobre o que
  * devolvem; ver lib/server/segment-scope.ts.
  */
 export async function requireScopedUser(opts?: AuthOptions) {
   const { user, response } = await requireApiUser(opts);
-  if (response) return { user: null, role: "", scope: null as string | null, response };
+  if (response) return { user: null, role: "", scope: null as string[] | null, response };
 
   const profile = await loadProfile(user!.id);
   const role = String(profile?.role ?? "");
@@ -167,7 +167,7 @@ export async function requireStaffScope(opts?: AuthOptions) {
   const result = await requireScopedUser(opts);
   if (result.response) return result;
   if (!isStaff({ role: result.role })) {
-    return { user: null, role: result.role, scope: null as string | null, response: forbidden() };
+    return { user: null, role: result.role, scope: null as string[] | null, response: forbidden() };
   }
   return result;
 }

@@ -15,8 +15,8 @@ const PENDING_FORA_DO_ESCOPO = new Set(["collections_due_today"]);
 /** Conversa, mensagem e cobrança não aparecem para quem é escopado. */
 const TIMELINE_FORA_DO_ESCOPO = new Set(["conversation", "message", "collection"]);
 
-export function scopeCore(core: CoreData, segment: string): CoreData {
-  const leads = core.leads.filter((l) => l.segment === segment);
+export function scopeCore(core: CoreData, segments: string[]): CoreData {
+  const leads = core.leads.filter((l) => l.segment != null && segments.includes(l.segment));
   const leadIds = new Set(leads.map((l) => l.id));
   const phones = new Set(leads.map((l) => l.wa_phone).filter(Boolean));
   const doLead = (row: { lead_id: string | null }) => row.lead_id != null && leadIds.has(row.lead_id);
@@ -28,7 +28,7 @@ export function scopeCore(core: CoreData, segment: string): CoreData {
       (f) => doLead(f) || (f.lead_id == null && f.numero_cliente != null && phones.has(f.numero_cliente))
     ),
     conversations: core.conversations.filter(doLead),
-    vendors: core.vendors.filter((v) => (v.segment ?? []).includes(segment)),
+    vendors: core.vendors.filter((v) => (v.segment ?? []).some((s) => segments.includes(s))),
     // Cobrança é dos devedores, outro segmento: nada dela entra.
     cobrancas: [],
     quotes: core.quotes.filter(doLead),
@@ -49,8 +49,8 @@ export function scopePending(pending: PendingCenterResponse): PendingCenterRespo
 }
 
 /** null = o lead é de outro segmento (a rota responde 404, não 403, para não confirmar que existe). */
-export function scopeLeadDetail(detail: LeadDetailResponse, segment: string): LeadDetailResponse | null {
-  if (detail.lead.segment !== segment) return null;
+export function scopeLeadDetail(detail: LeadDetailResponse, segments: string[]): LeadDetailResponse | null {
+  if (detail.lead.segment == null || !segments.includes(detail.lead.segment)) return null;
   return {
     ...detail,
     summary: { ...detail.summary, conversations: 0, messages: 0, collections: 0 },

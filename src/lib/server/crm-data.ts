@@ -213,6 +213,8 @@ type ProductRow = {
 
 type LeadFilters = {
   segment?: string | null;
+  /** Papel preso a segmentos: só entram leads de algum deles. Vale além de `segment`. */
+  segments?: string[] | null;
   status?: string | null;
   city?: string | null;
   origin?: string | null;
@@ -876,6 +878,7 @@ export async function getLeads(filters: LeadFilters): Promise<LeadsResponse> {
   const items = leads
     .filter((lead) => {
       if (filters.segment && lead.segment !== filters.segment) return false;
+      if (filters.segments && !(lead.segment != null && filters.segments.includes(lead.segment))) return false;
       if (filters.status && lead.status !== filters.status) return false;
       if (filters.city && (lead.city ?? lead.region) !== filters.city) return false;
       if (filters.origin && (lead.origem ?? lead.channel_origin) !== filters.origin) return false;
@@ -1169,7 +1172,7 @@ export async function getLeadDetail(id: string): Promise<LeadDetailResponse | nu
   };
 }
 
-export async function getAgentSummary(scope: string | null = null): Promise<AgentSummaryResponse> {
+export async function getAgentSummary(scope: string[] | null = null): Promise<AgentSummaryResponse> {
   const core = await fetchCore();
   return buildAgents(scope ? scopeCore(core, scope) : core);
 }
@@ -1333,13 +1336,13 @@ export async function getLeadConversations(leadId: string): Promise<LeadConversa
 }
 
 /**
- * `scope`: segmento a que o chamador está preso. O agente tem que atender esse
- * segmento (senão null → 404) e só entram conversas de leads dele — um agente
- * pode atender mais de um segmento.
+ * `scope`: segmentos a que o chamador está preso. O agente tem que atender algum
+ * deles (senão null → 404) e só entram conversas de leads desses segmentos — um
+ * agente pode atender mais de um segmento.
  */
 export async function getVendorConversations(
   vendorId: string,
-  scope: string | null = null
+  scope: string[] | null = null
 ): Promise<AgentConversationsResponse | null> {
   const supabase = createAdminClient();
   const core = await fetchCore();
