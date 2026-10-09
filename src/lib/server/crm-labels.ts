@@ -20,6 +20,23 @@ export const SEGMENT_LABELS_API: Record<string, string> = {
   COBRANCA: "Cobranças",
 };
 
+/** Nome do papel para a tela. O código em inglês (`builder_manager`) é só o valor guardado no banco. */
+export const ROLE_LABELS_API: Record<string, string> = {
+  superadmin: "Super administrador",
+  owner: "Dono",
+  manager: "Gerente",
+  vendor: "Vendedor",
+  employee: "Funcionário",
+  client: "Cliente",
+  installer_manager: "Gestor de instaladores",
+  builder_manager: "Gestor de construtores e arquitetos",
+};
+
+export function labelRole(role: string | null | undefined) {
+  if (!role) return "Sem papel";
+  return ROLE_LABELS_API[role] ?? role;
+}
+
 export function labelStatus(status: string | null | undefined) {
   if (!status) return "Sem status";
   return STATUS_LABELS_API[status] ?? status;

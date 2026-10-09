@@ -18,6 +18,7 @@ import { AccessGuard } from "@/components/layout/access-guard";
 import { formatDateTime, useApi } from "@/lib/client-api";
 import { useToast } from "@/components/ui/toast";
 import { parseInboxIds } from "@/lib/server/inbox-scope";
+import { labelRole } from "@/lib/server/crm-labels";
 import type { ActivityLogResponse } from "@/types/api";
 
 type AdminUser = {
@@ -195,7 +196,7 @@ function AdminPageInner() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-3"><ConsoleStatus tone={roleTone[user.role ?? ""] ?? "slate"}>{user.role ?? "employee"}</ConsoleStatus></td>
+                  <td className="px-3 py-3"><ConsoleStatus tone={roleTone[user.role ?? ""] ?? "slate"}>{labelRole(user.role ?? "employee")}</ConsoleStatus></td>
                   <td className="px-3 py-3 font-data text-[var(--text-secondary)]">{formatDateTime(user.created_at)}</td>
                   <td className="px-3 py-3">
                     <DropdownMenu.Root>
@@ -217,7 +218,7 @@ function AdminPageInner() {
                               onSelect={() => handleChangeRole(user.id, role)}
                               className="block w-full cursor-pointer rounded-[6px] px-2 py-1.5 text-left text-[12px] font-medium text-[var(--text-secondary)] outline-none hover:bg-[var(--bg-subtle)] focus:bg-[var(--bg-subtle)]"
                             >
-                              {role}
+                              {labelRole(role)}
                             </DropdownMenu.Item>
                           ))}
                           <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
@@ -384,7 +385,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
               className="w-full rounded-[8px] border border-[var(--border-strong)] bg-[var(--bg-inset)] px-3 py-2 text-[13px] text-[var(--text-primary)]"
             >
               {ROLES.map((r) => (
-                <option key={r} value={r}>{r}</option>
+                <option key={r} value={r}>{labelRole(r)}</option>
               ))}
             </select>
             <ConsoleButton type="submit" active className="w-full justify-center" disabled={saving}>
