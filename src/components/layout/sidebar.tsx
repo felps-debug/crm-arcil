@@ -29,6 +29,7 @@ import { useSidebar } from "@/hooks/use-sidebar";
 import { useTheme } from "@/hooks/use-theme";
 import { useUrgentFollowups } from "@/hooks/use-urgent-followups";
 import { cn } from "@/lib/utils";
+import { labelRole } from "@/lib/server/crm-labels";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: Gauge },
@@ -68,7 +69,7 @@ export function Sidebar() {
   }
 
   const displayName = profile?.full_name ?? profile?.email ?? "Arcil Admin";
-  const role = profile?.role ?? "Admin Master";
+  const role = profile?.role ? labelRole(profile.role) : "Admin Master";
 
   const visibleNav = NAV.filter((item) => {
     if (item.hideWhenScoped && isScoped) return false;

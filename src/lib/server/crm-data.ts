@@ -1647,7 +1647,7 @@ export function buildActivity(core: CoreData): ActivityItem[] {
   // junto com a linha de cobranca_log; mostrar os dois é o mesmo evento duas vezes.
   const leads = [...core.leads].sort(byDateDesc((l) => l.created_at)).slice(0, ACTIVITY_PER_SOURCE * 2);
   for (const l of leads.filter(ehLeadComercial).slice(0, ACTIVITY_PER_SOURCE)) {
-    items.push({ id: l.id, type: "lead", label: l.name ?? "Novo lead", sub: l.segment ?? "", date: l.created_at });
+    items.push({ id: l.id, type: "lead", label: l.name ?? "Novo lead", sub: l.segment ? labelSegment(l.segment) : "", date: l.created_at });
   }
 
   const cobrancas = [...core.cobrancas].sort(byDateDesc((c) => c.data_disparo)).slice(0, ACTIVITY_PER_SOURCE);

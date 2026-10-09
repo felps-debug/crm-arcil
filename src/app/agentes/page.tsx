@@ -17,6 +17,7 @@ import {
 } from "@/components/console/console-shell";
 import { AgentConversationsDrawer } from "@/components/ui/agent-conversations-drawer";
 import { formatDateTime, formatNumber, useApi } from "@/lib/client-api";
+import { labelSegment } from "@/lib/server/crm-labels";
 import type { AgentSummaryResponse } from "@/types/api";
 
 export default function AgentesPage() {
@@ -72,7 +73,7 @@ export default function AgentesPage() {
                   <ConsoleStatus tone={agent.enabled ? "green" : "slate"}>{agent.enabled ? "Habilitado" : "Pausado"}</ConsoleStatus>
                 </div>
                 <h2 className="mt-4 text-[14px] font-bold text-[var(--text-primary)]">{agent.name}</h2>
-                <p className="mt-1 text-[11px] text-[var(--text-muted)]">{agent.segment.join(", ") || "Sem segmento"}</p>
+                <p className="mt-1 text-[11px] text-[var(--text-muted)]">{agent.segment.map(labelSegment).join(", ") || "Sem segmento"}</p>
                 <p className="mt-3 font-data text-[12px] text-[var(--text-secondary)]">{agent.waPhone ?? "-"}</p>
                 <div className="mt-4 grid grid-cols-3 gap-2">
                   <Mini label="Leads" value={agent.totalLeads} />
